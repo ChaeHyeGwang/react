@@ -2,6 +2,8 @@ import logo from './logo.svg';
 import axios from 'axios';
 import './App.css';
 
+
+
 export default function App(){
   var response1 = "";
   var response2 = "";
@@ -27,7 +29,7 @@ export default function App(){
       <header className="App-header">
         <img src={logo} className="App-logo" alt="logo" />
         <p>
-          Edit <code>src/App.js</code> and save to reload.
+          Edit <code>src/App.js</code> 팀장님 힘내십쇼
         </p>
         <a
           className="App-link"
