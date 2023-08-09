@@ -10,6 +10,7 @@ export default function Test() {
   return (
     <div>
       <button onClick={() => move("/first")}>이동</button>
+      <button onClick={() => move("/BoardList")}>게시판 이동</button>
     </div>
   );
 }
