@@ -1,3 +1,29 @@
-.board_name{
+/* board.css */
+
+.table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 20px;
+  }
+  
+  .table th,
+  .table td {
+    border: 1px solid #ccc;
+    padding: 8px;
     text-align: center;
-}
+  }
+  
+  .table th {
+    background-color: #f2f2f2;
+    font-weight: bold;
+  }
+  
+  .table tr:nth-child(even) {
+    background-color: #f2f2f2;
+  }
+  
+  .board_name {
+    text-align: center;
+    margin-top: 20px;
+    font-size: 24px;
+  }
