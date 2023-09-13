@@ -1,19 +1,13 @@
-import React from 'react';
-import Home from "./pages/Home";
-import FirstPage from "./pages/FristPage";
-import ListPage from './pages/ListPage';
-import { Routes, Route, BrowserRouter } from "react-router-dom";
+import { useEffect, useRef, useState, useMemo } from "react";
+import "./css/common.css";
+import Login from "./pages/Login";
 
-const App = ()=>{
+const App = () => {
   return (
-	<BrowserRouter>
-		<Routes>
-		  <Route path="/" element={<Home />} />
-		  <Route path="/first" element={<FirstPage />} />
-      <Route path="/BoardList" element={<ListPage />} />
-		</Routes>
-  	</BrowserRouter> 
-    );
-}
+    <div className="App">
+      <Login />
+    </div>
+  );
+};
 
 export default App;
