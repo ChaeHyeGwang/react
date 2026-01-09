@@ -1,0 +1,686 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>메인 메뉴 UI 개편 예시</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .card-hover {
+            transition: all 0.3s ease;
+        }
+        .card-hover:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+        }
+        .site-card {
+            border-left: 4px solid #3b82f6;
+        }
+        .site-card:hover {
+            border-left-color: #2563eb;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 dark:bg-gray-900 p-8">
+    <div class="max-w-6xl mx-auto space-y-6">
+        <h1 class="text-3xl font-bold text-gray-800 dark:text-white mb-8">메인 메뉴 UI 개편 예시</h1>
+        
+        <!-- 방안 1: 카드 기반 레이아웃 -->
+        <div class="mb-12">
+            <h2 class="text-2xl font-semibold text-gray-700 dark:text-gray-300 mb-4">방안 1: 카드 기반 레이아웃 (추천)</h2>
+            
+            <!-- 날짜 그룹: 2024-01-15 -->
+            <div class="mb-6">
+                <!-- 날짜 헤더 -->
+                <div class="sticky top-0 z-10 bg-gray-200 dark:bg-gray-700 px-4 py-3 rounded-t-lg mb-2">
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center gap-3">
+                            <span class="text-2xl">📅</span>
+                            <span class="text-xl font-bold text-gray-800 dark:text-white">2024-01-15</span>
+                            <span class="text-sm text-gray-600 dark:text-gray-400">(3개 레코드)</span>
+                        </div>
+                        <div class="flex items-center gap-4">
+                            <div class="text-sm">
+                                <span class="text-gray-600 dark:text-gray-400">합계: </span>
+                                <span class="font-bold text-green-600 dark:text-green-400">550,000원</span>
+                            </div>
+                            <button class="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 text-sm font-semibold">
+                                + 행 추가
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- 레코드 카드 1 -->
+                <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md card-hover mb-3 p-6 ml-4 border-l-4 border-blue-500">
+                    <!-- 헤더 -->
+                    <div class="flex justify-between items-center mb-4 pb-4 border-b border-gray-200 dark:border-gray-700">
+                        <div class="flex items-center gap-3">
+                            <span class="text-sm text-gray-500 dark:text-gray-400">#1</span>
+                            <span class="text-xs px-2 py-1 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded">
+                                행 1
+                            </span>
+                        </div>
+                        <button class="px-3 py-1 bg-red-500 text-white rounded hover:bg-red-600 text-xs font-semibold">
+                            삭제
+                        </button>
+                    </div>
+                
+                <!-- 금액 정보 -->
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+                    <div class="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-3">
+                        <div class="text-xs text-gray-600 dark:text-gray-400 mb-1">받치기 금액</div>
+                        <div class="text-lg font-bold text-blue-700 dark:text-blue-300">100,000원</div>
+                    </div>
+                    <div class="bg-green-50 dark:bg-green-900/20 rounded-lg p-3">
+                        <div class="text-xs text-gray-600 dark:text-gray-400 mb-1">토탈 금액</div>
+                        <div class="text-lg font-bold text-green-700 dark:text-green-300">200,000원</div>
+                    </div>
+                    <div class="bg-purple-50 dark:bg-purple-900/20 rounded-lg p-3">
+                        <div class="text-xs text-gray-600 dark:text-gray-400 mb-1">요율</div>
+                        <div class="text-lg font-bold text-purple-700 dark:text-purple-300">5,000원</div>
+                    </div>
+                    <div class="bg-orange-50 dark:bg-orange-900/20 rounded-lg p-3">
+                        <div class="text-xs text-gray-600 dark:text-gray-400 mb-1">마진</div>
+                        <div class="text-lg font-bold text-orange-700 dark:text-orange-300">95,000원</div>
+                    </div>
+                </div>
+                
+                <!-- 사이트 정보 -->
+                <div class="mb-4">
+                    <div class="flex justify-between items-center mb-3">
+                        <h3 class="text-sm font-semibold text-gray-700 dark:text-gray-300 flex items-center gap-2">
+                            <span>🎯</span> 사이트 정보
+                        </h3>
+                        <button class="text-xs text-blue-500 hover:text-blue-600 font-medium">
+                            + 사이트 추가
+                        </button>
+                    </div>
+                    
+                    <div class="space-y-2">
+                        <!-- 사이트 카드 1 -->
+                        <div class="site-card bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4">
+                            <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
+                                <div>
+                                    <div class="text-xs text-gray-600 dark:text-gray-400 mb-1">명의</div>
+                                    <div class="px-3 py-2 bg-white dark:bg-gray-800 rounded border border-gray-300 dark:border-gray-600 text-sm">
+                                        장진석
+                                    </div>
+                                </div>
+                                <div>
+                                    <div class="text-xs text-gray-600 dark:text-gray-400 mb-1">사이트</div>
+                                    <div class="px-3 py-2 bg-white dark:bg-gray-800 rounded border border-gray-300 dark:border-gray-600 text-sm">
+                                        샷벳
+                                    </div>
+                                </div>
+                                <div>
+                                    <div class="text-xs text-gray-600 dark:text-gray-400 mb-1">충환전</div>
+                                    <div class="px-3 py-2 bg-white dark:bg-gray-800 rounded border border-gray-300 dark:border-gray-600 text-sm text-green-600 dark:text-green-400 font-semibold">
+                                        100충
+                                    </div>
+                                </div>
+                                <div class="flex items-end">
+                                    <button class="w-full px-3 py-2 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 rounded text-sm font-semibold">
+                                        ✓ 출석완료
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- 사이트 카드 2 -->
+                        <div class="site-card bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4">
+                            <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
+                                <div>
+                                    <div class="text-xs text-gray-600 dark:text-gray-400 mb-1">명의</div>
+                                    <div class="px-3 py-2 bg-white dark:bg-gray-800 rounded border border-gray-300 dark:border-gray-600 text-sm">
+                                        장진석
+                                    </div>
+                                </div>
+                                <div>
+                                    <div class="text-xs text-gray-600 dark:text-gray-400 mb-1">사이트</div>
+                                    <div class="px-3 py-2 bg-white dark:bg-gray-800 rounded border border-gray-300 dark:border-gray-600 text-sm">
+                                        원탑벳
+                                    </div>
+                                </div>
+                                <div>
+                                    <div class="text-xs text-gray-600 dark:text-gray-400 mb-1">충환전</div>
+                                    <div class="px-3 py-2 bg-white dark:bg-gray-800 rounded border border-gray-300 dark:border-gray-600 text-sm text-red-600 dark:text-red-400 font-semibold">
+                                        50환
+                                    </div>
+                                </div>
+                                <div class="flex items-end">
+                                    <button class="w-full px-3 py-2 bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-300 rounded text-sm font-semibold">
+                                        출석필요
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- 특이사항 -->
+                <div>
+                    <h3 class="text-sm font-semibold text-gray-700 dark:text-gray-300 flex items-center gap-2 mb-3">
+                        <span>📝</span> 특이사항
+                    </h3>
+                    <div class="flex flex-wrap gap-2">
+                        <span class="px-3 py-1 bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300 rounded-full text-xs">
+                            샷벳출석10
+                        </span>
+                        <span class="px-3 py-1 bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300 rounded-full text-xs">
+                            샷벳페이백20
+                        </span>
+                        <span class="px-3 py-1 bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300 rounded-full text-xs">
+                            칩실수샷벳30먹
+                        </span>
+                        <span class="px-3 py-1 bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300 rounded-full text-xs">
+                            바때기100충
+                        </span>
+                        <span class="px-3 py-1 bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300 rounded-full text-xs">
+                            [수동]메모
+                        </span>
+                    </div>
+                </div>
+            </div>
+            
+                <!-- 레코드 카드 2 (같은 날짜) -->
+                <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md card-hover mb-3 p-6 ml-4 border-l-4 border-green-500">
+                    <div class="flex justify-between items-center mb-4 pb-4 border-b border-gray-200 dark:border-gray-700">
+                        <div class="flex items-center gap-3">
+                            <span class="text-sm text-gray-500 dark:text-gray-400">#2</span>
+                            <span class="text-xs px-2 py-1 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 rounded">
+                                행 2
+                            </span>
+                        </div>
+                        <button class="px-3 py-1 bg-red-500 text-white rounded hover:bg-red-600 text-xs font-semibold">
+                            삭제
+                        </button>
+                    </div>
+                
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+                    <div class="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-3">
+                        <div class="text-xs text-gray-600 dark:text-gray-400 mb-1">받치기 금액</div>
+                        <div class="text-lg font-bold text-blue-700 dark:text-blue-300">80,000원</div>
+                    </div>
+                    <div class="bg-green-50 dark:bg-green-900/20 rounded-lg p-3">
+                        <div class="text-xs text-gray-600 dark:text-gray-400 mb-1">토탈 금액</div>
+                        <div class="text-lg font-bold text-green-700 dark:text-green-300">150,000원</div>
+                    </div>
+                    <div class="bg-purple-50 dark:bg-purple-900/20 rounded-lg p-3">
+                        <div class="text-xs text-gray-600 dark:text-gray-400 mb-1">요율</div>
+                        <div class="text-lg font-bold text-purple-700 dark:text-purple-300">3,000원</div>
+                    </div>
+                    <div class="bg-orange-50 dark:bg-orange-900/20 rounded-lg p-3">
+                        <div class="text-xs text-gray-600 dark:text-gray-400 mb-1">마진</div>
+                        <div class="text-lg font-bold text-orange-700 dark:text-orange-300">67,000원</div>
+                    </div>
+                </div>
+                
+                <div class="mb-4">
+                    <div class="flex justify-between items-center mb-3">
+                        <h3 class="text-sm font-semibold text-gray-700 dark:text-gray-300 flex items-center gap-2">
+                            <span>🎯</span> 사이트 정보
+                        </h3>
+                        <button class="text-xs text-blue-500 hover:text-blue-600 font-medium">
+                            + 사이트 추가
+                        </button>
+                    </div>
+                    
+                    <div class="site-card bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4">
+                        <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
+                            <div>
+                                <div class="text-xs text-gray-600 dark:text-gray-400 mb-1">명의</div>
+                                <div class="px-3 py-2 bg-white dark:bg-gray-800 rounded border border-gray-300 dark:border-gray-600 text-sm">
+                                    임수빈
+                                </div>
+                            </div>
+                            <div>
+                                <div class="text-xs text-gray-600 dark:text-gray-400 mb-1">사이트</div>
+                                <div class="px-3 py-2 bg-white dark:bg-gray-800 rounded border border-gray-300 dark:border-gray-600 text-sm">
+                                    룰라벳
+                                </div>
+                            </div>
+                            <div>
+                                <div class="text-xs text-gray-600 dark:text-gray-400 mb-1">충환전</div>
+                                <div class="px-3 py-2 bg-white dark:bg-gray-800 rounded border border-gray-300 dark:border-gray-600 text-sm text-green-600 dark:text-green-400 font-semibold">
+                                    200충
+                                </div>
+                            </div>
+                            <div class="flex items-end">
+                                <button class="w-full px-3 py-2 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 rounded text-sm font-semibold">
+                                    ✓ 출석완료
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div>
+                    <h3 class="text-sm font-semibold text-gray-700 dark:text-gray-300 flex items-center gap-2 mb-3">
+                        <span>📝</span> 특이사항
+                    </h3>
+                    <div class="text-sm text-gray-500 dark:text-gray-400 italic">
+                        특이사항 없음
+                    </div>
+                </div>
+                </div>
+                
+                <!-- 레코드 카드 3 (같은 날짜) -->
+                <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md card-hover mb-4 p-6 ml-4 border-l-4 border-purple-500">
+                    <div class="flex justify-between items-center mb-4 pb-4 border-b border-gray-200 dark:border-gray-700">
+                        <div class="flex items-center gap-3">
+                            <span class="text-sm text-gray-500 dark:text-gray-400">#3</span>
+                            <span class="text-xs px-2 py-1 bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 rounded">
+                                행 3
+                            </span>
+                        </div>
+                        <button class="px-3 py-1 bg-red-500 text-white rounded hover:bg-red-600 text-xs font-semibold">
+                            삭제
+                        </button>
+                    </div>
+                    
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+                        <div class="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-3">
+                            <div class="text-xs text-gray-600 dark:text-gray-400 mb-1">받치기 금액</div>
+                            <div class="text-lg font-bold text-blue-700 dark:text-blue-300">150,000원</div>
+                        </div>
+                        <div class="bg-green-50 dark:bg-green-900/20 rounded-lg p-3">
+                            <div class="text-xs text-gray-600 dark:text-gray-400 mb-1">토탈 금액</div>
+                            <div class="text-lg font-bold text-green-700 dark:text-green-300">250,000원</div>
+                        </div>
+                        <div class="bg-purple-50 dark:bg-purple-900/20 rounded-lg p-3">
+                            <div class="text-xs text-gray-600 dark:text-gray-400 mb-1">요율</div>
+                            <div class="text-lg font-bold text-purple-700 dark:text-purple-300">10,000원</div>
+                        </div>
+                        <div class="bg-orange-50 dark:bg-orange-900/20 rounded-lg p-3">
+                            <div class="text-xs text-gray-600 dark:text-gray-400 mb-1">마진</div>
+                            <div class="text-lg font-bold text-orange-700 dark:text-orange-300">90,000원</div>
+                        </div>
+                    </div>
+                    
+                    <div class="mb-4">
+                        <div class="flex justify-between items-center mb-3">
+                            <h3 class="text-sm font-semibold text-gray-700 dark:text-gray-300 flex items-center gap-2">
+                                <span>🎯</span> 사이트 정보
+                            </h3>
+                            <button class="text-xs text-blue-500 hover:text-blue-600 font-medium">
+                                + 사이트 추가
+                            </button>
+                        </div>
+                        
+                        <div class="space-y-2">
+                            <div class="site-card bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4">
+                                <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
+                                    <div>
+                                        <div class="text-xs text-gray-600 dark:text-gray-400 mb-1">명의</div>
+                                        <div class="px-3 py-2 bg-white dark:bg-gray-800 rounded border border-gray-300 dark:border-gray-600 text-sm">
+                                            김철수
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <div class="text-xs text-gray-600 dark:text-gray-400 mb-1">사이트</div>
+                                        <div class="px-3 py-2 bg-white dark:bg-gray-800 rounded border border-gray-300 dark:border-gray-600 text-sm">
+                                            유로88
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <div class="text-xs text-gray-600 dark:text-gray-400 mb-1">충환전</div>
+                                        <div class="px-3 py-2 bg-white dark:bg-gray-800 rounded border border-gray-300 dark:border-gray-600 text-sm text-green-600 dark:text-green-400 font-semibold">
+                                            300충
+                                        </div>
+                                    </div>
+                                    <div class="flex items-end">
+                                        <button class="w-full px-3 py-2 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 rounded text-sm font-semibold">
+                                            ✓ 출석완료
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="site-card bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4">
+                                <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
+                                    <div>
+                                        <div class="text-xs text-gray-600 dark:text-gray-400 mb-1">명의</div>
+                                        <div class="px-3 py-2 bg-white dark:bg-gray-800 rounded border border-gray-300 dark:border-gray-600 text-sm">
+                                            김철수
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <div class="text-xs text-gray-600 dark:text-gray-400 mb-1">사이트</div>
+                                        <div class="px-3 py-2 bg-white dark:bg-gray-800 rounded border border-gray-300 dark:border-gray-600 text-sm">
+                                            프리카지노
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <div class="text-xs text-gray-600 dark:text-gray-400 mb-1">충환전</div>
+                                        <div class="px-3 py-2 bg-white dark:bg-gray-800 rounded border border-gray-300 dark:border-gray-600 text-sm text-red-600 dark:text-red-400 font-semibold">
+                                            100환
+                                        </div>
+                                    </div>
+                                    <div class="flex items-end">
+                                        <button class="w-full px-3 py-2 bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-300 rounded text-sm font-semibold">
+                                            출석필요
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div>
+                        <h3 class="text-sm font-semibold text-gray-700 dark:text-gray-300 flex items-center gap-2 mb-3">
+                            <span>📝</span> 특이사항
+                        </h3>
+                        <div class="flex flex-wrap gap-2">
+                            <span class="px-3 py-1 bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300 rounded-full text-xs">
+                                유로88정착5
+                            </span>
+                            <span class="px-3 py-1 bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300 rounded-full text-xs">
+                                칩실수프리카지노50못먹
+                            </span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- 날짜 그룹: 2024-01-14 -->
+            <div class="mb-6">
+                <!-- 날짜 헤더 -->
+                <div class="sticky top-0 z-10 bg-gray-200 dark:bg-gray-700 px-4 py-3 rounded-t-lg mb-2">
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center gap-3">
+                            <span class="text-2xl">📅</span>
+                            <span class="text-xl font-bold text-gray-800 dark:text-white">2024-01-14</span>
+                            <span class="text-sm text-gray-600 dark:text-gray-400">(1개 레코드)</span>
+                        </div>
+                        <div class="flex items-center gap-4">
+                            <div class="text-sm">
+                                <span class="text-gray-600 dark:text-gray-400">합계: </span>
+                                <span class="font-bold text-green-600 dark:text-green-400">150,000원</span>
+                            </div>
+                            <button class="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 text-sm font-semibold">
+                                + 행 추가
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- 레코드 카드 (다른 날짜) -->
+                <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md card-hover mb-4 p-6 ml-4 border-l-4 border-gray-400">
+                    <div class="flex justify-between items-center mb-4 pb-4 border-b border-gray-200 dark:border-gray-700">
+                        <div class="flex items-center gap-3">
+                            <span class="text-sm text-gray-500 dark:text-gray-400">#1</span>
+                            <span class="text-xs px-2 py-1 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded">
+                                행 1
+                            </span>
+                        </div>
+                        <button class="px-3 py-1 bg-red-500 text-white rounded hover:bg-red-600 text-xs font-semibold">
+                            삭제
+                        </button>
+                    </div>
+                    
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+                        <div class="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-3">
+                            <div class="text-xs text-gray-600 dark:text-gray-400 mb-1">받치기 금액</div>
+                            <div class="text-lg font-bold text-blue-700 dark:text-blue-300">80,000원</div>
+                        </div>
+                        <div class="bg-green-50 dark:bg-green-900/20 rounded-lg p-3">
+                            <div class="text-xs text-gray-600 dark:text-gray-400 mb-1">토탈 금액</div>
+                            <div class="text-lg font-bold text-green-700 dark:text-green-300">150,000원</div>
+                        </div>
+                        <div class="bg-purple-50 dark:bg-purple-900/20 rounded-lg p-3">
+                            <div class="text-xs text-gray-600 dark:text-gray-400 mb-1">요율</div>
+                            <div class="text-lg font-bold text-purple-700 dark:text-purple-300">3,000원</div>
+                        </div>
+                        <div class="bg-orange-50 dark:bg-orange-900/20 rounded-lg p-3">
+                            <div class="text-xs text-gray-600 dark:text-gray-400 mb-1">마진</div>
+                            <div class="text-lg font-bold text-orange-700 dark:text-orange-300">67,000원</div>
+                        </div>
+                    </div>
+                    
+                    <div class="mb-4">
+                        <div class="flex justify-between items-center mb-3">
+                            <h3 class="text-sm font-semibold text-gray-700 dark:text-gray-300 flex items-center gap-2">
+                                <span>🎯</span> 사이트 정보
+                            </h3>
+                            <button class="text-xs text-blue-500 hover:text-blue-600 font-medium">
+                                + 사이트 추가
+                            </button>
+                        </div>
+                        
+                        <div class="site-card bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4">
+                            <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
+                                <div>
+                                    <div class="text-xs text-gray-600 dark:text-gray-400 mb-1">명의</div>
+                                    <div class="px-3 py-2 bg-white dark:bg-gray-800 rounded border border-gray-300 dark:border-gray-600 text-sm">
+                                        임수빈
+                                    </div>
+                                </div>
+                                <div>
+                                    <div class="text-xs text-gray-600 dark:text-gray-400 mb-1">사이트</div>
+                                    <div class="px-3 py-2 bg-white dark:bg-gray-800 rounded border border-gray-300 dark:border-gray-600 text-sm">
+                                        룰라벳
+                                    </div>
+                                </div>
+                                <div>
+                                    <div class="text-xs text-gray-600 dark:text-gray-400 mb-1">충환전</div>
+                                    <div class="px-3 py-2 bg-white dark:bg-gray-800 rounded border border-gray-300 dark:border-gray-600 text-sm text-green-600 dark:text-green-400 font-semibold">
+                                        200충
+                                    </div>
+                                </div>
+                                <div class="flex items-end">
+                                    <button class="w-full px-3 py-2 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 rounded text-sm font-semibold">
+                                        ✓ 출석완료
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div>
+                        <h3 class="text-sm font-semibold text-gray-700 dark:text-gray-300 flex items-center gap-2 mb-3">
+                            <span>📝</span> 특이사항
+                        </h3>
+                        <div class="text-sm text-gray-500 dark:text-gray-400 italic">
+                            특이사항 없음
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 방안 2: 아코디언 스타일 -->
+        <div class="mb-12">
+            <h2 class="text-2xl font-semibold text-gray-700 dark:text-gray-300 mb-4">방안 2: 아코디언 스타일</h2>
+            
+            <!-- 아코디언 아이템 1 (펼쳐진 상태) -->
+            <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md mb-3">
+                <div class="flex justify-between items-center p-4 cursor-pointer border-b border-gray-200 dark:border-gray-700">
+                    <div class="flex items-center gap-4">
+                        <span class="text-xl">📅</span>
+                        <span class="font-bold text-gray-800 dark:text-white">2024-01-15</span>
+                        <span class="text-sm text-gray-600 dark:text-gray-400">토탈: 200,000원</span>
+                    </div>
+                    <span class="text-gray-500">▼</span>
+                </div>
+                <div class="p-4">
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+                        <div class="text-center">
+                            <div class="text-xs text-gray-600 dark:text-gray-400 mb-1">받치기</div>
+                            <div class="font-bold text-blue-600 dark:text-blue-400">100,000원</div>
+                        </div>
+                        <div class="text-center">
+                            <div class="text-xs text-gray-600 dark:text-gray-400 mb-1">요율</div>
+                            <div class="font-bold text-purple-600 dark:text-purple-400">5,000원</div>
+                        </div>
+                        <div class="text-center">
+                            <div class="text-xs text-gray-600 dark:text-gray-400 mb-1">마진</div>
+                            <div class="font-bold text-orange-600 dark:text-orange-400">95,000원</div>
+                        </div>
+                        <div class="text-center">
+                            <div class="text-xs text-gray-600 dark:text-gray-400 mb-1">사이트 수</div>
+                            <div class="font-bold text-gray-600 dark:text-gray-400">2개</div>
+                        </div>
+                    </div>
+                    
+                    <div class="grid grid-cols-1 md:grid-cols-4 gap-3 mb-4">
+                        <div class="bg-gray-50 dark:bg-gray-700/50 rounded p-3">
+                            <div class="text-xs text-gray-600 dark:text-gray-400 mb-1">사이트 1</div>
+                            <div class="font-semibold text-sm">장진석 - 샷벳</div>
+                            <div class="text-xs text-green-600 dark:text-green-400">100충</div>
+                        </div>
+                        <div class="bg-gray-50 dark:bg-gray-700/50 rounded p-3">
+                            <div class="text-xs text-gray-600 dark:text-gray-400 mb-1">사이트 2</div>
+                            <div class="font-semibold text-sm">장진석 - 원탑벳</div>
+                            <div class="text-xs text-red-600 dark:text-red-400">50환</div>
+                        </div>
+                        <div class="bg-gray-50 dark:bg-gray-700/50 rounded p-3 border-2 border-dashed border-gray-300 dark:border-gray-600">
+                            <div class="text-xs text-gray-500 dark:text-gray-500 text-center py-2">
+                                + 추가
+                            </div>
+                        </div>
+                        <div class="bg-gray-50 dark:bg-gray-700/50 rounded p-3 border-2 border-dashed border-gray-300 dark:border-gray-600">
+                            <div class="text-xs text-gray-500 dark:text-gray-500 text-center py-2">
+                                + 추가
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div>
+                        <div class="text-xs text-gray-600 dark:text-gray-400 mb-2">특이사항</div>
+                        <div class="flex flex-wrap gap-2">
+                            <span class="px-2 py-1 bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300 rounded text-xs">
+                                샷벳출석10
+                            </span>
+                            <span class="px-2 py-1 bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300 rounded text-xs">
+                                샷벳페이백20
+                            </span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- 아코디언 아이템 2 (접힌 상태) -->
+            <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md mb-3">
+                <div class="flex justify-between items-center p-4 cursor-pointer">
+                    <div class="flex items-center gap-4">
+                        <span class="text-xl">📅</span>
+                        <span class="font-bold text-gray-800 dark:text-white">2024-01-14</span>
+                        <span class="text-sm text-gray-600 dark:text-gray-400">토탈: 150,000원</span>
+                    </div>
+                    <span class="text-gray-500">▶</span>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 방안 3: 타임라인 스타일 -->
+        <div class="mb-12">
+            <h2 class="text-2xl font-semibold text-gray-700 dark:text-gray-300 mb-4">방안 3: 타임라인 스타일</h2>
+            
+            <div class="relative">
+                <!-- 타임라인 라인 -->
+                <div class="absolute left-8 top-0 bottom-0 w-0.5 bg-gray-300 dark:bg-gray-600"></div>
+                
+                <!-- 타임라인 아이템 1 -->
+                <div class="relative flex gap-6 mb-8">
+                    <div class="relative z-10">
+                        <div class="w-16 h-16 bg-blue-500 rounded-full flex items-center justify-center text-white text-xl font-bold shadow-lg">
+                            15
+                        </div>
+                    </div>
+                    <div class="flex-1 bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
+                        <div class="flex justify-between items-start mb-4">
+                            <div>
+                                <h3 class="text-lg font-bold text-gray-800 dark:text-white mb-2">2024-01-15</h3>
+                                <div class="flex gap-4 text-sm">
+                                    <span class="text-blue-600 dark:text-blue-400">받치기: 100,000원</span>
+                                    <span class="text-green-600 dark:text-green-400">토탈: 200,000원</span>
+                                    <span class="text-orange-600 dark:text-orange-400">마진: 95,000원</span>
+                                </div>
+                            </div>
+                            <button class="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 text-sm">
+                                + 추가
+                            </button>
+                        </div>
+                        
+                        <div class="space-y-2 mb-4">
+                            <div class="flex items-center gap-3 p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
+                                <div class="w-2 h-2 bg-green-500 rounded-full"></div>
+                                <div class="flex-1">
+                                    <span class="font-semibold text-sm">장진석</span>
+                                    <span class="text-gray-500 dark:text-gray-400 mx-2">-</span>
+                                    <span class="text-sm">샷벳</span>
+                                    <span class="text-green-600 dark:text-green-400 font-semibold ml-2">100충</span>
+                                </div>
+                                <span class="px-2 py-1 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 rounded text-xs">
+                                    ✓ 출석완료
+                                </span>
+                            </div>
+                            <div class="flex items-center gap-3 p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
+                                <div class="w-2 h-2 bg-red-500 rounded-full"></div>
+                                <div class="flex-1">
+                                    <span class="font-semibold text-sm">장진석</span>
+                                    <span class="text-gray-500 dark:text-gray-400 mx-2">-</span>
+                                    <span class="text-sm">원탑벳</span>
+                                    <span class="text-red-600 dark:text-red-400 font-semibold ml-2">50환</span>
+                                </div>
+                                <span class="px-2 py-1 bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-300 rounded text-xs">
+                                    출석필요
+                                </span>
+                            </div>
+                        </div>
+                        
+                        <div class="flex flex-wrap gap-2">
+                            <span class="px-2 py-1 bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300 rounded text-xs">
+                                샷벳출석10
+                            </span>
+                            <span class="px-2 py-1 bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300 rounded text-xs">
+                                샷벳페이백20
+                            </span>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- 타임라인 아이템 2 -->
+                <div class="relative flex gap-6 mb-8">
+                    <div class="relative z-10">
+                        <div class="w-16 h-16 bg-gray-400 rounded-full flex items-center justify-center text-white text-xl font-bold shadow-lg">
+                            14
+                        </div>
+                    </div>
+                    <div class="flex-1 bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
+                        <div class="flex justify-between items-start mb-4">
+                            <div>
+                                <h3 class="text-lg font-bold text-gray-800 dark:text-white mb-2">2024-01-14</h3>
+                                <div class="flex gap-4 text-sm">
+                                    <span class="text-blue-600 dark:text-blue-400">받치기: 80,000원</span>
+                                    <span class="text-green-600 dark:text-green-400">토탈: 150,000원</span>
+                                    <span class="text-orange-600 dark:text-orange-400">마진: 67,000원</span>
+                                </div>
+                            </div>
+                            <button class="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 text-sm">
+                                + 추가
+                            </button>
+                        </div>
+                        
+                        <div class="space-y-2">
+                            <div class="flex items-center gap-3 p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
+                                <div class="w-2 h-2 bg-green-500 rounded-full"></div>
+                                <div class="flex-1">
+                                    <span class="font-semibold text-sm">임수빈</span>
+                                    <span class="text-gray-500 dark:text-gray-400 mx-2">-</span>
+                                    <span class="text-sm">룰라벳</span>
+                                    <span class="text-green-600 dark:text-green-400 font-semibold ml-2">200충</span>
+                                </div>
+                                <span class="px-2 py-1 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 rounded text-xs">
+                                    ✓ 출석완료
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

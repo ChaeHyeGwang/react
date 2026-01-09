@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>태그 덩어리 예시</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #1a1a1a;
+            padding: 20px;
+        }
+
+        /* 예시 1: 배경 박스로 감싸기 */
+        .example1 {
+            display: inline-flex;
+            flex-wrap: wrap;
+            gap: 4px;
+            padding: 6px 10px;
+            background-color: #2d2d2d;
+            border: 1px solid #404040;
+            border-radius: 6px;
+        }
+
+        .example1 .tag {
+            display: inline-block;
+            padding: 4px 8px;
+            font-size: 12px;
+            border-radius: 4px;
+            background-color: #3a3a3a;
+            color: white;
+            border: 1px solid #505050;
+        }
+
+        /* 예시 2: 더 밀집된 형태 (gap 제거) */
+        .example2 {
+            display: inline-flex;
+            flex-wrap: wrap;
+            padding: 6px 10px;
+            background-color: #2d2d2d;
+            border: 1px solid #404040;
+            border-radius: 6px;
+        }
+
+        .example2 .tag {
+            display: inline-block;
+            padding: 4px 8px;
+            font-size: 12px;
+            background-color: #3a3a3a;
+            color: white;
+            border-right: 1px solid #505050;
+        }
+
+        .example2 .tag:first-child {
+            border-top-left-radius: 4px;
+            border-bottom-left-radius: 4px;
+        }
+
+        .example2 .tag:last-child {
+            border-top-right-radius: 4px;
+            border-bottom-right-radius: 4px;
+            border-right: none;
+        }
+
+        /* 예시 3: 구분자로 연결 */
+        .example3 {
+            display: inline-flex;
+            flex-wrap: wrap;
+            align-items: center;
+            padding: 6px 10px;
+            background-color: #2d2d2d;
+            border: 1px solid #404040;
+            border-radius: 6px;
+        }
+
+        .example3 .tag {
+            display: inline-block;
+            padding: 4px 8px;
+            font-size: 12px;
+            background-color: #3a3a3a;
+            color: white;
+            border-radius: 4px;
+        }
+
+        .example3 .separator {
+            color: #666;
+            margin: 0 4px;
+            font-size: 12px;
+        }
+
+        /* 예시 4: 카드 형태 (추천) */
+        .example4 {
+            display: inline-flex;
+            flex-wrap: wrap;
+            gap: 2px;
+            padding: 8px 12px;
+            background-color: #252525;
+            border: 1px solid #3a3a3a;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+        }
+
+        .example4 .tag {
+            display: inline-block;
+            padding: 4px 10px;
+            font-size: 12px;
+            background-color: #333;
+            color: white;
+            border-radius: 4px;
+            border: 1px solid #444;
+        }
+
+        /* 예시 5: 완전히 통합된 형태 */
+        .example5 {
+            display: inline-block;
+            padding: 6px 12px;
+            background-color: #2d2d2d;
+            border: 1px solid #404040;
+            border-radius: 6px;
+            font-size: 12px;
+            color: white;
+        }
+
+        .example5 .tag {
+            display: inline;
+            padding: 0 6px;
+            border-right: 1px solid #505050;
+        }
+
+        .example5 .tag:last-child {
+            border-right: none;
+        }
+
+        /* 다크모드 대응 */
+        .light-mode {
+            background-color: #f5f5f5;
+        }
+
+        .light-mode .example1,
+        .light-mode .example2,
+        .light-mode .example3,
+        .light-mode .example4 {
+            background-color: #ffffff;
+            border-color: #e0e0e0;
+        }
+
+        .light-mode .tag {
+            background-color: #f0f0f0;
+            color: #333;
+            border-color: #ddd;
+        }
+
+        .section {
+            margin-bottom: 30px;
+            padding: 20px;
+            background-color: #1a1a1a;
+            border-radius: 8px;
+        }
+
+        .section h3 {
+            color: white;
+            margin-bottom: 15px;
+        }
+    </style>
+</head>
+<body>
+    <div class="section">
+        <h3>예시 1: 배경 박스로 감싸기 (gap 있음)</h3>
+        <div class="example1">
+            <span class="tag">입수빈</span>
+            <span class="tag">애국벳</span>
+            <span class="tag">10</span>
+        </div>
+    </div>
+
+    <div class="section">
+        <h3>예시 2: 더 밀집된 형태 (gap 없음, 테두리 연결)</h3>
+        <div class="example2">
+            <span class="tag">입수빈</span>
+            <span class="tag">애국벳</span>
+            <span class="tag">10</span>
+        </div>
+    </div>
+
+    <div class="section">
+        <h3>예시 3: 구분자로 연결</h3>
+        <div class="example3">
+            <span class="tag">입수빈</span>
+            <span class="separator">/</span>
+            <span class="tag">애국벳</span>
+            <span class="separator">/</span>
+            <span class="tag">10</span>
+        </div>
+    </div>
+
+    <div class="section">
+        <h3>예시 4: 카드 형태 (추천)</h3>
+        <div class="example4">
+            <span class="tag">입수빈</span>
+            <span class="tag">애국벳</span>
+            <span class="tag">10</span>
+        </div>
+    </div>
+
+    <div class="section">
+        <h3>예시 5: 완전히 통합된 형태</h3>
+        <div class="example5">
+            <span class="tag">입수빈</span>
+            <span class="tag">애국벳</span>
+            <span class="tag">10</span>
+        </div>
+    </div>
+
+    <div class="section light-mode">
+        <h3 style="color: #333;">라이트 모드 예시 (예시 4)</h3>
+        <div class="example4">
+            <span class="tag">입수빈</span>
+            <span class="tag">애국벳</span>
+            <span class="tag">10</span>
+        </div>
+    </div>
+</body>
+</html>
+
