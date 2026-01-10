@@ -29,20 +29,8 @@ class DatabaseManager {
           reject(err);
         } else {
           console.log('✅ SQLite 데이터베이스 연결 성공:', this.dbPath);
-          // 성능 최적화 설정
+          // 성능 최적화 설정만 실행 (기존 DB 파일 사용, 자동 생성/마이그레이션 비활성화)
           this.optimizeDatabase()
-            .then(() => this.createTables())
-            .then(() => this.runMigrationIfNeeded())
-            .then(() => this.addAttendanceColumns())
-            .then(() => this.addDisplayOrderColumn())
-            .then(() => this.addSitesDisplayOrderColumn())
-            .then(() => this.addCommunitiesDisplayOrderColumn())
-            .then(() => this.addOfficeColumnsToAccounts())
-            .then(() => this.addCashOnHandToAccounts())
-            .then(() => this.runCommunitiesMigration())
-            .then(() => this.runSiteNotesMigration())
-            .then(() => this.runSiteAttendanceMigration())
-            .then(() => this.runDrbetRecordsMigration())
             .then(() => this.ensureIndexes())
             .then(resolve)
             .catch(reject);
