@@ -613,12 +613,26 @@ const computeSettlementBanners = async ({ allRecords, date, accountId, officeId 
 const computeDailySummary = async ({ accountId, officeId, date }) => {
   log(`\n[일일요약] computeDailySummary 시작: date=${date}, accountId=${accountId}, officeId=${officeId}`);
   
+  // 성능 최적화: 최근 60일 데이터만 가져오기 (페이백 계산은 7일 범위 사용)
+  const dateObj = new Date(`${date}T00:00:00+09:00`);
+  const startDate = new Date(dateObj);
+  startDate.setDate(dateObj.getDate() - 60); // 60일 전부터
+  const startDateStr = getKSTDateString(startDate);
+  
+  // 필요한 컬럼만 선택 (메모리 사용량 감소)
   const allRecords = await db.all(
-    `SELECT * FROM drbet_records WHERE account_id = ?`,
-    [accountId]
+    `SELECT id, record_date, account_id, 
+            identity1, site_name1, charge_withdraw1,
+            identity2, site_name2, charge_withdraw2,
+            identity3, site_name3, charge_withdraw3,
+            identity4, site_name4, charge_withdraw4
+     FROM drbet_records 
+     WHERE account_id = ? AND record_date >= ? AND record_date <= ?
+     ORDER BY record_date DESC`,
+    [accountId, startDateStr, date]
   );
   
-  log(`[일일요약] 전체 레코드 수: ${allRecords?.length || 0}`);
+  log(`[일일요약] 조회된 레코드 수: ${allRecords?.length || 0} (최근 60일)`);
 
   if (!allRecords || allRecords.length === 0) {
     log(`[일일요약] 레코드 없음 - 빈 결과 반환`);
