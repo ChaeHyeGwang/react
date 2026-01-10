@@ -67,8 +67,16 @@ const limiter = rateLimit({
 });
 app.use(limiter);
 
-// 로깅
-app.use(morgan('combined'));
+// 로깅 (프로덕션에서는 최소화)
+if (process.env.NODE_ENV === 'production') {
+  // 프로덕션: 에러만 로깅
+  app.use(morgan('combined', {
+    skip: (req, res) => res.statusCode < 400
+  }));
+} else {
+  // 개발: 모든 요청 로깅
+  app.use(morgan('combined'));
+}
 
 // Body parser
 app.use(express.json({ limit: '10mb' }));

@@ -13,7 +13,7 @@ module.exports = {
       },
       watch: false,
       autorestart: true,
-      max_memory_restart: '500M',
+      max_memory_restart: '1G',  // 메모리 제한 증가
       error_file: './server/logs/prod-error.log',
       out_file: './server/logs/prod-out.log',
       log_date_format: 'YYYY-MM-DD HH:mm:ss'
