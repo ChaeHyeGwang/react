@@ -6,52 +6,78 @@ const { auth } = require('../middleware/auth');
 const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
 
-// 환경변수 로드 (루트 디렉토리 또는 server 디렉토리에서 .env 파일 찾기)
-const dotenv = require('dotenv');
-const envPath = path.join(__dirname, '..', '.env');
-const serverEnvPath = path.join(__dirname, '.env');
-dotenv.config({ path: envPath });
-dotenv.config({ path: serverEnvPath, override: false }); // server/.env가 있으면 추가로 로드 (덮어쓰지 않음)
-
-// 텔레그램 봇 초기화 (환경변수에서 토큰과 채팅 ID 가져오기)
-const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '';
-const CHAT_ID = process.env.TELEGRAM_CHAT_ID || '';
-
-// 디버깅: 환경변수 로드 확인
-if (!BOT_TOKEN || !CHAT_ID) {
-  console.warn('[텔레그램] 환경변수 확인:', {
-    BOT_TOKEN: BOT_TOKEN ? '설정됨' : '없음',
-    CHAT_ID: CHAT_ID ? '설정됨' : '없음',
-    envPath,
-    serverEnvPath,
-    cwd: process.cwd()
-  });
-}
-
-let bot = null;
-if (BOT_TOKEN && CHAT_ID) {
-  try {
-    bot = new TelegramBot(BOT_TOKEN, { polling: false });
-    console.log('텔레그램 봇이 초기화되었습니다.');
-  } catch (error) {
-    console.error('텔레그램 봇 초기화 실패:', error.message);
-  }
-} else {
-  console.warn('텔레그램 봇 설정이 없습니다. .env 파일에 TELEGRAM_BOT_TOKEN과 TELEGRAM_CHAT_ID를 설정하세요.');
-}
-
-// 기존 sqlite3 연결 (settlements 테이블용)
-const dbPath = path.join(__dirname, '..', 'database', 'management_system.db');
+// 환경변수 DB_PATH 사용 (프로덕션: management_system_prod.db)
+const dbPath = process.env.DB_PATH 
+  ? path.resolve(process.cwd(), process.env.DB_PATH)
+  : path.join(__dirname, '..', 'database', 'management_system.db');
 const dbLegacy = new sqlite3.Database(dbPath);
+
+// 텔레그램 봇 인스턴스 생성 함수 (동적 생성)
+function createTelegramBot(botToken) {
+  if (!botToken) return null;
+  try {
+    return new TelegramBot(botToken, { polling: false });
+  } catch (error) {
+    console.error('텔레그램 봇 생성 실패:', error.message);
+    return null;
+  }
+}
 
 // 정산 요약 전송
 router.post('/send-settlement', auth, async (req, res) => {
   try {
     const { date, summary } = req.body;
     
-    if (!bot || !CHAT_ID) {
+    // 계정의 office_id 조회
+    const filterAccountId = req.user.filterAccountId || req.user.accountId;
+    let officeId = null;
+    
+    try {
+      const accountRow = await db.get('SELECT office_id FROM accounts WHERE id = ?', [filterAccountId]);
+      if (accountRow && accountRow.office_id) {
+        officeId = accountRow.office_id;
+      }
+    } catch (e) {
+      console.warn('계정의 office_id 조회 실패:', e.message);
+    }
+    
+    // 사무실이 없으면 에러 반환
+    if (!officeId) {
       return res.status(400).json({ 
-        error: '텔레그램 봇이 설정되지 않았습니다. .env 파일을 확인하세요.' 
+        error: '사무실이 설정되지 않은 계정입니다. 사무실 관리자에게 문의하세요.' 
+      });
+    }
+    
+    // 사무실의 텔레그램 설정 조회
+    let telegramBotToken = null;
+    let telegramChatId = null;
+    
+    try {
+      const officeRow = await db.get(
+        'SELECT telegram_bot_token, telegram_chat_id FROM offices WHERE id = ?',
+        [officeId]
+      );
+      
+      if (officeRow) {
+        telegramBotToken = officeRow.telegram_bot_token || null;
+        telegramChatId = officeRow.telegram_chat_id || null;
+      }
+    } catch (e) {
+      console.warn('사무실 텔레그램 설정 조회 실패:', e.message);
+    }
+    
+    // 텔레그램 설정이 없으면 에러 반환
+    if (!telegramBotToken || !telegramChatId) {
+      return res.status(400).json({ 
+        error: '텔레그램 설정이 필요합니다. 사무실 관리자에게 문의하세요.' 
+      });
+    }
+    
+    // 동적으로 봇 인스턴스 생성
+    const bot = createTelegramBot(telegramBotToken);
+    if (!bot) {
+      return res.status(400).json({ 
+        error: '텔레그램 봇 생성에 실패했습니다. 토큰을 확인하세요.' 
       });
     }
 
@@ -67,7 +93,7 @@ ${notesList}
     }
 
     // 계정 이름 확인 (선택한 계정이 있으면 해당 계정 이름 사용)
-    const filterAccountId = req.user.filterAccountId || req.user.accountId;
+    // filterAccountId는 이미 위에서 선언됨
     let accountName = req.user.displayName || req.user.username || `계정 #${filterAccountId}`;
 
     if (req.user.filterAccountId && req.user.filterAccountId !== req.user.accountId) {
@@ -101,7 +127,7 @@ ${notesList}
 🧮 *오늘 시작 금액:* ${formatNumber(startAmountValue)}원
 ✅ 시작 금액이 전송되었습니다.`.trim();
 
-      await bot.sendMessage(CHAT_ID, startMessage, { parse_mode: 'Markdown' });
+      await bot.sendMessage(telegramChatId, startMessage, { parse_mode: 'Markdown' });
 
       return res.json({
         success: true,
@@ -133,7 +159,7 @@ ${specialNotesText}
     `.trim();
 
     // 텔레그램으로 메시지 전송
-    await bot.sendMessage(CHAT_ID, message, { parse_mode: 'Markdown' });
+    await bot.sendMessage(telegramChatId, message, { parse_mode: 'Markdown' });
     
     // 정산 관리에 수익 등록 (요청된 날짜의 월 데이터만)
     const dayNumber = parseInt(date.split('-')[2], 10);
@@ -209,13 +235,57 @@ ${specialNotesText}
   }
 });
 
-// 봇 설정 확인
-router.get('/status', (req, res) => {
-  res.json({
-    configured: !!(bot && CHAT_ID),
-    hasToken: !!BOT_TOKEN,
-    hasChatId: !!CHAT_ID
-  });
+// 봇 설정 확인 (사용자의 사무실 텔레그램 설정 확인)
+router.get('/status', auth, async (req, res) => {
+  try {
+    const filterAccountId = req.user.filterAccountId || req.user.accountId;
+    let officeId = null;
+    
+    try {
+      const accountRow = await db.get('SELECT office_id FROM accounts WHERE id = ?', [filterAccountId]);
+      if (accountRow && accountRow.office_id) {
+        officeId = accountRow.office_id;
+      }
+    } catch (e) {
+      console.warn('계정의 office_id 조회 실패:', e.message);
+    }
+    
+    if (!officeId) {
+      return res.json({
+        configured: false,
+        hasToken: false,
+        hasChatId: false,
+        message: '사무실이 설정되지 않았습니다'
+      });
+    }
+    
+    let telegramBotToken = null;
+    let telegramChatId = null;
+    
+    try {
+      const officeRow = await db.get(
+        'SELECT telegram_bot_token, telegram_chat_id FROM offices WHERE id = ?',
+        [officeId]
+      );
+      
+      if (officeRow) {
+        telegramBotToken = officeRow.telegram_bot_token || null;
+        telegramChatId = officeRow.telegram_chat_id || null;
+      }
+    } catch (e) {
+      console.warn('사무실 텔레그램 설정 조회 실패:', e.message);
+    }
+    
+    res.json({
+      configured: !!(telegramBotToken && telegramChatId),
+      hasToken: !!telegramBotToken,
+      hasChatId: !!telegramChatId,
+      officeId: officeId
+    });
+  } catch (error) {
+    console.error('텔레그램 설정 확인 오류:', error);
+    res.status(500).json({ error: '텔레그램 설정 확인에 실패했습니다: ' + error.message });
+  }
 });
 
 // 숫자 포맷팅 함수

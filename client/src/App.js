@@ -194,9 +194,9 @@ function App() {
                 <Route 
                   path="offices" 
                   element={
-                    <AdminRoute>
+                    <ProtectedRoute>
                       <OfficeManagement />
-                    </AdminRoute>
+                    </ProtectedRoute>
                   } 
                 />
                 <Route 

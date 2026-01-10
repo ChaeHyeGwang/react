@@ -188,10 +188,13 @@ const Layout = () => {
       { to: '/start', label: '시작', icon: '🚀' },
       { to: '/finish', label: '마무리', icon: '🏁' },
     ]),
-    // 슈퍼관리자 전용 메뉴 (사무실 관리자는 항상 숨김)
+    // 슈퍼관리자 전용 메뉴
     ...(isAdmin && !isOfficeManager ? [
-      { to: '/offices', label: '사무실 관리', icon: '🏢', alwaysShow: true },
       { to: '/backup', label: '백업 관리', icon: '💾' }
+    ] : []),
+    // 사무실 관리 메뉴 (슈퍼관리자 또는 사무실 관리자)
+    ...(isAdmin || isOfficeManager ? [
+      { to: '/offices', label: '사무실 관리', icon: '🏢', alwaysShow: true }
     ] : [])
   ];
 

@@ -80,7 +80,7 @@ if (process.env.NODE_ENV === 'production') {
 
 // Body parser
 app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 // 라우트 한글 이름 태깅 → API 로그
 app.use(routeNamer);

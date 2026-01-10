@@ -31,6 +31,7 @@ class DatabaseManager {
           console.log('✅ SQLite 데이터베이스 연결 성공:', this.dbPath);
           // 성능 최적화 설정만 실행 (기존 DB 파일 사용, 자동 생성/마이그레이션 비활성화)
           this.optimizeDatabase()
+            .then(() => this.addTelegramColumnsToOffices())
             .then(() => this.ensureIndexes())
             .then(resolve)
             .catch(reject);
@@ -1295,6 +1296,65 @@ class DatabaseManager {
           console.log('✅ 데이터베이스 연결 종료');
           resolve();
         }
+      });
+    });
+  }
+
+  // offices 테이블에 텔레그램 컬럼 추가 마이그레이션
+  async addTelegramColumnsToOffices() {
+    return new Promise((resolve, reject) => {
+      // 먼저 컬럼이 존재하는지 확인
+      this.db.all("PRAGMA table_info(offices)", (err, columns) => {
+        if (err) {
+          console.warn('⚠️ offices 테이블 정보 조회 실패:', err.message);
+          return resolve(); // 테이블이 없을 수도 있으므로 에러 무시
+        }
+        
+        const hasBotToken = columns.some(col => col.name === 'telegram_bot_token');
+        const hasChatId = columns.some(col => col.name === 'telegram_chat_id');
+        
+        if (hasBotToken && hasChatId) {
+          console.log('✅ 텔레그램 컬럼이 이미 존재합니다');
+          return resolve();
+        }
+        
+        console.log('📝 offices 테이블에 텔레그램 컬럼 추가 시작...');
+        
+        const alterStatements = [];
+        if (!hasBotToken) {
+          alterStatements.push('ALTER TABLE offices ADD COLUMN telegram_bot_token TEXT DEFAULT ""');
+        }
+        if (!hasChatId) {
+          alterStatements.push('ALTER TABLE offices ADD COLUMN telegram_chat_id TEXT DEFAULT ""');
+        }
+        
+        if (alterStatements.length === 0) {
+          return resolve();
+        }
+        
+        let completed = 0;
+        let hasError = false;
+        
+        alterStatements.forEach((sql) => {
+          this.db.run(sql, (err) => {
+            if (err && !err.message.includes('duplicate column')) {
+              console.error('❌ 텔레그램 컬럼 추가 실패:', err.message);
+              hasError = true;
+            }
+            
+            completed++;
+            
+            if (completed === alterStatements.length) {
+              if (hasError) {
+                console.warn('⚠️ 일부 텔레그램 컬럼 추가 실패 (계속 진행)');
+                resolve(); // 에러가 있어도 계속 진행
+              } else {
+                console.log('✅ 텔레그램 컬럼 추가 완료');
+                resolve();
+              }
+            }
+          });
+        });
       });
     });
   }

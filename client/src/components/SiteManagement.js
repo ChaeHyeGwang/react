@@ -2977,7 +2977,7 @@ const SiteManagement = () => {
         <div className="overflow-x-auto rounded-2xl shadow-2xl border border-gray-100 dark:border-gray-800 bg-white dark:bg-gray-900/50 backdrop-blur-sm">
           <table className="min-w-[960px] w-full text-base">
             <thead>
-              <tr className="bg-gradient-to-br from-slate-800 via-slate-700 to-slate-800 dark:from-slate-900 dark:via-slate-800 dark:to-slate-900">
+              <tr className="bg-gradient-to-br from-blue-600 via-blue-500 to-blue-600 dark:from-slate-900 dark:via-slate-800 dark:to-slate-900">
                 {/* 전체 모드에서 명의명 컬럼 추가 */}
                 {selectedIdentity?.id === 'all' && (
                   <th className="px-5 py-5 text-center font-semibold text-white text-sm tracking-widest border-r border-white/10 first:rounded-tl-2xl">
@@ -3102,7 +3102,7 @@ const SiteManagement = () => {
                             e.stopPropagation();
                             startEditingCell(site.id, field, value);
                           }}
-                          className="cursor-pointer hover:bg-blue-50 dark:hover:bg-gray-700 px-2 py-1 rounded text-center font-medium text-white dark:text-white"
+                          className="cursor-pointer hover:bg-blue-50 dark:hover:bg-gray-700 px-2 py-1 rounded text-center font-medium text-gray-900 dark:text-white"
                           title="더블클릭하여 수정"
                         >
                           {value || '-'}
@@ -3976,7 +3976,7 @@ const SiteManagement = () => {
         <div className="overflow-x-auto rounded-2xl shadow-2xl border border-gray-100 dark:border-gray-800 bg-white dark:bg-gray-900/50 backdrop-blur-sm">
           <table className="min-w-[960px] w-full text-base">
             <thead>
-              <tr className="bg-gradient-to-br from-slate-800 via-slate-700 to-slate-800 dark:from-slate-900 dark:via-slate-800 dark:to-slate-900">
+              <tr className="bg-gradient-to-br from-blue-600 via-blue-500 to-blue-600 dark:from-slate-900 dark:via-slate-800 dark:to-slate-900">
                 <th className="px-5 py-5 text-center font-semibold text-white text-sm tracking-widest border-r border-white/10 first:rounded-tl-2xl">
                   <span className="flex items-center justify-center gap-2">
                     <span className="w-1.5 h-1.5 rounded-full bg-white/60"></span>
@@ -4191,7 +4191,7 @@ const SiteManagement = () => {
                             e.stopPropagation();
                             startEditingCommunityCell(community.id, field, value);
                           }}
-                          className={`cursor-pointer hover:bg-blue-50 dark:hover:bg-gray-700 px-2 py-1 rounded text-center font-medium text-white dark:text-white ${className}`}
+                          className={`cursor-pointer hover:bg-blue-50 dark:hover:bg-gray-700 px-2 py-1 rounded text-center font-medium text-gray-900 dark:text-white ${className}`}
                           title="더블클릭하여 수정"
                         >
                           {value || '-'}
