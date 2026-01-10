@@ -5,7 +5,10 @@ const db = require('../database/db');
 const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
 
-const dbPath = path.join(__dirname, '..', 'database', 'management_system.db');
+// DB_PATH 환경변수 사용 (settlements.js와 동일하게)
+const dbPath = process.env.DB_PATH 
+  ? path.resolve(process.cwd(), process.env.DB_PATH)
+  : path.join(__dirname, '..', 'database', 'management_system.db');
 const dbLegacy = new sqlite3.Database(dbPath);
 
 // 대시보드 요약 정보 조회 (정산관리 수익 기반)
