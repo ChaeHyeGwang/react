@@ -12,8 +12,24 @@ const DEBUG = false;
 const log = DEBUG ? console.log.bind(console) : () => {};
 const logWarn = DEBUG ? console.warn.bind(console) : () => {};
 const logTable = DEBUG ? console.table.bind(console) : () => {};
- 
 
+// Debounce 유틸리티 훅 (서버 부하 감소용)
+const useDebounce = (value, delay) => {
+  const [debouncedValue, setDebouncedValue] = React.useState(value);
+
+  React.useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedValue(value);
+    }, delay);
+
+    return () => {
+      clearTimeout(handler);
+    };
+  }, [value, delay]);
+
+  return debouncedValue;
+};
+ 
 // 한국 시간 기준 날짜 문자열 반환 (YYYY-MM-DD)
 function getKSTDateString(date = null) {
   const now = date ? new Date(date) : new Date();
@@ -125,6 +141,7 @@ function DRBet() {
   const previousCombosRef = useRef(null); // 이전 사이트/명의 조합 (중복 호출 방지용)
   const savingRecordRef = useRef({}); // 레코드 저장 중복 방지: { recordId: true }
   const isFirstMountRef = useRef(true); // 초기 마운트 여부 (중복 API 호출 방지)
+  const fetchingDailySummaryRef = useRef(false); // fetchDailySummary 중복 호출 방지
 
   // 사이트 정보 기록(출석구분 등) 변경 전파용 이벤트 리스너
   useEffect(() => {
@@ -303,7 +320,8 @@ function DRBet() {
   useEffect(() => {
     loadRecords();
     loadIdentities(); // loadPendingSites는 loadIdentities 내부에서 처리됨
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // 초기 마운트 시에만 실행
   
   // 계정 전환 시 데이터 다시 로드 (초기 마운트 제외)
   useEffect(() => {
@@ -320,7 +338,8 @@ function DRBet() {
       setPaybackData([]);
       setSettlementBanners([]);
     }
-  }, [selectedAccountId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedAccountId]); // loadRecords, loadIdentities는 useCallback으로 안정적이므로 의존성 제외
   
   // 출석 타입 및 연속 출석일 로드 (통합된 useEffect - 중복 제거)
   const loadAttendanceData = useCallback(async (targetRecords, previousCombos = null) => {
@@ -565,48 +584,23 @@ function DRBet() {
     }
   }, [selectedDate, allRecords, filteredRecords, loadAttendanceData, editingCell, getAttendanceCacheKey]);
 
-  const loadRecords = async (force = false) => {
+  // 성능 최적화: useCallback으로 메모이제이션 + N+1 문제 해결
+  const loadRecords = useCallback(async (force = false) => {
     try {
       if (editingLockRef.current && !force) return; // 편집 중에는 외부 로드 차단 (강제 아니면)
       const response = await axiosInstance.get('/drbet');
       const records = response.data;
       
-      // 각 레코드에 대해 출석일 조회하여 추가 (선택된 날짜의 레코드만)
-      const recordsWithAttendance = await Promise.all(records.map(async (record) => {
-        // 선택된 날짜의 레코드만 출석일 조회 (성능 최적화)
-        if (record.record_date !== selectedDate) return record;
-        
-        const updatedRecord = { ...record };
-        for (let i = 1; i <= 4; i++) {
-          const identityName = record[`identity${i}`];
-          const siteName = record[`site_name${i}`];
-          if (!identityName || !siteName) continue;
-          
-          try {
-            const stats = await getAttendanceStats(siteName, identityName);
-            const days = stats?.consecutiveDays || 0;
-            updatedRecord[`_attendanceDays_${i}`] = days;
-            
-            // 캐시에도 저장
-            const attendanceCacheKey = getAttendanceCacheKey(siteName, identityName);
-            attendanceStatsCacheRef.current[attendanceCacheKey] = {
-              consecutiveDays: days,
-              timestamp: Date.now()
-            };
-          } catch (err) {
-            // 에러 무시
-          }
-        }
-        return updatedRecord;
-      }));
-      
-      setAllRecords(recordsWithAttendance);
+      // 성능 최적화: 개별 getAttendanceStats 호출 제거
+      // 출석일 데이터는 loadAttendanceData에서 배치 API로 한 번에 조회하므로
+      // 여기서는 레코드만 로드하고 출석일은 나중에 loadAttendanceData에서 처리
+      setAllRecords(records);
       setRefreshTick((t) => t + 1);
     } catch (error) {
       console.error('DR벳 기록 로드 실패:', error);
       toast.error('DR벳 기록을 불러오는데 실패했습니다');
     }
-  };
+  }, [selectedDate]); // selectedDate는 의존성에 포함 (필요시 사용)
 
   const fetchDailySummary = useCallback(async () => {
     if (!selectedDate) {
@@ -616,6 +610,14 @@ function DRBet() {
       setPaybackClearedMap({});
       return;
     }
+    
+    // 성능 최적화: 중복 호출 방지
+    if (fetchingDailySummaryRef.current) {
+      log('[클라이언트] fetchDailySummary: 이미 호출 중 - 스킵');
+      return;
+    }
+    
+    fetchingDailySummaryRef.current = true;
     log(`[클라이언트] fetchDailySummary 호출: selectedDate=${selectedDate}`);
     try {
       log(`[클라이언트] API 호출: GET /drbet/summary/${selectedDate}`);
@@ -645,6 +647,9 @@ function DRBet() {
       setPaybackData([]);
       setSettlementBanners([]);
       setPaybackClearedMap({});
+    } finally {
+      // 성능 최적화: 중복 호출 방지 플래그 해제
+      fetchingDailySummaryRef.current = false;
     }
   }, [selectedAccountId, selectedDate]);
 
@@ -2040,8 +2045,15 @@ function DRBet() {
         }
       }
       
-      // 레코드 다시 불러오기
-      await loadRecords();
+      // 성능 최적화: 전체 목록 재로드 대신 로컬 상태만 업데이트
+      setRecords(prev => prev.map(r => 
+        r.id === record.id ? updatedRecord : r
+      ));
+      setAllRecords(prev => prev.map(r => 
+        r.id === record.id ? updatedRecord : r
+      ));
+      setRefreshTick(prev => prev + 1);
+      
       toast.success('사이트 정보가 삭제되었습니다');
     } catch (error) {
       console.error('사이트 삭제 실패:', error);
@@ -2134,15 +2146,30 @@ function DRBet() {
     const normalizedSite = normalizeName(siteValue);
     const mapKey = `${normalizedIdentity}||${normalizedSite}`;
     
-    // 우선순위: 레코드 필드 > ref 캐시 > state 캐시
+    // 우선순위: 레코드 필드 > 레코드 맵 > ref 캐시 > state 캐시
     const recordFieldValue = record[`_attendanceDays_${siteIndex}`];
     const recordMapValue = record._attendanceDays?.[mapKey];
     const refCacheValue = attendanceStatsCacheRef.current[cacheKey]?.consecutiveDays;
     const stateValue = siteAttendanceDays[cacheKey];
     
-    const attendanceDays = recordFieldValue !== undefined ? recordFieldValue
-      : (recordMapValue !== undefined ? recordMapValue 
-        : (refCacheValue !== undefined ? refCacheValue : (stateValue || 0)));
+    // 우선순위: 레코드 필드 > 레코드 맵 > ref 캐시 > state 캐시
+    // 레코드 필드가 undefined가 아닌 경우에도, 값이 0이면 레코드 맵을 확인 (업데이트된 값이 있을 수 있음)
+    let attendanceDays;
+    
+    // 레코드 맵을 우선 확인 (가장 최신 값)
+    if (recordMapValue !== undefined && recordMapValue !== null) {
+      attendanceDays = recordMapValue;
+    } else if (recordFieldValue !== undefined && recordFieldValue !== null) {
+      // 레코드 필드에 값이 있으면 사용
+      attendanceDays = recordFieldValue;
+    } else if (refCacheValue !== undefined && refCacheValue !== null) {
+      // ref 캐시에 값이 있으면 사용
+      attendanceDays = refCacheValue;
+    } else {
+      // state 캐시 사용 (없으면 0)
+      attendanceDays = stateValue || 0;
+    }
+    
     
     // 출석 상태 확인 (DB 값 우선, 없으면 state)
     const attendanceField = `attendance${siteIndex}`;
@@ -2674,10 +2701,19 @@ function DRBet() {
         }
       }
       
-      // 사이트 정보 가져오기
-      const siteNotes = await fetchSiteNotes(siteName, identityName || null);
-      const currentData = siteNotes?.data || {};
-      const attendanceType = currentData.attendanceType || '자동';
+      // 성능 최적화: 캐시에서 먼저 확인
+      const notesCacheKey = getSiteNotesCacheKey(siteName, identityName || null);
+      let attendanceType = '자동'; // 기본값
+      
+      if (siteNotesCacheRef.current[notesCacheKey]) {
+        // 캐시에서 출석구분 확인
+        attendanceType = siteNotesCacheRef.current[notesCacheKey]?.data?.attendanceType || '자동';
+      } else {
+        // 캐시에 없으면 조회 (하지만 서버에서 자동 처리되므로 실제로는 불필요할 수 있음)
+        const siteNotes = await fetchSiteNotes(siteName, identityName || null);
+        const currentData = siteNotes?.data || {};
+        attendanceType = currentData.attendanceType || '자동';
+      }
       
       // 출석구분이 "자동"이 아니면 처리하지 않음
       if (attendanceType !== '자동') {
@@ -5656,7 +5692,8 @@ function DRBet() {
       const identityName = record[identityField] || '';
       const siteName = record[siteField] || '';
       
-      // 충환전 필드 변경 시 출석일 처리
+      // 충환전 필드 변경 시 출석일 처리 (서버 저장 전에 미리 처리)
+      // 주의: 서버 저장 후에도 출석일을 다시 조회하므로 여기서는 출석일 감소/증가만 처리
       if (identityName && siteName) {
         await handleAutoAttendance(siteName, identityName, oldChargeWithdraw, editingValue || '', record, parseInt(index));
       }
@@ -5730,96 +5767,404 @@ function DRBet() {
         toast.success('DR벳 기록이 추가되었습니다');
         const saved = response.data;
         
-        // 저장 후 출석일을 별도로 조회하여 확실하게 반영
+        // 성능 최적화: 배치 API로 출석일 한 번에 조회
         const savedWithDays = { ...saved };
         
+        // 새 레코드 생성 시에는 항상 출석일 조회 (조건 없이)
+        // 기존 레코드 수정 시에는 충전금액/명의/사이트 필드 변경 시에만 조회
+        
+        // 조회할 사이트/명의 목록 수집
+        const sitesToLoad = [];
         for (let i = 1; i <= 4; i++) {
           const identityName = saved[`identity${i}`];
           const siteName = saved[`site_name${i}`];
-          if (!identityName || !siteName) continue;
+          if (identityName && siteName) {
+            sitesToLoad.push({ siteName, identityName, index: i });
+          }
+        }
+        
+        // 배치 API로 한 번에 조회 (N+1 문제 해결)
+        // 새 레코드 생성 시에는 항상 출석일 조회하여 즉시 반영
+        const daysUpdates = {}; // state 업데이트를 모아서 한 번에 처리 (스코프 확장)
+        
+        // 서버 응답에 출석일 정보가 포함되어 있으면 우선 사용
+        if (saved._attendanceDays && typeof saved._attendanceDays === 'object') {
+          Object.entries(saved._attendanceDays).forEach(([key, days]) => {
+            const [identityName, siteName] = key.split('||');
+            if (identityName && siteName && days !== undefined) {
+              // 사이트 인덱스 찾기
+              for (let i = 1; i <= 4; i++) {
+                const savedIdentity = saved[`identity${i}`];
+                const savedSite = saved[`site_name${i}`];
+                if (normalizeName(savedIdentity) === normalizeName(identityName) && 
+                    normalizeName(savedSite) === normalizeName(siteName)) {
+                  savedWithDays[`_attendanceDays_${i}`] = days || 0;
+                  if (!savedWithDays._attendanceDays) {
+                    savedWithDays._attendanceDays = {};
+                  }
+                  savedWithDays._attendanceDays[key] = days || 0;
+                  
+                  const attendanceCacheKey = getAttendanceCacheKey(siteName, identityName);
+                  attendanceStatsCacheRef.current[attendanceCacheKey] = {
+                    consecutiveDays: days || 0,
+                    timestamp: Date.now()
+                  };
+                  daysUpdates[attendanceCacheKey] = days || 0;
+                  break;
+                }
+              }
+            }
+          });
+        }
+        
+        // 서버 응답에 출석일이 없거나 불완전한 경우 API로 조회 (재시도 로직 포함)
+        // 모든 사이트에 대한 출석일이 서버 응답에 포함되어 있는지 확인
+        const allSitesHaveDays = sitesToLoad.every(({ siteName, identityName }) => {
+          const normalizedIdentity = normalizeName(identityName);
+          const normalizedSite = normalizeName(siteName);
+          const mapKey = `${normalizedIdentity}||${normalizedSite}`;
+          return saved._attendanceDays && saved._attendanceDays[mapKey] !== undefined;
+        });
+        
+        // 새 레코드 생성 시에는 항상 출석일 조회 (서버 응답에 모든 사이트의 출석일이 없으면)
+        if (sitesToLoad.length > 0 && !allSitesHaveDays) {
+          // 서버에서 출석일 업데이트가 완료될 때까지 대기 (재시도 로직)
+          const fetchAttendanceWithRetry = async (retries = 8, initialDelay = 300) => {
+            for (let i = 0; i < retries; i++) {
+              try {
+                // 첫 번째 시도는 약간의 지연 후, 이후는 더 긴 지연 후 재시도
+                // 지연 시간: 300ms, 600ms, 900ms, 1200ms, 1500ms, 1800ms, 2100ms, 2400ms
+                await new Promise(resolve => setTimeout(resolve, initialDelay * (i + 1)));
+                
+                const attendanceResponse = await axiosInstance.post('/attendance/stats/batch', {
+                  sites: sitesToLoad.map(({ siteName, identityName }) => ({ siteName, identityName }))
+                });
+                
+                if (attendanceResponse.data?.success && Array.isArray(attendanceResponse.data.results)) {
+                  return attendanceResponse.data.results;
+                }
+              } catch (err) {
+                if (i === retries - 1) {
+                  console.error('배치 출석일 조회 실패 (최종 시도):', err);
+                  throw err;
+                }
+              }
+            }
+            return [];
+          };
           
           try {
-            // 출석일 API 조회 (서버에서 커밋된 후 조회하므로 확실)
-            const stats = await getAttendanceStats(siteName, identityName);
-            const days = stats?.consecutiveDays || 0;
+            const results = await fetchAttendanceWithRetry();
             
-            // 레코드에 직접 출석일 저장
-            savedWithDays[`_attendanceDays_${i}`] = days;
-            // ref 캐시에도 저장
-            const attendanceCacheKey = getAttendanceCacheKey(siteName, identityName);
-            attendanceStatsCacheRef.current[attendanceCacheKey] = {
-              consecutiveDays: days,
-              timestamp: Date.now()
-            };
+            results.forEach((result, idx) => {
+              const { siteName, identityName, consecutiveDays, error } = result;
+              const { index } = sitesToLoad[idx];
+              
+              if (!error && consecutiveDays !== undefined) {
+                // 레코드에 직접 출석일 저장 (UI 즉시 반영)
+                savedWithDays[`_attendanceDays_${index}`] = consecutiveDays || 0;
+                
+                // 레코드 맵에도 저장 (우선순위 2번 경로)
+                if (!savedWithDays._attendanceDays) {
+                  savedWithDays._attendanceDays = {};
+                }
+                const normalizedIdentity = normalizeName(identityName);
+                const normalizedSite = normalizeName(siteName);
+                const mapKey = `${normalizedIdentity}||${normalizedSite}`;
+                savedWithDays._attendanceDays[mapKey] = consecutiveDays || 0;
+                
+                // ref 캐시에도 저장 (이전 값 덮어쓰기)
+                const attendanceCacheKey = getAttendanceCacheKey(siteName, identityName);
+                attendanceStatsCacheRef.current[attendanceCacheKey] = {
+                  consecutiveDays: consecutiveDays || 0,
+                  timestamp: Date.now()
+                };
+                
+                // state 업데이트를 모아서 처리
+                daysUpdates[attendanceCacheKey] = consecutiveDays || 0;
+                
+              }
+            });
           } catch (err) {
-            console.error('출석일 조회 실패:', err);
+            console.error('배치 출석일 조회 실패:', err);
           }
         }
         
         // 모든 state 업데이트를 flushSync로 동기적으로 처리하여 즉시 렌더링
+        // 출석일 조회 완료 후 레코드 업데이트 (출석일이 포함된 savedWithDays 사용)
         flushSync(() => {
           // tmp 레코드를 서버 레코드로 교체 (출석일 포함)
-          setRecords((prev) => prev.map((r) => (r.tmpId && r.tmpId === record.tmpId ? { ...savedWithDays, tmpId: undefined, isNew: false } : r)));
-          setAllRecords((prev) => prev.map((r) => (r.tmpId && r.tmpId === record.tmpId ? { ...savedWithDays, tmpId: undefined, isNew: false } : r)));
+          // 출석일 필드들을 명시적으로 포함하여 업데이트
+          setRecords((prev) => prev.map((r) => {
+            if (r.tmpId && r.tmpId === record.tmpId) {
+              const updated = { ...savedWithDays, tmpId: undefined, isNew: false };
+              // 출석일 필드들이 제대로 포함되었는지 확인
+              for (let i = 1; i <= 4; i++) {
+                if (savedWithDays[`_attendanceDays_${i}`] !== undefined) {
+                  updated[`_attendanceDays_${i}`] = savedWithDays[`_attendanceDays_${i}`];
+                }
+              }
+              if (savedWithDays._attendanceDays) {
+                // 기존 _attendanceDays 맵을 완전히 교체 (이전 값이 남아있지 않도록)
+                updated._attendanceDays = { ...savedWithDays._attendanceDays };
+              }
+              return updated;
+            }
+            return r;
+          }));
+          setAllRecords((prev) => prev.map((r) => {
+            if (r.tmpId && r.tmpId === record.tmpId) {
+              const updated = { ...savedWithDays, tmpId: undefined, isNew: false };
+              // 출석일 필드들이 제대로 포함되었는지 확인
+              for (let i = 1; i <= 4; i++) {
+                if (savedWithDays[`_attendanceDays_${i}`] !== undefined) {
+                  updated[`_attendanceDays_${i}`] = savedWithDays[`_attendanceDays_${i}`];
+                }
+              }
+              if (savedWithDays._attendanceDays) {
+                // 기존 _attendanceDays 맵을 완전히 교체 (이전 값이 남아있지 않도록)
+                updated._attendanceDays = { ...savedWithDays._attendanceDays };
+              }
+              return updated;
+            }
+            return r;
+          }));
+          
+          // 출석일 state도 함께 업데이트 (다른 곳에서 참조할 수 있음)
+          if (Object.keys(daysUpdates).length > 0) {
+            setSiteAttendanceDays(prev => ({
+              ...prev,
+              ...daysUpdates
+            }));
+          }
           
           // 리렌더링 트리거
           setRefreshTick((t) => t + 1);
         });
         
-        // 확실하게 최신 출석일 반영을 위해 레코드 다시 로드
-        await loadRecords(true);
+        // 성능 최적화: 전체 목록 재로드 제거 (로컬 상태만 업데이트)
       } else {
         // 기존 기록 수정 → 서버 응답 받아서 상태 업데이트
         const response = await axiosInstance.put(`/drbet/${record.id}`, updatedRecord);
         const saved = response.data || updatedRecord; // 서버 응답이 있으면 사용, 없으면 업데이트된 레코드 사용
+        
         toast.success('DR벳 기록이 수정되었습니다');
         
-        // 저장 후 출석일을 별도로 조회하여 확실하게 반영
+        // 성능 최적화: 배치 API로 출석일 한 번에 조회
         const savedWithDays = { ...saved };
+        // 출석일 필드와 맵 초기화 (이전 값이 남아있지 않도록)
+        savedWithDays._attendanceDays = savedWithDays._attendanceDays || {};
+        for (let i = 1; i <= 4; i++) {
+          if (savedWithDays[`_attendanceDays_${i}`] === undefined) {
+            savedWithDays[`_attendanceDays_${i}`] = undefined; // 명시적으로 undefined로 설정
+          }
+        }
         
-        // 각 사이트에 대해 출석일 조회
+        // 기존 레코드 수정 시에는 충전금액/명의/사이트 필드 변경 시에만 조회
+        const needsAttendanceRefresh = field.startsWith('charge_withdraw') || 
+                                       field.startsWith('identity') || 
+                                       field.startsWith('site_name');
+        
+        // 조회할 사이트/명의 목록 수집
+        const sitesToLoad = [];
         for (let i = 1; i <= 4; i++) {
           const identityName = saved[`identity${i}`];
           const siteName = saved[`site_name${i}`];
-          if (!identityName || !siteName) continue;
+          if (identityName && siteName) {
+            sitesToLoad.push({ siteName, identityName, index: i });
+          }
+        }
+        
+        // 배치 API로 한 번에 조회 (N+1 문제 해결)
+        // 기존 레코드 수정 시에는 충전금액/명의/사이트 필드 변경 시에만 조회
+        const daysUpdates = {}; // state 업데이트를 모아서 한 번에 처리 (스코프 확장)
+        
+        // 서버 응답에 출석일 정보가 포함되어 있으면 우선 사용
+        if (saved._attendanceDays && typeof saved._attendanceDays === 'object') {
+          Object.entries(saved._attendanceDays).forEach(([key, days]) => {
+            const [identityName, siteName] = key.split('||');
+            
+            if (identityName && siteName && days !== undefined && days !== null) {
+              // 사이트 인덱스 찾기
+              for (let i = 1; i <= 4; i++) {
+                const savedIdentity = saved[`identity${i}`];
+                const savedSite = saved[`site_name${i}`];
+                const normalizedSavedIdentity = normalizeName(savedIdentity || '');
+                const normalizedSavedSite = normalizeName(savedSite || '');
+                const normalizedKeyIdentity = normalizeName(identityName);
+                const normalizedKeySite = normalizeName(siteName);
+                
+                if (normalizedSavedIdentity === normalizedKeyIdentity && 
+                    normalizedSavedSite === normalizedKeySite) {
+                  // 레코드 필드에 직접 저장
+                  savedWithDays[`_attendanceDays_${i}`] = days || 0;
+                  
+                  // 레코드 맵에도 저장
+                  if (!savedWithDays._attendanceDays) {
+                    savedWithDays._attendanceDays = {};
+                  }
+                  savedWithDays._attendanceDays[key] = days || 0;
+                  
+                  // ref 캐시에도 저장 (이전 값 덮어쓰기)
+                  const attendanceCacheKey = getAttendanceCacheKey(siteName, identityName);
+                  attendanceStatsCacheRef.current[attendanceCacheKey] = {
+                    consecutiveDays: days || 0,
+                    timestamp: Date.now()
+                  };
+                  
+                  // state 업데이트를 모아서 처리
+                  daysUpdates[attendanceCacheKey] = days || 0;
+                  break;
+                }
+              }
+            }
+          });
+        }
+        
+        // 서버 응답에 출석일이 없거나 불완전한 경우 API로 조회 (재시도 로직 포함)
+        // 모든 사이트에 대한 출석일이 서버 응답에 포함되어 있는지 확인
+        const allSitesHaveDays = sitesToLoad.every(({ siteName, identityName }) => {
+          const normalizedIdentity = normalizeName(identityName);
+          const normalizedSite = normalizeName(siteName);
+          const mapKey = `${normalizedIdentity}||${normalizedSite}`;
+          return saved._attendanceDays && saved._attendanceDays[mapKey] !== undefined;
+        });
+        
+        if (sitesToLoad.length > 0 && needsAttendanceRefresh && !allSitesHaveDays) {
+          // 서버에서 출석일 업데이트가 완료될 때까지 대기 (재시도 로직)
+          const fetchAttendanceWithRetry = async (retries = 8, initialDelay = 300) => {
+            for (let i = 0; i < retries; i++) {
+              try {
+                // 첫 번째 시도는 약간의 지연 후, 이후는 더 긴 지연 후 재시도
+                // 지연 시간: 300ms, 600ms, 900ms, 1200ms, 1500ms, 1800ms, 2100ms, 2400ms
+                await new Promise(resolve => setTimeout(resolve, initialDelay * (i + 1)));
+                
+                const attendanceResponse = await axiosInstance.post('/attendance/stats/batch', {
+                  sites: sitesToLoad.map(({ siteName, identityName }) => ({ siteName, identityName }))
+                });
+                
+                if (attendanceResponse.data?.success && Array.isArray(attendanceResponse.data.results)) {
+                  return attendanceResponse.data.results;
+                }
+              } catch (err) {
+                if (i === retries - 1) {
+                  console.error('배치 출석일 조회 실패 (최종 시도):', err);
+                  throw err;
+                }
+              }
+            }
+            return [];
+          };
           
           try {
-            // 출석일 API 조회 (서버에서 커밋된 후 조회하므로 확실)
-            const stats = await getAttendanceStats(siteName, identityName);
-            const days = stats?.consecutiveDays || 0;
+            const results = await fetchAttendanceWithRetry();
             
-            // 레코드에 직접 출석일 저장
-            savedWithDays[`_attendanceDays_${i}`] = days;
-            
-            // ref 캐시에도 저장
-            const attendanceCacheKey = getAttendanceCacheKey(siteName, identityName);
-            attendanceStatsCacheRef.current[attendanceCacheKey] = {
-              consecutiveDays: days,
-              timestamp: Date.now()
-            };
+            results.forEach((result, idx) => {
+              const { siteName, identityName, consecutiveDays, error } = result;
+              const { index } = sitesToLoad[idx];
+              
+              if (!error && consecutiveDays !== undefined) {
+                // 레코드에 직접 출석일 저장 (UI 즉시 반영)
+                savedWithDays[`_attendanceDays_${index}`] = consecutiveDays || 0;
+                
+                // 레코드 맵에도 저장 (우선순위 2번 경로)
+                if (!savedWithDays._attendanceDays) {
+                  savedWithDays._attendanceDays = {};
+                }
+                const normalizedIdentity = normalizeName(identityName);
+                const normalizedSite = normalizeName(siteName);
+                const mapKey = `${normalizedIdentity}||${normalizedSite}`;
+                savedWithDays._attendanceDays[mapKey] = consecutiveDays || 0;
+                
+                // ref 캐시에도 저장 (이전 값 덮어쓰기)
+                const attendanceCacheKey = getAttendanceCacheKey(siteName, identityName);
+                attendanceStatsCacheRef.current[attendanceCacheKey] = {
+                  consecutiveDays: consecutiveDays || 0,
+                  timestamp: Date.now()
+                };
+                
+                // state 업데이트를 모아서 처리
+                daysUpdates[attendanceCacheKey] = consecutiveDays || 0;
+                
+              }
+            });
           } catch (err) {
-            console.error('출석일 조회 실패:', err);
+            console.error('배치 출석일 조회 실패:', err);
           }
         }
         
         // 모든 state 업데이트를 flushSync로 동기적으로 처리하여 즉시 렌더링
+        // 출석일 조회 완료 후 레코드 업데이트 (출석일이 포함된 savedWithDays 사용)
         flushSync(() => {
           // 서버 응답으로 레코드 상태 업데이트 (출석일 포함)
+          // 출석일이 증가한 값이 화면에 즉시 반영되도록 savedWithDays의 모든 필드를 포함
           setRecords((prev) => prev.map((r) => {
             const match = (r.id || 'new') === (record.id || 'new');
-            return match ? { ...r, ...savedWithDays, _v: (r._v || 0) + 1 } : r;
+            if (match) {
+              // 출석일 필드들을 명시적으로 포함하여 업데이트
+              // savedWithDays의 모든 필드를 먼저 복사한 후, 출석일 필드를 명시적으로 덮어쓰기
+              const updated = { ...r, ...savedWithDays, _v: (r._v || 0) + 1 };
+              
+              // 출석일 필드들이 제대로 포함되었는지 확인 및 강제 설정
+              for (let i = 1; i <= 4; i++) {
+                // savedWithDays에 출석일이 있으면 무조건 설정 (undefined가 아닌 경우)
+                if (savedWithDays[`_attendanceDays_${i}`] !== undefined && savedWithDays[`_attendanceDays_${i}`] !== null) {
+                  updated[`_attendanceDays_${i}`] = savedWithDays[`_attendanceDays_${i}`];
+                }
+              }
+              
+              // _attendanceDays 맵을 완전히 교체 (이전 값이 남아있지 않도록)
+              if (savedWithDays._attendanceDays && typeof savedWithDays._attendanceDays === 'object' && Object.keys(savedWithDays._attendanceDays).length > 0) {
+                updated._attendanceDays = { ...savedWithDays._attendanceDays };
+              } else {
+                // 서버 응답에 출석일이 없으면 빈 객체로 설정
+                updated._attendanceDays = {};
+              }
+              
+              return updated;
+            }
+            return r;
           }));
           setAllRecords((prev) => prev.map((r) => {
             const match = (r.id || 'new') === (record.id || 'new');
-            return match ? { ...r, ...savedWithDays, _v: (r._v || 0) + 1 } : r;
+            if (match) {
+              // 출석일 필드들을 명시적으로 포함하여 업데이트
+              // savedWithDays의 모든 필드를 먼저 복사한 후, 출석일 필드를 명시적으로 덮어쓰기
+              const updated = { ...r, ...savedWithDays, _v: (r._v || 0) + 1 };
+              
+              // 출석일 필드들이 제대로 포함되었는지 확인 및 강제 설정
+              for (let i = 1; i <= 4; i++) {
+                // savedWithDays에 출석일이 있으면 무조건 설정 (undefined가 아닌 경우)
+                if (savedWithDays[`_attendanceDays_${i}`] !== undefined && savedWithDays[`_attendanceDays_${i}`] !== null) {
+                  updated[`_attendanceDays_${i}`] = savedWithDays[`_attendanceDays_${i}`];
+                }
+              }
+              
+              // _attendanceDays 맵을 완전히 교체 (이전 값이 남아있지 않도록)
+              if (savedWithDays._attendanceDays && typeof savedWithDays._attendanceDays === 'object' && Object.keys(savedWithDays._attendanceDays).length > 0) {
+                updated._attendanceDays = { ...savedWithDays._attendanceDays };
+              } else {
+                // 서버 응답에 출석일이 없으면 빈 객체로 설정
+                updated._attendanceDays = {};
+              }
+              return updated;
+            }
+            return r;
           }));
+          
+          // 출석일 state도 함께 업데이트 (다른 곳에서 참조할 수 있음)
+          if (Object.keys(daysUpdates).length > 0) {
+            setSiteAttendanceDays(prev => ({
+              ...prev,
+              ...daysUpdates
+            }));
+          }
           
           // 리렌더링 트리거
           setRefreshTick((t) => t + 1);
         });
         
-        // 확실하게 최신 출석일 반영을 위해 레코드 다시 로드
-        await loadRecords(true);
+        // 성능 최적화: 전체 목록 재로드 제거 (로컬 상태만 업데이트)
         
         // 이전 행의 값이 변경되면 다음 행들도 재계산 필요
         // 이전 행의 값(total_amount, rate_amount, charge_withdraw, site, notes)이 변경되면 다음 행들의 drbet_amount도 재계산
@@ -6602,16 +6947,215 @@ function DRBet() {
                   : (record[chargeWithdrawField] || '');
                 const updatedRecord = { ...record, [chargeWithdrawField]: currentVal };
                 
-                if (record.isNew || !record.id) {
-                  await axiosInstance.post('/drbet', updatedRecord);
-                } else {
-                  await axiosInstance.put(`/drbet/${record.id}`, updatedRecord);
+                // handleCellBlur와 동일하게 서버 저장 전에 handleAutoAttendance 호출
+                const identityValue = record[`identity${siteIndex}`] || '';
+                if (siteValue && identityValue) {
+                  await handleAutoAttendance(siteValue, identityValue, oldChargeWithdraw, currentVal, record, siteIndex);
                 }
                 
-                const identityValue = record[`identity${siteIndex}`] || '';
-                await handleAutoAttendance(siteValue, identityValue, oldChargeWithdraw, currentVal, record, siteIndex);
+                if (record.isNew || !record.id) {
+                  await axiosInstance.post('/drbet', updatedRecord);
+                  await loadRecords();
+                } else {
+                  const response = await axiosInstance.put(`/drbet/${record.id}`, updatedRecord);
+                  const saved = response.data || updatedRecord;
+                  
+                  // 성능 최적화: 배치 API로 출석일 한 번에 조회
+                  const savedWithDays = { ...saved };
+                  // 출석일 필드와 맵 초기화 (이전 값이 남아있지 않도록)
+                  savedWithDays._attendanceDays = savedWithDays._attendanceDays || {};
+                  for (let i = 1; i <= 4; i++) {
+                    if (savedWithDays[`_attendanceDays_${i}`] === undefined) {
+                      savedWithDays[`_attendanceDays_${i}`] = undefined;
+                    }
+                  }
+                  
+                  // 기존 레코드 수정 시에는 충전금액/명의/사이트 필드 변경 시에만 조회
+                  const needsAttendanceRefresh = true; // charge_withdraw 필드이므로 항상 true
+                  
+                  // 조회할 사이트/명의 목록 수집
+                  const sitesToLoad = [];
+                  for (let i = 1; i <= 4; i++) {
+                    const identityName = saved[`identity${i}`];
+                    const siteName = saved[`site_name${i}`];
+                    if (identityName && siteName) {
+                      sitesToLoad.push({ siteName, identityName, index: i });
+                    }
+                  }
+                  
+                  // 배치 API로 한 번에 조회 (N+1 문제 해결)
+                  const daysUpdates = {};
+                  
+                  // 서버 응답에 출석일 정보가 포함되어 있으면 우선 사용
+                  if (saved._attendanceDays && typeof saved._attendanceDays === 'object') {
+                    Object.entries(saved._attendanceDays).forEach(([key, days]) => {
+                      const [identityName, siteName] = key.split('||');
+                      
+                      if (identityName && siteName && days !== undefined && days !== null) {
+                        // 사이트 인덱스 찾기
+                        for (let i = 1; i <= 4; i++) {
+                          const savedIdentity = saved[`identity${i}`];
+                          const savedSite = saved[`site_name${i}`];
+                          const normalizedSavedIdentity = normalizeName(savedIdentity || '');
+                          const normalizedSavedSite = normalizeName(savedSite || '');
+                          const normalizedKeyIdentity = normalizeName(identityName);
+                          const normalizedKeySite = normalizeName(siteName);
+                          
+                          if (normalizedSavedIdentity === normalizedKeyIdentity && 
+                              normalizedSavedSite === normalizedKeySite) {
+                            // 레코드 필드에 직접 저장
+                            savedWithDays[`_attendanceDays_${i}`] = days || 0;
+                            
+                            // 레코드 맵에도 저장
+                            if (!savedWithDays._attendanceDays) {
+                              savedWithDays._attendanceDays = {};
+                            }
+                            savedWithDays._attendanceDays[key] = days || 0;
+                            
+                            // ref 캐시에도 저장 (이전 값 덮어쓰기)
+                            const attendanceCacheKey = getAttendanceCacheKey(siteName, identityName);
+                            attendanceStatsCacheRef.current[attendanceCacheKey] = {
+                              consecutiveDays: days || 0,
+                              timestamp: Date.now()
+                            };
+                            
+                            // state 업데이트를 모아서 처리
+                            daysUpdates[attendanceCacheKey] = days || 0;
+                            break;
+                          }
+                        }
+                      }
+                    });
+                  }
+                  
+                  // 서버 응답에 출석일이 없거나 불완전한 경우 API로 조회 (재시도 로직 포함)
+                  const allSitesHaveDays = sitesToLoad.every(({ siteName, identityName }) => {
+                    const normalizedIdentity = normalizeName(identityName);
+                    const normalizedSite = normalizeName(siteName);
+                    const mapKey = `${normalizedIdentity}||${normalizedSite}`;
+                    return saved._attendanceDays && saved._attendanceDays[mapKey] !== undefined;
+                  });
+                  
+                  if (sitesToLoad.length > 0 && needsAttendanceRefresh && !allSitesHaveDays) {
+                    // 서버에서 출석일 업데이트가 완료될 때까지 대기 (재시도 로직)
+                    const fetchAttendanceWithRetry = async (retries = 8, initialDelay = 300) => {
+                      for (let i = 0; i < retries; i++) {
+                        try {
+                          await new Promise(resolve => setTimeout(resolve, initialDelay * (i + 1)));
+                          
+                          const attendanceResponse = await axiosInstance.post('/attendance/stats/batch', {
+                            sites: sitesToLoad.map(({ siteName, identityName }) => ({ siteName, identityName }))
+                          });
+                          
+                          if (attendanceResponse.data?.success && Array.isArray(attendanceResponse.data.results)) {
+                            return attendanceResponse.data.results;
+                          }
+                        } catch (err) {
+                          if (i === retries - 1) {
+                            console.error('배치 출석일 조회 실패 (최종 시도):', err);
+                            throw err;
+                          }
+                        }
+                      }
+                      return [];
+                    };
+                    
+                    try {
+                      const results = await fetchAttendanceWithRetry();
+                      
+                      results.forEach((result, idx) => {
+                        const { siteName, identityName, consecutiveDays, error } = result;
+                        const { index } = sitesToLoad[idx];
+                        
+                        if (!error && consecutiveDays !== undefined) {
+                          // 레코드에 직접 출석일 저장 (UI 즉시 반영)
+                          savedWithDays[`_attendanceDays_${index}`] = consecutiveDays || 0;
+                          
+                          // 레코드 맵에도 저장
+                          if (!savedWithDays._attendanceDays) {
+                            savedWithDays._attendanceDays = {};
+                          }
+                          const normalizedIdentity = normalizeName(identityName);
+                          const normalizedSite = normalizeName(siteName);
+                          const mapKey = `${normalizedIdentity}||${normalizedSite}`;
+                          savedWithDays._attendanceDays[mapKey] = consecutiveDays || 0;
+                          
+                          // ref 캐시에도 저장 (이전 값 덮어쓰기)
+                          const attendanceCacheKey = getAttendanceCacheKey(siteName, identityName);
+                          attendanceStatsCacheRef.current[attendanceCacheKey] = {
+                            consecutiveDays: consecutiveDays || 0,
+                            timestamp: Date.now()
+                          };
+                          
+                          // state 업데이트를 모아서 처리
+                          daysUpdates[attendanceCacheKey] = consecutiveDays || 0;
+                        }
+                      });
+                    } catch (err) {
+                      console.error('배치 출석일 조회 실패:', err);
+                    }
+                  }
+                  
+                  // 모든 state 업데이트를 flushSync로 동기적으로 처리하여 즉시 렌더링
+                  flushSync(() => {
+                    setRecords((prev) => prev.map((r) => {
+                      const match = (r.id || 'new') === (record.id || 'new');
+                      if (match) {
+                        const updated = { ...r, ...savedWithDays, _v: (r._v || 0) + 1 };
+                        
+                        // 출석일 필드들이 제대로 포함되었는지 확인 및 강제 설정
+                        for (let i = 1; i <= 4; i++) {
+                          if (savedWithDays[`_attendanceDays_${i}`] !== undefined && savedWithDays[`_attendanceDays_${i}`] !== null) {
+                            updated[`_attendanceDays_${i}`] = savedWithDays[`_attendanceDays_${i}`];
+                          }
+                        }
+                        
+                        // _attendanceDays 맵을 완전히 교체 (이전 값이 남아있지 않도록)
+                        if (savedWithDays._attendanceDays && typeof savedWithDays._attendanceDays === 'object' && Object.keys(savedWithDays._attendanceDays).length > 0) {
+                          updated._attendanceDays = { ...savedWithDays._attendanceDays };
+                        } else {
+                          updated._attendanceDays = {};
+                        }
+                        return updated;
+                      }
+                      return r;
+                    }));
+                    setAllRecords((prev) => prev.map((r) => {
+                      const match = (r.id || 'new') === (record.id || 'new');
+                      if (match) {
+                        const updated = { ...r, ...savedWithDays, _v: (r._v || 0) + 1 };
+                        
+                        // 출석일 필드들이 제대로 포함되었는지 확인 및 강제 설정
+                        for (let i = 1; i <= 4; i++) {
+                          if (savedWithDays[`_attendanceDays_${i}`] !== undefined && savedWithDays[`_attendanceDays_${i}`] !== null) {
+                            updated[`_attendanceDays_${i}`] = savedWithDays[`_attendanceDays_${i}`];
+                          }
+                        }
+                        
+                        // _attendanceDays 맵을 완전히 교체 (이전 값이 남아있지 않도록)
+                        if (savedWithDays._attendanceDays && typeof savedWithDays._attendanceDays === 'object' && Object.keys(savedWithDays._attendanceDays).length > 0) {
+                          updated._attendanceDays = { ...savedWithDays._attendanceDays };
+                        } else {
+                          updated._attendanceDays = {};
+                        }
+                        return updated;
+                      }
+                      return r;
+                    }));
+                    
+                    // 출석일 state도 함께 업데이트 (다른 곳에서 참조할 수 있음)
+                    if (Object.keys(daysUpdates).length > 0) {
+                      setSiteAttendanceDays(prev => ({
+                        ...prev,
+                        ...daysUpdates
+                      }));
+                    }
+                    
+                    // 리렌더링 트리거
+                    setRefreshTick((t) => t + 1);
+                  });
+                }
                 
-                await loadRecords();
                 toast.success('충환전이 저장되었습니다');
                 
                 // 저장 성공 후 사이트 입력으로 이동
@@ -6630,16 +7174,215 @@ function DRBet() {
                   : (record[chargeWithdrawField] || '');
                 const updatedRecord = { ...record, [chargeWithdrawField]: currentVal };
                 
-                if (record.isNew || !record.id) {
-                  await axiosInstance.post('/drbet', updatedRecord);
-                } else {
-                  await axiosInstance.put(`/drbet/${record.id}`, updatedRecord);
+                // handleCellBlur와 동일하게 서버 저장 전에 handleAutoAttendance 호출
+                const identityValue = record[`identity${siteIndex}`] || '';
+                if (siteValue && identityValue) {
+                  await handleAutoAttendance(siteValue, identityValue, oldChargeWithdraw, currentVal, record, siteIndex);
                 }
                 
-                const identityValue = record[`identity${siteIndex}`] || '';
-                await handleAutoAttendance(siteValue, identityValue, oldChargeWithdraw, currentVal, record, siteIndex);
+                if (record.isNew || !record.id) {
+                  await axiosInstance.post('/drbet', updatedRecord);
+                  await loadRecords();
+                } else {
+                  const response = await axiosInstance.put(`/drbet/${record.id}`, updatedRecord);
+                  const saved = response.data || updatedRecord;
+                  
+                  // 성능 최적화: 배치 API로 출석일 한 번에 조회
+                  const savedWithDays = { ...saved };
+                  // 출석일 필드와 맵 초기화 (이전 값이 남아있지 않도록)
+                  savedWithDays._attendanceDays = savedWithDays._attendanceDays || {};
+                  for (let i = 1; i <= 4; i++) {
+                    if (savedWithDays[`_attendanceDays_${i}`] === undefined) {
+                      savedWithDays[`_attendanceDays_${i}`] = undefined;
+                    }
+                  }
+                  
+                  // 기존 레코드 수정 시에는 충전금액/명의/사이트 필드 변경 시에만 조회
+                  const needsAttendanceRefresh = true; // charge_withdraw 필드이므로 항상 true
+                  
+                  // 조회할 사이트/명의 목록 수집
+                  const sitesToLoad = [];
+                  for (let i = 1; i <= 4; i++) {
+                    const identityName = saved[`identity${i}`];
+                    const siteName = saved[`site_name${i}`];
+                    if (identityName && siteName) {
+                      sitesToLoad.push({ siteName, identityName, index: i });
+                    }
+                  }
+                  
+                  // 배치 API로 한 번에 조회 (N+1 문제 해결)
+                  const daysUpdates = {};
+                  
+                  // 서버 응답에 출석일 정보가 포함되어 있으면 우선 사용
+                  if (saved._attendanceDays && typeof saved._attendanceDays === 'object') {
+                    Object.entries(saved._attendanceDays).forEach(([key, days]) => {
+                      const [identityName, siteName] = key.split('||');
+                      
+                      if (identityName && siteName && days !== undefined && days !== null) {
+                        // 사이트 인덱스 찾기
+                        for (let i = 1; i <= 4; i++) {
+                          const savedIdentity = saved[`identity${i}`];
+                          const savedSite = saved[`site_name${i}`];
+                          const normalizedSavedIdentity = normalizeName(savedIdentity || '');
+                          const normalizedSavedSite = normalizeName(savedSite || '');
+                          const normalizedKeyIdentity = normalizeName(identityName);
+                          const normalizedKeySite = normalizeName(siteName);
+                          
+                          if (normalizedSavedIdentity === normalizedKeyIdentity && 
+                              normalizedSavedSite === normalizedKeySite) {
+                            // 레코드 필드에 직접 저장
+                            savedWithDays[`_attendanceDays_${i}`] = days || 0;
+                            
+                            // 레코드 맵에도 저장
+                            if (!savedWithDays._attendanceDays) {
+                              savedWithDays._attendanceDays = {};
+                            }
+                            savedWithDays._attendanceDays[key] = days || 0;
+                            
+                            // ref 캐시에도 저장 (이전 값 덮어쓰기)
+                            const attendanceCacheKey = getAttendanceCacheKey(siteName, identityName);
+                            attendanceStatsCacheRef.current[attendanceCacheKey] = {
+                              consecutiveDays: days || 0,
+                              timestamp: Date.now()
+                            };
+                            
+                            // state 업데이트를 모아서 처리
+                            daysUpdates[attendanceCacheKey] = days || 0;
+                            break;
+                          }
+                        }
+                      }
+                    });
+                  }
+                  
+                  // 서버 응답에 출석일이 없거나 불완전한 경우 API로 조회 (재시도 로직 포함)
+                  const allSitesHaveDays = sitesToLoad.every(({ siteName, identityName }) => {
+                    const normalizedIdentity = normalizeName(identityName);
+                    const normalizedSite = normalizeName(siteName);
+                    const mapKey = `${normalizedIdentity}||${normalizedSite}`;
+                    return saved._attendanceDays && saved._attendanceDays[mapKey] !== undefined;
+                  });
+                  
+                  if (sitesToLoad.length > 0 && needsAttendanceRefresh && !allSitesHaveDays) {
+                    // 서버에서 출석일 업데이트가 완료될 때까지 대기 (재시도 로직)
+                    const fetchAttendanceWithRetry = async (retries = 8, initialDelay = 300) => {
+                      for (let i = 0; i < retries; i++) {
+                        try {
+                          await new Promise(resolve => setTimeout(resolve, initialDelay * (i + 1)));
+                          
+                          const attendanceResponse = await axiosInstance.post('/attendance/stats/batch', {
+                            sites: sitesToLoad.map(({ siteName, identityName }) => ({ siteName, identityName }))
+                          });
+                          
+                          if (attendanceResponse.data?.success && Array.isArray(attendanceResponse.data.results)) {
+                            return attendanceResponse.data.results;
+                          }
+                        } catch (err) {
+                          if (i === retries - 1) {
+                            console.error('배치 출석일 조회 실패 (최종 시도):', err);
+                            throw err;
+                          }
+                        }
+                      }
+                      return [];
+                    };
+                    
+                    try {
+                      const results = await fetchAttendanceWithRetry();
+                      
+                      results.forEach((result, idx) => {
+                        const { siteName, identityName, consecutiveDays, error } = result;
+                        const { index } = sitesToLoad[idx];
+                        
+                        if (!error && consecutiveDays !== undefined) {
+                          // 레코드에 직접 출석일 저장 (UI 즉시 반영)
+                          savedWithDays[`_attendanceDays_${index}`] = consecutiveDays || 0;
+                          
+                          // 레코드 맵에도 저장
+                          if (!savedWithDays._attendanceDays) {
+                            savedWithDays._attendanceDays = {};
+                          }
+                          const normalizedIdentity = normalizeName(identityName);
+                          const normalizedSite = normalizeName(siteName);
+                          const mapKey = `${normalizedIdentity}||${normalizedSite}`;
+                          savedWithDays._attendanceDays[mapKey] = consecutiveDays || 0;
+                          
+                          // ref 캐시에도 저장 (이전 값 덮어쓰기)
+                          const attendanceCacheKey = getAttendanceCacheKey(siteName, identityName);
+                          attendanceStatsCacheRef.current[attendanceCacheKey] = {
+                            consecutiveDays: consecutiveDays || 0,
+                            timestamp: Date.now()
+                          };
+                          
+                          // state 업데이트를 모아서 처리
+                          daysUpdates[attendanceCacheKey] = consecutiveDays || 0;
+                        }
+                      });
+                    } catch (err) {
+                      console.error('배치 출석일 조회 실패:', err);
+                    }
+                  }
+                  
+                  // 모든 state 업데이트를 flushSync로 동기적으로 처리하여 즉시 렌더링
+                  flushSync(() => {
+                    setRecords((prev) => prev.map((r) => {
+                      const match = (r.id || 'new') === (record.id || 'new');
+                      if (match) {
+                        const updated = { ...r, ...savedWithDays, _v: (r._v || 0) + 1 };
+                        
+                        // 출석일 필드들이 제대로 포함되었는지 확인 및 강제 설정
+                        for (let i = 1; i <= 4; i++) {
+                          if (savedWithDays[`_attendanceDays_${i}`] !== undefined && savedWithDays[`_attendanceDays_${i}`] !== null) {
+                            updated[`_attendanceDays_${i}`] = savedWithDays[`_attendanceDays_${i}`];
+                          }
+                        }
+                        
+                        // _attendanceDays 맵을 완전히 교체 (이전 값이 남아있지 않도록)
+                        if (savedWithDays._attendanceDays && typeof savedWithDays._attendanceDays === 'object' && Object.keys(savedWithDays._attendanceDays).length > 0) {
+                          updated._attendanceDays = { ...savedWithDays._attendanceDays };
+                        } else {
+                          updated._attendanceDays = {};
+                        }
+                        return updated;
+                      }
+                      return r;
+                    }));
+                    setAllRecords((prev) => prev.map((r) => {
+                      const match = (r.id || 'new') === (record.id || 'new');
+                      if (match) {
+                        const updated = { ...r, ...savedWithDays, _v: (r._v || 0) + 1 };
+                        
+                        // 출석일 필드들이 제대로 포함되었는지 확인 및 강제 설정
+                        for (let i = 1; i <= 4; i++) {
+                          if (savedWithDays[`_attendanceDays_${i}`] !== undefined && savedWithDays[`_attendanceDays_${i}`] !== null) {
+                            updated[`_attendanceDays_${i}`] = savedWithDays[`_attendanceDays_${i}`];
+                          }
+                        }
+                        
+                        // _attendanceDays 맵을 완전히 교체 (이전 값이 남아있지 않도록)
+                        if (savedWithDays._attendanceDays && typeof savedWithDays._attendanceDays === 'object' && Object.keys(savedWithDays._attendanceDays).length > 0) {
+                          updated._attendanceDays = { ...savedWithDays._attendanceDays };
+                        } else {
+                          updated._attendanceDays = {};
+                        }
+                        return updated;
+                      }
+                      return r;
+                    }));
+                    
+                    // 출석일 state도 함께 업데이트 (다른 곳에서 참조할 수 있음)
+                    if (Object.keys(daysUpdates).length > 0) {
+                      setSiteAttendanceDays(prev => ({
+                        ...prev,
+                        ...daysUpdates
+                      }));
+                    }
+                    
+                    // 리렌더링 트리거
+                    setRefreshTick((t) => t + 1);
+                  });
+                }
                 
-                await loadRecords();
                 toast.success('충환전이 저장되었습니다');
                 
                 const currentIdx = records.findIndex(r => (r.id || 'new') === (record.id || 'new') && (r.tmpId ? r.tmpId === record.tmpId : true));
@@ -6671,16 +7414,215 @@ function DRBet() {
             const newChargeWithdraw = editingValue || '';
             const updatedRecord = { ...record, [chargeWithdrawField]: editingValue };
             
-            if (record.isNew || !record.id) {
-              await axiosInstance.post('/drbet', updatedRecord);
-            } else {
-              await axiosInstance.put(`/drbet/${record.id}`, updatedRecord);
+            // handleCellBlur와 동일하게 서버 저장 전에 handleAutoAttendance 호출
+            const identityValue = record[`identity${siteIndex}`] || '';
+            if (siteValue && identityValue) {
+              await handleAutoAttendance(siteValue, identityValue, oldChargeWithdraw, newChargeWithdraw, record, siteIndex);
             }
             
-            const identityValue = record[`identity${siteIndex}`] || '';
-            await handleAutoAttendance(siteValue, identityValue, oldChargeWithdraw, newChargeWithdraw, record, siteIndex);
+            if (record.isNew || !record.id) {
+              await axiosInstance.post('/drbet', updatedRecord);
+              await loadRecords();
+            } else {
+              const response = await axiosInstance.put(`/drbet/${record.id}`, updatedRecord);
+              const saved = response.data || updatedRecord;
+              
+              // 성능 최적화: 배치 API로 출석일 한 번에 조회
+              const savedWithDays = { ...saved };
+              // 출석일 필드와 맵 초기화 (이전 값이 남아있지 않도록)
+              savedWithDays._attendanceDays = savedWithDays._attendanceDays || {};
+              for (let i = 1; i <= 4; i++) {
+                if (savedWithDays[`_attendanceDays_${i}`] === undefined) {
+                  savedWithDays[`_attendanceDays_${i}`] = undefined;
+                }
+              }
+              
+              // 기존 레코드 수정 시에는 충전금액/명의/사이트 필드 변경 시에만 조회
+              const needsAttendanceRefresh = true; // charge_withdraw 필드이므로 항상 true
+              
+              // 조회할 사이트/명의 목록 수집
+              const sitesToLoad = [];
+              for (let i = 1; i <= 4; i++) {
+                const identityName = saved[`identity${i}`];
+                const siteName = saved[`site_name${i}`];
+                if (identityName && siteName) {
+                  sitesToLoad.push({ siteName, identityName, index: i });
+                }
+              }
+              
+              // 배치 API로 한 번에 조회 (N+1 문제 해결)
+              const daysUpdates = {};
+              
+              // 서버 응답에 출석일 정보가 포함되어 있으면 우선 사용
+              if (saved._attendanceDays && typeof saved._attendanceDays === 'object') {
+                Object.entries(saved._attendanceDays).forEach(([key, days]) => {
+                  const [identityName, siteName] = key.split('||');
+                  
+                  if (identityName && siteName && days !== undefined && days !== null) {
+                    // 사이트 인덱스 찾기
+                    for (let i = 1; i <= 4; i++) {
+                      const savedIdentity = saved[`identity${i}`];
+                      const savedSite = saved[`site_name${i}`];
+                      const normalizedSavedIdentity = normalizeName(savedIdentity || '');
+                      const normalizedSavedSite = normalizeName(savedSite || '');
+                      const normalizedKeyIdentity = normalizeName(identityName);
+                      const normalizedKeySite = normalizeName(siteName);
+                      
+                      if (normalizedSavedIdentity === normalizedKeyIdentity && 
+                          normalizedSavedSite === normalizedKeySite) {
+                        // 레코드 필드에 직접 저장
+                        savedWithDays[`_attendanceDays_${i}`] = days || 0;
+                        
+                        // 레코드 맵에도 저장
+                        if (!savedWithDays._attendanceDays) {
+                          savedWithDays._attendanceDays = {};
+                        }
+                        savedWithDays._attendanceDays[key] = days || 0;
+                        
+                        // ref 캐시에도 저장 (이전 값 덮어쓰기)
+                        const attendanceCacheKey = getAttendanceCacheKey(siteName, identityName);
+                        attendanceStatsCacheRef.current[attendanceCacheKey] = {
+                          consecutiveDays: days || 0,
+                          timestamp: Date.now()
+                        };
+                        
+                        // state 업데이트를 모아서 처리
+                        daysUpdates[attendanceCacheKey] = days || 0;
+                        break;
+                      }
+                    }
+                  }
+                });
+              }
+              
+              // 서버 응답에 출석일이 없거나 불완전한 경우 API로 조회 (재시도 로직 포함)
+              const allSitesHaveDays = sitesToLoad.every(({ siteName, identityName }) => {
+                const normalizedIdentity = normalizeName(identityName);
+                const normalizedSite = normalizeName(siteName);
+                const mapKey = `${normalizedIdentity}||${normalizedSite}`;
+                return saved._attendanceDays && saved._attendanceDays[mapKey] !== undefined;
+              });
+              
+              if (sitesToLoad.length > 0 && needsAttendanceRefresh && !allSitesHaveDays) {
+                // 서버에서 출석일 업데이트가 완료될 때까지 대기 (재시도 로직)
+                const fetchAttendanceWithRetry = async (retries = 8, initialDelay = 300) => {
+                  for (let i = 0; i < retries; i++) {
+                    try {
+                      await new Promise(resolve => setTimeout(resolve, initialDelay * (i + 1)));
+                      
+                      const attendanceResponse = await axiosInstance.post('/attendance/stats/batch', {
+                        sites: sitesToLoad.map(({ siteName, identityName }) => ({ siteName, identityName }))
+                      });
+                      
+                      if (attendanceResponse.data?.success && Array.isArray(attendanceResponse.data.results)) {
+                        return attendanceResponse.data.results;
+                      }
+                    } catch (err) {
+                      if (i === retries - 1) {
+                        console.error('배치 출석일 조회 실패 (최종 시도):', err);
+                        throw err;
+                      }
+                    }
+                  }
+                  return [];
+                };
+                
+                try {
+                  const results = await fetchAttendanceWithRetry();
+                  
+                  results.forEach((result, idx) => {
+                    const { siteName, identityName, consecutiveDays, error } = result;
+                    const { index } = sitesToLoad[idx];
+                    
+                    if (!error && consecutiveDays !== undefined) {
+                      // 레코드에 직접 출석일 저장 (UI 즉시 반영)
+                      savedWithDays[`_attendanceDays_${index}`] = consecutiveDays || 0;
+                      
+                      // 레코드 맵에도 저장
+                      if (!savedWithDays._attendanceDays) {
+                        savedWithDays._attendanceDays = {};
+                      }
+                      const normalizedIdentity = normalizeName(identityName);
+                      const normalizedSite = normalizeName(siteName);
+                      const mapKey = `${normalizedIdentity}||${normalizedSite}`;
+                      savedWithDays._attendanceDays[mapKey] = consecutiveDays || 0;
+                      
+                      // ref 캐시에도 저장 (이전 값 덮어쓰기)
+                      const attendanceCacheKey = getAttendanceCacheKey(siteName, identityName);
+                      attendanceStatsCacheRef.current[attendanceCacheKey] = {
+                        consecutiveDays: consecutiveDays || 0,
+                        timestamp: Date.now()
+                      };
+                      
+                      // state 업데이트를 모아서 처리
+                      daysUpdates[attendanceCacheKey] = consecutiveDays || 0;
+                    }
+                  });
+                } catch (err) {
+                  console.error('배치 출석일 조회 실패:', err);
+                }
+              }
+              
+              // 모든 state 업데이트를 flushSync로 동기적으로 처리하여 즉시 렌더링
+              flushSync(() => {
+                setRecords((prev) => prev.map((r) => {
+                  const match = (r.id || 'new') === (record.id || 'new');
+                  if (match) {
+                    const updated = { ...r, ...savedWithDays, _v: (r._v || 0) + 1 };
+                    
+                    // 출석일 필드들이 제대로 포함되었는지 확인 및 강제 설정
+                    for (let i = 1; i <= 4; i++) {
+                      if (savedWithDays[`_attendanceDays_${i}`] !== undefined && savedWithDays[`_attendanceDays_${i}`] !== null) {
+                        updated[`_attendanceDays_${i}`] = savedWithDays[`_attendanceDays_${i}`];
+                      }
+                    }
+                    
+                    // _attendanceDays 맵을 완전히 교체 (이전 값이 남아있지 않도록)
+                    if (savedWithDays._attendanceDays && typeof savedWithDays._attendanceDays === 'object' && Object.keys(savedWithDays._attendanceDays).length > 0) {
+                      updated._attendanceDays = { ...savedWithDays._attendanceDays };
+                    } else {
+                      updated._attendanceDays = {};
+                    }
+                    return updated;
+                  }
+                  return r;
+                }));
+                setAllRecords((prev) => prev.map((r) => {
+                  const match = (r.id || 'new') === (record.id || 'new');
+                  if (match) {
+                    const updated = { ...r, ...savedWithDays, _v: (r._v || 0) + 1 };
+                    
+                    // 출석일 필드들이 제대로 포함되었는지 확인 및 강제 설정
+                    for (let i = 1; i <= 4; i++) {
+                      if (savedWithDays[`_attendanceDays_${i}`] !== undefined && savedWithDays[`_attendanceDays_${i}`] !== null) {
+                        updated[`_attendanceDays_${i}`] = savedWithDays[`_attendanceDays_${i}`];
+                      }
+                    }
+                    
+                    // _attendanceDays 맵을 완전히 교체 (이전 값이 남아있지 않도록)
+                    if (savedWithDays._attendanceDays && typeof savedWithDays._attendanceDays === 'object' && Object.keys(savedWithDays._attendanceDays).length > 0) {
+                      updated._attendanceDays = { ...savedWithDays._attendanceDays };
+                    } else {
+                      updated._attendanceDays = {};
+                    }
+                    return updated;
+                  }
+                  return r;
+                }));
+                
+                // 출석일 state도 함께 업데이트 (다른 곳에서 참조할 수 있음)
+                if (Object.keys(daysUpdates).length > 0) {
+                  setSiteAttendanceDays(prev => ({
+                    ...prev,
+                    ...daysUpdates
+                  }));
+                }
+                
+                // 리렌더링 트리거
+                setRefreshTick((t) => t + 1);
+              });
+            }
             
-            await loadRecords();
             toast.success('충환전이 저장되었습니다');
             setEditingCell(null);
             setEditingValue('');
@@ -6698,16 +7640,215 @@ function DRBet() {
               const newChargeWithdraw = editingValue || '';
               const updatedRecord = { ...record, [chargeWithdrawField]: editingValue };
               
-              if (record.isNew || !record.id) {
-                await axiosInstance.post('/drbet', updatedRecord);
-              } else {
-                await axiosInstance.put(`/drbet/${record.id}`, updatedRecord);
+              // handleCellBlur와 동일하게 서버 저장 전에 handleAutoAttendance 호출
+              const identityValue = record[`identity${siteIndex}`] || '';
+              if (siteValue && identityValue) {
+                await handleAutoAttendance(siteValue, identityValue, oldChargeWithdraw, newChargeWithdraw, record, siteIndex);
               }
               
-              const identityValue = record[`identity${siteIndex}`] || '';
-              await handleAutoAttendance(siteValue, identityValue, oldChargeWithdraw, newChargeWithdraw, record, siteIndex);
+              if (record.isNew || !record.id) {
+                await axiosInstance.post('/drbet', updatedRecord);
+                await loadRecords();
+              } else {
+                const response = await axiosInstance.put(`/drbet/${record.id}`, updatedRecord);
+                const saved = response.data || updatedRecord;
+                
+                // 성능 최적화: 배치 API로 출석일 한 번에 조회
+                const savedWithDays = { ...saved };
+                // 출석일 필드와 맵 초기화 (이전 값이 남아있지 않도록)
+                savedWithDays._attendanceDays = savedWithDays._attendanceDays || {};
+                for (let i = 1; i <= 4; i++) {
+                  if (savedWithDays[`_attendanceDays_${i}`] === undefined) {
+                    savedWithDays[`_attendanceDays_${i}`] = undefined;
+                  }
+                }
+                
+                // 기존 레코드 수정 시에는 충전금액/명의/사이트 필드 변경 시에만 조회
+                const needsAttendanceRefresh = true; // charge_withdraw 필드이므로 항상 true
+                
+                // 조회할 사이트/명의 목록 수집
+                const sitesToLoad = [];
+                for (let i = 1; i <= 4; i++) {
+                  const identityName = saved[`identity${i}`];
+                  const siteName = saved[`site_name${i}`];
+                  if (identityName && siteName) {
+                    sitesToLoad.push({ siteName, identityName, index: i });
+                  }
+                }
+                
+                // 배치 API로 한 번에 조회 (N+1 문제 해결)
+                const daysUpdates = {};
+                
+                // 서버 응답에 출석일 정보가 포함되어 있으면 우선 사용
+                if (saved._attendanceDays && typeof saved._attendanceDays === 'object') {
+                  Object.entries(saved._attendanceDays).forEach(([key, days]) => {
+                    const [identityName, siteName] = key.split('||');
+                    
+                    if (identityName && siteName && days !== undefined && days !== null) {
+                      // 사이트 인덱스 찾기
+                      for (let i = 1; i <= 4; i++) {
+                        const savedIdentity = saved[`identity${i}`];
+                        const savedSite = saved[`site_name${i}`];
+                        const normalizedSavedIdentity = normalizeName(savedIdentity || '');
+                        const normalizedSavedSite = normalizeName(savedSite || '');
+                        const normalizedKeyIdentity = normalizeName(identityName);
+                        const normalizedKeySite = normalizeName(siteName);
+                        
+                        if (normalizedSavedIdentity === normalizedKeyIdentity && 
+                            normalizedSavedSite === normalizedKeySite) {
+                          // 레코드 필드에 직접 저장
+                          savedWithDays[`_attendanceDays_${i}`] = days || 0;
+                          
+                          // 레코드 맵에도 저장
+                          if (!savedWithDays._attendanceDays) {
+                            savedWithDays._attendanceDays = {};
+                          }
+                          savedWithDays._attendanceDays[key] = days || 0;
+                          
+                          // ref 캐시에도 저장 (이전 값 덮어쓰기)
+                          const attendanceCacheKey = getAttendanceCacheKey(siteName, identityName);
+                          attendanceStatsCacheRef.current[attendanceCacheKey] = {
+                            consecutiveDays: days || 0,
+                            timestamp: Date.now()
+                          };
+                          
+                          // state 업데이트를 모아서 처리
+                          daysUpdates[attendanceCacheKey] = days || 0;
+                          break;
+                        }
+                      }
+                    }
+                  });
+                }
+                
+                // 서버 응답에 출석일이 없거나 불완전한 경우 API로 조회 (재시도 로직 포함)
+                const allSitesHaveDays = sitesToLoad.every(({ siteName, identityName }) => {
+                  const normalizedIdentity = normalizeName(identityName);
+                  const normalizedSite = normalizeName(siteName);
+                  const mapKey = `${normalizedIdentity}||${normalizedSite}`;
+                  return saved._attendanceDays && saved._attendanceDays[mapKey] !== undefined;
+                });
+                
+                if (sitesToLoad.length > 0 && needsAttendanceRefresh && !allSitesHaveDays) {
+                  // 서버에서 출석일 업데이트가 완료될 때까지 대기 (재시도 로직)
+                  const fetchAttendanceWithRetry = async (retries = 8, initialDelay = 300) => {
+                    for (let i = 0; i < retries; i++) {
+                      try {
+                        await new Promise(resolve => setTimeout(resolve, initialDelay * (i + 1)));
+                        
+                        const attendanceResponse = await axiosInstance.post('/attendance/stats/batch', {
+                          sites: sitesToLoad.map(({ siteName, identityName }) => ({ siteName, identityName }))
+                        });
+                        
+                        if (attendanceResponse.data?.success && Array.isArray(attendanceResponse.data.results)) {
+                          return attendanceResponse.data.results;
+                        }
+                      } catch (err) {
+                        if (i === retries - 1) {
+                          console.error('배치 출석일 조회 실패 (최종 시도):', err);
+                          throw err;
+                        }
+                      }
+                    }
+                    return [];
+                  };
+                  
+                  try {
+                    const results = await fetchAttendanceWithRetry();
+                    
+                    results.forEach((result, idx) => {
+                      const { siteName, identityName, consecutiveDays, error } = result;
+                      const { index } = sitesToLoad[idx];
+                      
+                      if (!error && consecutiveDays !== undefined) {
+                        // 레코드에 직접 출석일 저장 (UI 즉시 반영)
+                        savedWithDays[`_attendanceDays_${index}`] = consecutiveDays || 0;
+                        
+                        // 레코드 맵에도 저장
+                        if (!savedWithDays._attendanceDays) {
+                          savedWithDays._attendanceDays = {};
+                        }
+                        const normalizedIdentity = normalizeName(identityName);
+                        const normalizedSite = normalizeName(siteName);
+                        const mapKey = `${normalizedIdentity}||${normalizedSite}`;
+                        savedWithDays._attendanceDays[mapKey] = consecutiveDays || 0;
+                        
+                        // ref 캐시에도 저장 (이전 값 덮어쓰기)
+                        const attendanceCacheKey = getAttendanceCacheKey(siteName, identityName);
+                        attendanceStatsCacheRef.current[attendanceCacheKey] = {
+                          consecutiveDays: consecutiveDays || 0,
+                          timestamp: Date.now()
+                        };
+                        
+                        // state 업데이트를 모아서 처리
+                        daysUpdates[attendanceCacheKey] = consecutiveDays || 0;
+                      }
+                    });
+                  } catch (err) {
+                    console.error('배치 출석일 조회 실패:', err);
+                  }
+                }
+                
+                // 모든 state 업데이트를 flushSync로 동기적으로 처리하여 즉시 렌더링
+                flushSync(() => {
+                  setRecords((prev) => prev.map((r) => {
+                    const match = (r.id || 'new') === (record.id || 'new');
+                    if (match) {
+                      const updated = { ...r, ...savedWithDays, _v: (r._v || 0) + 1 };
+                      
+                      // 출석일 필드들이 제대로 포함되었는지 확인 및 강제 설정
+                      for (let i = 1; i <= 4; i++) {
+                        if (savedWithDays[`_attendanceDays_${i}`] !== undefined && savedWithDays[`_attendanceDays_${i}`] !== null) {
+                          updated[`_attendanceDays_${i}`] = savedWithDays[`_attendanceDays_${i}`];
+                        }
+                      }
+                      
+                      // _attendanceDays 맵을 완전히 교체 (이전 값이 남아있지 않도록)
+                      if (savedWithDays._attendanceDays && typeof savedWithDays._attendanceDays === 'object' && Object.keys(savedWithDays._attendanceDays).length > 0) {
+                        updated._attendanceDays = { ...savedWithDays._attendanceDays };
+                      } else {
+                        updated._attendanceDays = {};
+                      }
+                      return updated;
+                    }
+                    return r;
+                  }));
+                  setAllRecords((prev) => prev.map((r) => {
+                    const match = (r.id || 'new') === (record.id || 'new');
+                    if (match) {
+                      const updated = { ...r, ...savedWithDays, _v: (r._v || 0) + 1 };
+                      
+                      // 출석일 필드들이 제대로 포함되었는지 확인 및 강제 설정
+                      for (let i = 1; i <= 4; i++) {
+                        if (savedWithDays[`_attendanceDays_${i}`] !== undefined && savedWithDays[`_attendanceDays_${i}`] !== null) {
+                          updated[`_attendanceDays_${i}`] = savedWithDays[`_attendanceDays_${i}`];
+                        }
+                      }
+                      
+                      // _attendanceDays 맵을 완전히 교체 (이전 값이 남아있지 않도록)
+                      if (savedWithDays._attendanceDays && typeof savedWithDays._attendanceDays === 'object' && Object.keys(savedWithDays._attendanceDays).length > 0) {
+                        updated._attendanceDays = { ...savedWithDays._attendanceDays };
+                      } else {
+                        updated._attendanceDays = {};
+                      }
+                      return updated;
+                    }
+                    return r;
+                  }));
+                  
+                  // 출석일 state도 함께 업데이트 (다른 곳에서 참조할 수 있음)
+                  if (Object.keys(daysUpdates).length > 0) {
+                    setSiteAttendanceDays(prev => ({
+                      ...prev,
+                      ...daysUpdates
+                    }));
+                  }
+                  
+                  // 리렌더링 트리거
+                  setRefreshTick((t) => t + 1);
+                });
+              }
               
-              await loadRecords();
               toast.success('충환전이 저장되었습니다');
               setEditingCell(null);
               setEditingValue('');

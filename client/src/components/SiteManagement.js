@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useLayoutEffect } from 'react';
+import React, { useState, useEffect, useRef, useLayoutEffect, useMemo, useCallback } from 'react';
 import { useLocation } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import axiosInstance from '../api/axios';
@@ -6,6 +6,23 @@ import { getIdentitiesCached, invalidateIdentitiesCache } from '../api/identitie
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import SiteNotesModal from './SiteNotesModal';
 import { useAuth } from '../contexts/AuthContext';
+
+// Debounce 유틸리티 함수
+const useDebounce = (value, delay) => {
+  const [debouncedValue, setDebouncedValue] = useState(value);
+
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedValue(value);
+    }, delay);
+
+    return () => {
+      clearTimeout(handler);
+    };
+  }, [value, delay]);
+
+  return debouncedValue;
+};
  
 const SiteManagement = () => {
   const location = useLocation();
@@ -14,12 +31,10 @@ const SiteManagement = () => {
   const [accounts, setAccounts] = useState([]); // 계정 목록 (관리자용)
   const [selectedIdentity, setSelectedIdentity] = useState(null);
   const [sites, setSites] = useState([]);
-  const [filteredSites, setFilteredSites] = useState([]);
   
   // 페이징 상태
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage] = useState(50);
-  const [totalItems, setTotalItems] = useState(0);
   
   // 커뮤니티 상태
   const [communities, setCommunities] = useState([]);
@@ -39,10 +54,16 @@ const SiteManagement = () => {
   const [statusFilter, setStatusFilter] = useState('전체');
   const [monthFilter, setMonthFilter] = useState('전체');
   
+  // Debounced 검색어 (300ms 지연) - 서버 부하 감소
+  const debouncedSearchTerm = useDebounce(searchTerm, 300);
+  
   // 커뮤니티 필터 상태
   const [communitySearchTerm, setCommunitySearchTerm] = useState('');
   const [communityStatusFilter, setCommunityStatusFilter] = useState('전체');
   const [communityMonthFilter, setCommunityMonthFilter] = useState('전체');
+  
+  // Debounced 커뮤니티 검색어 (300ms 지연) - 서버 부하 감소
+  const debouncedCommunitySearchTerm = useDebounce(communitySearchTerm, 300);
   
   // 인라인 편집 상태
   const [editingCell, setEditingCell] = useState(null); // { siteId, field }
@@ -399,7 +420,7 @@ const SiteManagement = () => {
       display_order: index
     }));
     
-    setFilteredSites(updatedSites);
+    // filteredSites는 useMemo로 자동 계산되므로 setSites만 업데이트
     
     // sites 상태도 업데이트
     setSites(prev => {
@@ -497,8 +518,6 @@ const SiteManagement = () => {
     // "전체" 모드가 아니고 identityId가 없으면 빈 목록
     if (!isAllMode && !identityId) {
       setSites([]);
-      setFilteredSites([]);
-      setTotalItems(0);
       return;
     }
     
@@ -509,8 +528,6 @@ const SiteManagement = () => {
       
       if (response.data.success) {
         setSites(response.data.sites);
-        setFilteredSites(response.data.sites);
-        setTotalItems(response.data.sites.length);
         setCurrentPage(1); // 페이지 리셋
       }
     } catch (error) {
@@ -635,7 +652,6 @@ const SiteManagement = () => {
     // 명의가 선택되지 않았으면 커뮤니티 목록 비우기
     if (!selectedIdentity || !selectedIdentity.name) {
       setCommunities([]);
-      setFilteredCommunities([]);
       return;
     }
     
@@ -643,13 +659,12 @@ const SiteManagement = () => {
       // 사이트 목록처럼 identity_name으로 필터링
       const response = await axiosInstance.get(`/communities?identity_name=${encodeURIComponent(selectedIdentity.name)}`);
       setCommunities(response.data || []);
-      setFilteredCommunities(response.data || []);
+      // filteredCommunities는 useMemo로 자동 계산됨
     } catch (error) {
       console.error('커뮤니티 로드 실패:', error);
       console.error('에러 상세:', error.response?.data || error.message);
       toast.error('커뮤니티 목록을 불러올 수 없습니다');
       setCommunities([]);
-      setFilteredCommunities([]);
     }
   };
 
@@ -746,7 +761,7 @@ const SiteManagement = () => {
       // 명의 목록이 비어있거나 선택된 명의가 없으면 커뮤니티 목록 비우기
       if (identities.length === 0) {
         setCommunities([]);
-        setFilteredCommunities([]);
+        // filteredCommunities는 useMemo로 자동 계산됨
       }
       return;
     }
@@ -770,25 +785,25 @@ const SiteManagement = () => {
   }, [identities.length, selectedIdentity?.id]); // 의존성 최소화: 목록 크기와 선택된 명의 ID만
   
   // selectedIdentity가 변경될 때마다 커뮤니티 목록 다시 로드
+  // 성능 최적화: ID만 변경될 때만 재로드 (name 변경은 무시)
   useEffect(() => {
     if (selectedIdentity) {
       loadCommunities();
     } else {
       setCommunities([]);
-      setFilteredCommunities([]);
     }
-  }, [selectedIdentity?.id, selectedIdentity?.name]);
+  }, [selectedIdentity?.id]); // name 제거 - ID만 변경될 때만 재로드
 
-  // 필터 적용
-  useEffect(() => {
+  // 필터 적용 (useMemo로 최적화 - 불필요한 재계산 방지)
+  const filteredSites = useMemo(() => {
     let filtered = [...sites];
     
-    // 검색어 필터
-    if (searchTerm) {
+    // 검색어 필터 (debounced 값 사용 - 서버 부하 감소)
+    if (debouncedSearchTerm) {
       filtered = filtered.filter(site => 
-        site.site_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        site.domain.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        site.nickname.toLowerCase().includes(searchTerm.toLowerCase())
+        site.site_name.toLowerCase().includes(debouncedSearchTerm.toLowerCase()) ||
+        site.domain.toLowerCase().includes(debouncedSearchTerm.toLowerCase()) ||
+        site.nickname.toLowerCase().includes(debouncedSearchTerm.toLowerCase())
       );
     }
     
@@ -931,10 +946,16 @@ const SiteManagement = () => {
     
     // 새 행은 항상 맨 앞에 추가
     const allFiltered = [...newItems, ...existingItems];
-    setFilteredSites(allFiltered);
-    setTotalItems(allFiltered.length);
-    setCurrentPage(1); // 필터 변경 시 첫 페이지로
-  }, [searchTerm, statusFilter, monthFilter, sites]);
+    return allFiltered;
+  }, [debouncedSearchTerm, statusFilter, monthFilter, sites]);
+  
+  // 필터 변경 시 첫 페이지로 리셋
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [debouncedSearchTerm, statusFilter, monthFilter]);
+  
+  // totalItems 계산 (메모이제이션)
+  const totalItems = useMemo(() => filteredSites.length, [filteredSites]);
   
   // 페이징된 사이트 목록
   const paginatedSites = React.useMemo(() => {
@@ -945,20 +966,18 @@ const SiteManagement = () => {
   
   const totalPages = Math.ceil(totalItems / itemsPerPage);
   
-  // 커뮤니티 필터 적용 (서버에서 이미 명의별로 필터링됨)
-  const [filteredCommunities, setFilteredCommunities] = useState([]);
-  
-  useEffect(() => {
+  // 커뮤니티 필터 적용 (useMemo로 최적화 - 불필요한 재계산 방지)
+  const filteredCommunities = useMemo(() => {
     let filtered = [...communities];
     
     // 추가 명의 필터는 제거 (identity_name 누락된 기존 데이터가 숨겨지는 문제 방지)
     
-    // 검색어 필터
-    if (communitySearchTerm) {
+    // 검색어 필터 (debounced 값 사용 - 서버 부하 감소)
+    if (debouncedCommunitySearchTerm) {
       filtered = filtered.filter(community => 
-        community.site_name.toLowerCase().includes(communitySearchTerm.toLowerCase()) ||
-        community.domain.toLowerCase().includes(communitySearchTerm.toLowerCase()) ||
-        community.nickname.toLowerCase().includes(communitySearchTerm.toLowerCase())
+        community.site_name.toLowerCase().includes(debouncedCommunitySearchTerm.toLowerCase()) ||
+        community.domain.toLowerCase().includes(debouncedCommunitySearchTerm.toLowerCase()) ||
+        community.nickname.toLowerCase().includes(debouncedCommunitySearchTerm.toLowerCase())
       );
     }
     
@@ -1090,8 +1109,9 @@ const SiteManagement = () => {
     });
     
     // 새 행은 항상 맨 앞에 추가
-    setFilteredCommunities([...newItems, ...existingItems]);
-  }, [communitySearchTerm, communityStatusFilter, communityMonthFilter, communities, selectedIdentity]);
+    const allFiltered = [...newItems, ...existingItems];
+    return allFiltered;
+  }, [debouncedCommunitySearchTerm, communityStatusFilter, communityMonthFilter, communities]);
   
   // 승인유무 필드 색상 결정 함수
   const getStatusColor = (status) => {
@@ -1128,10 +1148,7 @@ const SiteManagement = () => {
     if (!identity) {
       setSelectedIdentity(null);
       setSites([]);
-      setFilteredSites([]);
       setCommunities([]);
-      setFilteredCommunities([]);
-      setTotalItems(0);
       return;
     }
     
@@ -1140,7 +1157,7 @@ const SiteManagement = () => {
       setSelectedIdentity({ id: 'all', name: '전체' });
       loadSites(null, true); // 전체 모드로 로드
       setCommunities([]); // 전체 모드에서는 커뮤니티 목록 비움
-      setFilteredCommunities([]);
+      // filteredCommunities는 useMemo로 자동 계산됨
       return;
     }
     
@@ -1326,9 +1343,9 @@ const SiteManagement = () => {
       if (selectedIdentity?.id === identity.id) {
         setSelectedIdentity(null);
         setSites([]);
-        setFilteredSites([]);
+        // filteredSites는 useMemo로 자동 계산됨
         setCommunities([]);
-        setFilteredCommunities([]);
+        // filteredCommunities는 useMemo로 자동 계산됨
         
         // 다른 명의가 있으면 첫 번째 명의 선택
         if (updatedIdentities.length > 0) {
@@ -2011,7 +2028,10 @@ const SiteManagement = () => {
         // 수정된 행 강조 표시
         setHighlightedCommunityId(communityId);
         
-        await loadCommunities();
+        // 성능 최적화: 전체 목록 재로드 대신 로컬 상태만 업데이트
+        setCommunities(prevCommunities => 
+          prevCommunities.map(c => c.id === communityId ? { ...c, [field]: value } : c)
+        );
         
         // 스크롤 및 강조 표시
         setTimeout(() => {
@@ -2069,17 +2089,15 @@ const SiteManagement = () => {
         
         if (site.isNew) {
           // 새 행인 경우 로컬에서만 업데이트
-          const updatedSites = filteredSites.map(s => 
-            s.id === id ? { ...s, approval_call: newValue } : s
+          setSites(prevSites => 
+            prevSites.map(s => s.id === id ? { ...s, approval_call: newValue } : s)
           );
-          setFilteredSites(updatedSites);
         } else {
           // 기존 행인 경우 서버에 저장
           await axiosInstance.put(`/sites/${id}`, { ...site, approval_call: newValue });
-          const updatedSites = filteredSites.map(s => 
-            s.id === id ? { ...s, approval_call: newValue } : s
+          setSites(prevSites => 
+            prevSites.map(s => s.id === id ? { ...s, approval_call: newValue } : s)
           );
-          setFilteredSites(updatedSites);
           toast.success('승전 여부가 변경되었습니다');
         }
       } else if (type === 'community') {
@@ -2147,7 +2165,6 @@ const SiteManagement = () => {
         const updatedSites = filteredSites.map(s => 
           s.id === siteId ? { ...s, [field]: valueToSave } : s
         );
-        setFilteredSites(updatedSites);
         const updatedSite = { ...site, [field]: valueToSave };
         
         // site_name 또는 status 필드가 입력되었을 때만 저장 (site_name은 필수)
@@ -2184,7 +2201,7 @@ const SiteManagement = () => {
             
             // 새 행 상태 제거
             setNewSiteRow(null);
-            setFilteredSites(updatedSites.filter(s => s.id !== siteId));
+            setSites(prevSites => prevSites.filter(s => s.id !== siteId));
             loadSites(selectedIdentity.id);
           } catch (error) {
             console.error('사이트 추가 실패:', error);
@@ -2203,7 +2220,7 @@ const SiteManagement = () => {
             
             // 새 행 상태 제거
             setNewSiteRow(null);
-            setFilteredSites(updatedSites.filter(s => s.id !== siteId));
+            setSites(prevSites => prevSites.filter(s => s.id !== siteId));
             loadSites(selectedIdentity.id);
           } catch (error) {
             console.error('사이트 추가 실패:', error);
@@ -2245,9 +2262,15 @@ const SiteManagement = () => {
       // 수정된 행 강조 표시
       setHighlightedSiteId(siteId);
       
-      // "전체" 모드인 경우 isAllMode를 true로 전달
-      const isAllMode = selectedIdentity?.id === 'all';
-      await loadSites(isAllMode ? null : selectedIdentity.id, isAllMode);
+      // 성능 최적화: 전체 목록 재로드 대신 로컬 상태만 업데이트
+      setSites(prevSites => 
+        prevSites.map(s => s.id === siteId ? { ...s, [field]: valueToSave } : s)
+      );
+      
+      // site_name 변경 시에만 전체 사이트명 목록 갱신 (필요한 경우에만 API 호출)
+      if (field === 'site_name') {
+        loadAllSiteNames();
+      }
       
       // 스크롤 및 강조 표시
       setTimeout(() => {
@@ -3071,28 +3094,18 @@ const SiteManagement = () => {
                       );
                     }
                     
-                    // 도메인 필드는 클릭 시 새 창으로 열기
-                    if (field === 'domain' && value) {
-                      const handleDomainClick = (e) => {
-                        e.stopPropagation(); // 더블클릭 이벤트 방지
-                        let url = value.trim();
-                        if (!url.startsWith('http://') && !url.startsWith('https://')) {
-                          url = `https://${url}`;
-                        }
-                        window.open(url, '_blank', 'noopener,noreferrer');
-                      };
-                      
+                    // 도메인 필드는 일반 텍스트로 표시
+                    if (field === 'domain') {
                       return (
                         <div
-                          onClick={handleDomainClick}
                           onDoubleClick={(e) => {
                             e.stopPropagation();
                             startEditingCell(site.id, field, value);
                           }}
-                          className="cursor-pointer hover:bg-blue-50 dark:hover:bg-gray-700 px-2 py-1 rounded text-center text-blue-600 dark:text-blue-400 hover:underline font-bold"
-                          title="클릭하여 새 창에서 열기 / 더블클릭하여 수정"
+                          className="cursor-pointer hover:bg-blue-50 dark:hover:bg-gray-700 px-2 py-1 rounded text-center font-medium text-white dark:text-white"
+                          title="더블클릭하여 수정"
                         >
-                          {value}
+                          {value || '-'}
                         </div>
                       );
                     }
@@ -4170,28 +4183,16 @@ const SiteManagement = () => {
                       );
                     }
                     
-                    // 도메인 필드는 클릭 시 새 탭에서 열기
+                    // 도메인 필드는 일반 텍스트로 표시
                     if (field === 'domain') {
-                      const handleDomainClick = (e) => {
-                        if (value) {
-                          e.stopPropagation();
-                          let url = value;
-                          if (!url.startsWith('http://') && !url.startsWith('https://')) {
-                            url = 'https://' + url;
-                          }
-                          window.open(url, '_blank', 'noopener,noreferrer');
-                        }
-                      };
-                      
                       return (
                         <div
-                          onClick={handleDomainClick}
                           onDoubleClick={(e) => {
                             e.stopPropagation();
                             startEditingCommunityCell(community.id, field, value);
                           }}
-                          className={`cursor-pointer hover:bg-blue-50 dark:hover:bg-gray-700 px-2 py-1 rounded text-center text-blue-600 dark:text-blue-400 underline font-bold ${className}`}
-                          title="클릭: 사이트 열기, 더블클릭: 수정"
+                          className={`cursor-pointer hover:bg-blue-50 dark:hover:bg-gray-700 px-2 py-1 rounded text-center font-medium text-white dark:text-white ${className}`}
+                          title="더블클릭하여 수정"
                         >
                           {value || '-'}
                         </div>
