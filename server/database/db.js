@@ -1,5 +1,6 @@
 const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
+const fs = require('fs');
 require('dotenv').config();
 
 class DatabaseManager {
@@ -13,6 +14,15 @@ class DatabaseManager {
   init() {
     return new Promise((resolve, reject) => {
       console.log('🔍 실제 DB 연결 시도 경로:', this.dbPath);
+      
+      // DB 파일 존재 여부 확인 (자동 생성 방지)
+      if (!fs.existsSync(this.dbPath)) {
+        const error = new Error(`데이터베이스 파일이 없습니다: ${this.dbPath}\n기존 DB 파일을 해당 경로에 배치해주세요.`);
+        console.error('❌', error.message);
+        reject(error);
+        return;
+      }
+      
       this.db = new sqlite3.Database(this.dbPath, (err) => {
         if (err) {
           console.error('데이터베이스 연결 실패:', err.message);
@@ -45,7 +55,7 @@ class DatabaseManager {
   optimizeDatabase() {
     return new Promise((resolve, reject) => {
       const optimizations = [
-        'PRAGMA journal_mode = WAL',  // Write-Ahead Logging (성능 향상)
+        // WAL 모드 제거 (기존 DB 파일만 사용)
         'PRAGMA synchronous = NORMAL',  // 동기화 모드 (성능과 안정성 균형)
         'PRAGMA cache_size = -64000',  // 64MB 캐시
         'PRAGMA temp_store = MEMORY',  // 임시 데이터를 메모리에 저장
