@@ -89,62 +89,30 @@ module.exports = async function apiLogger(req, res, next) {
     return originalSend(data);
   };
 
-  res.on('finish', () => {
-    // 비동기로 처리하여 이벤트 루프 블로킹 방지
-    setImmediate(async () => {
-      const durationMs = Date.now() - start;
-      
-      // 응답 본문 크기 제한 (메모리 및 직렬화 성능 최적화)
-      let limitedResponse = responseBody;
-      if (responseBody) {
-        const responseStr = typeof responseBody === 'string' 
-          ? responseBody 
-          : JSON.stringify(responseBody);
-        if (responseStr.length > 5000) {
-          // 큰 응답은 요약만 로깅
-          limitedResponse = typeof responseBody === 'string'
-            ? responseStr.substring(0, 5000) + '... [truncated]'
-            : '[large response - truncated]';
-        }
-      }
-      
-      const logObj = {
-        time: new Date().toISOString(),
-        name,
-        status: res.statusCode,
-        durationMs,
-        request: requestInfo,
-        response: limitedResponse
-      };
+  res.on('finish', async () => {
+    const durationMs = Date.now() - start;
+    const logObj = {
+      time: new Date().toISOString(),
+      name,
+      status: res.statusCode,
+      durationMs,
+      request: requestInfo,
+      response: responseBody
+    };
 
-      // JSON 직렬화를 비동기로 처리
-      let line;
+    const line = truncate(safeJson(logObj)) + '\n';
+    const file = path.join(LOG_DIR, `${getKSTDateString()}.log`);
+    try {
+      await fsp.appendFile(file, line, 'utf8');
+    } catch (e) {
+      // 마지막 시도로 디렉터리 보장 후 재시도
       try {
-        line = truncate(safeJson(logObj)) + '\n';
-      } catch (e) {
-        // 직렬화 실패 시 최소 정보만 로깅
-        line = JSON.stringify({
-          time: logObj.time,
-          name: logObj.name,
-          status: logObj.status,
-          durationMs: logObj.durationMs,
-          error: 'response too large to serialize'
-        }) + '\n';
-      }
-      
-      const file = path.join(LOG_DIR, `${getKSTDateString()}.log`);
-      try {
+        await ensureLogDir();
         await fsp.appendFile(file, line, 'utf8');
-      } catch (e) {
-        // 마지막 시도로 디렉터리 보장 후 재시도
-        try {
-          await ensureLogDir();
-          await fsp.appendFile(file, line, 'utf8');
-        } catch (err) {
-          console.error('API 로그 기록 실패:', err?.message || err);
-        }
+      } catch (err) {
+        console.error('API 로그 기록 실패:', err?.message || err);
       }
-    });
+    }
   });
 
   next();
