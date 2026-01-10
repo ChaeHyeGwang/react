@@ -53,6 +53,14 @@ function getName(req) {
 }
 
 module.exports = async function apiLogger(req, res, next) {
+  // 프로덕션 환경에서는 에러만 로깅 (성능 최적화)
+  const isProduction = process.env.NODE_ENV === 'production';
+  const shouldLog = !isProduction || res.statusCode >= 400;
+
+  if (!shouldLog) {
+    return next();
+  }
+
   await ensureLogDir();
 
   const start = Date.now();

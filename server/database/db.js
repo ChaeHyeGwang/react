@@ -19,7 +19,9 @@ class DatabaseManager {
           reject(err);
         } else {
           console.log('✅ SQLite 데이터베이스 연결 성공:', this.dbPath);
-          this.createTables()
+          // 성능 최적화 설정
+          this.optimizeDatabase()
+            .then(() => this.createTables())
             .then(() => this.runMigrationIfNeeded())
             .then(() => this.addAttendanceColumns())
             .then(() => this.addDisplayOrderColumn())
@@ -35,6 +37,34 @@ class DatabaseManager {
             .then(resolve)
             .catch(reject);
         }
+      });
+    });
+  }
+
+  // SQLite 성능 최적화
+  optimizeDatabase() {
+    return new Promise((resolve, reject) => {
+      const optimizations = [
+        'PRAGMA journal_mode = WAL',  // Write-Ahead Logging (성능 향상)
+        'PRAGMA synchronous = NORMAL',  // 동기화 모드 (성능과 안정성 균형)
+        'PRAGMA cache_size = -64000',  // 64MB 캐시
+        'PRAGMA temp_store = MEMORY',  // 임시 데이터를 메모리에 저장
+        'PRAGMA mmap_size = 268435456',  // 256MB 메모리 맵
+        'PRAGMA busy_timeout = 5000'  // 5초 대기 시간
+      ];
+
+      let completed = 0;
+      optimizations.forEach((sql) => {
+        this.db.run(sql, (err) => {
+          if (err) {
+            console.warn(`⚠️ SQLite 최적화 경고 (${sql}):`, err.message);
+          }
+          completed++;
+          if (completed === optimizations.length) {
+            console.log('✅ SQLite 성능 최적화 완료');
+            resolve();
+          }
+        });
       });
     });
   }
