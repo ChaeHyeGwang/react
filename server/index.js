@@ -78,9 +78,9 @@ if (process.env.NODE_ENV === 'production') {
   app.use(morgan('combined'));
 }
 
-// Body parser
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true }));
+// Body parser (성능 최적화: 크기 제한)
+app.use(express.json({ limit: '5mb' }));  // 10mb -> 5mb로 감소
+app.use(express.urlencoded({ extended: true, limit: '5mb' }));
 
 // 라우트 한글 이름 태깅 → API 로그
 app.use(routeNamer);

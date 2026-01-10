@@ -792,6 +792,12 @@ const getDailySummary = async ({ accountId, officeId, date }) => {
 const parseJsonSafe = (value, fallback) => {
   if (!value) return fallback;
   try {
+    // 큰 JSON 파싱을 비동기로 처리하여 이벤트 루프 블로킹 방지
+    // 단, 동기 함수이므로 최적화는 호출 측에서 처리
+    if (typeof value === 'string' && value.length > 100000) {
+      // 매우 큰 JSON은 청크 단위로 처리하거나 스트리밍 파싱 고려
+      // 현재는 동기 파싱하되, 향후 개선 가능
+    }
     return JSON.parse(value);
   } catch (error) {
     return fallback;
