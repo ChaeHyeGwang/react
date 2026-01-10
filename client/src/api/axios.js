@@ -1,25 +1,25 @@
 import axios from 'axios';
 import toast from 'react-hot-toast';
 
-// 동적으로 API URL 결정 (같은 호스트의 5000 포트 사용)
+// 동적으로 API URL 결정 (같은 호스트의 /api 사용)
 const getAPIUrl = () => {
   if (process.env.REACT_APP_API_URL) {
     // 환경변수의 앞뒤 공백 제거
     return process.env.REACT_APP_API_URL.trim();
   }
   
-  // 현재 접속한 호스트를 사용 (localhost, 로컬 IP, ngrok 등)
+  // 현재 접속한 호스트를 사용 (localhost, 로컬 IP, ngrok, EC2 등)
   const hostname = window.location.hostname;
   const protocol = window.location.protocol; // http: 또는 https:
-  const port = window.location.port || '5000'; // 기본 5000 포트
+  const port = window.location.port; // 현재 포트 (없으면 빈 문자열)
   
-  // ngrok이나 외부 도메인인 경우 같은 호스트의 /api 사용
-  if (hostname.includes('ngrok') || hostname.includes('ngrok-free.app')) {
-    return `${protocol}//${hostname}${port ? `:${port}` : ''}/api`;
+  // 로컬 환경 (localhost, 127.0.0.1, 192.168.x.x): 5000 포트 사용
+  if (hostname === 'localhost' || hostname === '127.0.0.1' || /^192\.168\./.test(hostname)) {
+    return `${protocol}//${hostname}:5000/api`;
   }
   
-  // 로컬 환경 (localhost, 127.0.0.1, 192.168.x.x): 항상 5000 포트 사용
-  return `${protocol}//${hostname}:5000/api`;
+  // 그 외의 경우 (ngrok, EC2 IP, 외부 도메인 등): 같은 호스트의 /api 사용 (Nginx 프록시)
+  return `${protocol}//${hostname}${port ? `:${port}` : ''}/api`;
 };
 
 const API_URL = getAPIUrl();
