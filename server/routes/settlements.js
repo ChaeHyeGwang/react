@@ -7,7 +7,10 @@ const path = require('path');
 const { getKSTDateTimeString } = require('../utils/time');
 
 // 기존 sqlite3 연결도 유지 (settlements 테이블용)
-const dbPath = path.join(__dirname, '..', 'database', 'management_system.db');
+// 환경변수 DB_PATH 사용 (프로덕션: management_system_prod.db)
+const dbPath = process.env.DB_PATH 
+  ? path.resolve(process.cwd(), process.env.DB_PATH)
+  : path.join(__dirname, '..', 'database', 'management_system.db');
 const dbLegacy = new sqlite3.Database(dbPath);
 
 // settlements 테이블 완전 재생성 (관리자용)
