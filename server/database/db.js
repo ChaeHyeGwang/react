@@ -32,6 +32,7 @@ class DatabaseManager {
           // 성능 최적화 설정만 실행 (기존 DB 파일 사용, 자동 생성/마이그레이션 비활성화)
           this.optimizeDatabase()
             .then(() => this.addTelegramColumnsToOffices())
+            .then(() => this.addNicknameColumn())
             .then(() => this.ensureIndexes())
             .then(resolve)
             .catch(reject);
@@ -216,6 +217,63 @@ class DatabaseManager {
           console.log('✅ display_order 컬럼 추가 완료');
           resolve();
         });
+      });
+    });
+  }
+
+  // nickname 컬럼 추가 마이그레이션
+  async addNicknameColumn() {
+    return new Promise((resolve, reject) => {
+      // 먼저 컬럼이 존재하는지 확인
+      this.db.all("PRAGMA table_info(identities)", (err, columns) => {
+        if (err) {
+          return reject(err);
+        }
+        
+        const hasNickname = columns.some(col => col.name === 'nickname');
+        const hasNicknames = columns.some(col => col.name === 'nicknames');
+        
+        let promises = [];
+        
+        if (!hasNickname) {
+          console.log('📝 nickname 컬럼 추가 시작...');
+          promises.push(new Promise((res, rej) => {
+            this.db.run('ALTER TABLE identities ADD COLUMN nickname TEXT DEFAULT ""', (err) => {
+              if (err && !err.message.includes('duplicate column')) {
+                console.error('❌ nickname 컬럼 추가 실패:', err.message);
+                return rej(err);
+              }
+              console.log('✅ nickname 컬럼 추가 완료');
+              res();
+            });
+          }));
+        } else {
+          console.log('✅ nickname 컬럼이 이미 존재합니다');
+        }
+        
+        if (!hasNicknames) {
+          console.log('📝 nicknames 컬럼 추가 시작...');
+          promises.push(new Promise((res, rej) => {
+            this.db.run('ALTER TABLE identities ADD COLUMN nicknames TEXT DEFAULT "[]"', (err) => {
+              if (err && !err.message.includes('duplicate column')) {
+                console.error('❌ nicknames 컬럼 추가 실패:', err.message);
+                return rej(err);
+              }
+              console.log('✅ nicknames 컬럼 추가 완료');
+              res();
+            });
+          }));
+        } else {
+          console.log('✅ nicknames 컬럼이 이미 존재합니다');
+        }
+        
+        if (promises.length === 0) {
+          return resolve();
+        }
+        
+        Promise.all(promises)
+          .then(() => resolve())
+          .catch(reject);
       });
     });
   }
@@ -867,6 +925,8 @@ class DatabaseManager {
         zodiac TEXT DEFAULT '',
         bank_accounts TEXT DEFAULT '[]',
         phone_numbers TEXT DEFAULT '[]',
+        nickname TEXT DEFAULT '',
+        nicknames TEXT DEFAULT '[]',
         status TEXT DEFAULT 'active',
         notes TEXT DEFAULT '',
         display_order INTEGER DEFAULT 0,

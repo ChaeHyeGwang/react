@@ -262,6 +262,7 @@ const SiteManagement = () => {
     zodiac: '',
     bank_accounts: [],
     phone_numbers: [],
+    nicknames: [],
     status: 'active',
     notes: ''
   });
@@ -1186,12 +1187,32 @@ const SiteManagement = () => {
   const openIdentityModal = (identity = null) => {
     if (identity) {
       setEditingIdentity(identity);
+      // nicknames를 안전하게 배열로 변환
+      let nicknamesArray = [];
+      if (identity.nicknames) {
+        if (Array.isArray(identity.nicknames)) {
+          nicknamesArray = identity.nicknames;
+        } else if (typeof identity.nicknames === 'string') {
+          try {
+            nicknamesArray = JSON.parse(identity.nicknames);
+            if (!Array.isArray(nicknamesArray)) {
+              nicknamesArray = [];
+            }
+          } catch {
+            nicknamesArray = [];
+          }
+        }
+      } else if (identity.nickname) {
+        nicknamesArray = [identity.nickname];
+      }
+      
       setIdentityForm({
         name: identity.name,
         birth_date: identity.birth_date,
         zodiac: identity.zodiac || '',
-        bank_accounts: identity.bank_accounts || [],
-        phone_numbers: identity.phone_numbers || [],
+        bank_accounts: Array.isArray(identity.bank_accounts) ? identity.bank_accounts : [],
+        phone_numbers: Array.isArray(identity.phone_numbers) ? identity.phone_numbers : [],
+        nicknames: nicknamesArray,
         status: identity.status,
         notes: identity.notes || ''
       });
@@ -1203,6 +1224,7 @@ const SiteManagement = () => {
         zodiac: '',
         bank_accounts: [],
         phone_numbers: [],
+        nicknames: [],
         status: 'active',
         notes: ''
       });
@@ -4891,6 +4913,86 @@ const SiteManagement = () => {
                   </div>
                 ) : (
                   <p className="text-sm text-gray-500 dark:text-white text-center py-2">등록된 전화번호가 없습니다</p>
+                )}
+              </div>
+              
+              {/* 닉네임 관리 */}
+              <div className="border-t pt-4">
+                <div className="flex items-center justify-between mb-2">
+                  <label className="block text-sm font-bold text-gray-700 dark:text-white">🏷️ 닉네임</label>
+                  <button
+                    onClick={() => {
+                      const newNicknames = [...(identityForm.nicknames || []), ''];
+                      setIdentityForm({...identityForm, nicknames: newNicknames});
+                    }}
+                    className="text-xs bg-green-500 text-white px-3 py-1 rounded hover:bg-green-600"
+                  >
+                    ➕ 닉네임 추가
+                  </button>
+                </div>
+                {Array.isArray(identityForm.nicknames) && identityForm.nicknames.length > 0 ? (
+                  <div className="space-y-2">
+                    {identityForm.nicknames.map((nickname, index) => (
+                      <div key={index} className="flex gap-2 items-start bg-gray-50 dark:bg-gray-700 p-2 rounded">
+                        <div className="flex flex-col gap-1">
+                          <button
+                            onClick={() => {
+                              if (index > 0 && Array.isArray(identityForm.nicknames)) {
+                                const newNicknames = [...identityForm.nicknames];
+                                [newNicknames[index - 1], newNicknames[index]] = [newNicknames[index], newNicknames[index - 1]];
+                                setIdentityForm({...identityForm, nicknames: newNicknames});
+                              }
+                            }}
+                            disabled={index === 0}
+                            className="text-blue-500 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 px-1 disabled:opacity-30 disabled:cursor-not-allowed"
+                            title="위로 이동"
+                          >
+                            ⬆️
+                          </button>
+                          <button
+                            onClick={() => {
+                              if (Array.isArray(identityForm.nicknames) && index < identityForm.nicknames.length - 1) {
+                                const newNicknames = [...identityForm.nicknames];
+                                [newNicknames[index], newNicknames[index + 1]] = [newNicknames[index + 1], newNicknames[index]];
+                                setIdentityForm({...identityForm, nicknames: newNicknames});
+                              }
+                            }}
+                            disabled={!Array.isArray(identityForm.nicknames) || index === identityForm.nicknames.length - 1}
+                            className="text-blue-500 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 px-1 disabled:opacity-30 disabled:cursor-not-allowed"
+                            title="아래로 이동"
+                          >
+                            ⬇️
+                          </button>
+                        </div>
+                        <input
+                          type="text"
+                          value={nickname || ''}
+                          onChange={(e) => {
+                            if (Array.isArray(identityForm.nicknames)) {
+                              const newNicknames = [...identityForm.nicknames];
+                              newNicknames[index] = e.target.value;
+                              setIdentityForm({...identityForm, nicknames: newNicknames});
+                            }
+                          }}
+                          placeholder="닉네임"
+                          className="flex-1 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded px-2 py-1 text-sm"
+                        />
+                        <button
+                          onClick={() => {
+                            if (Array.isArray(identityForm.nicknames)) {
+                              const newNicknames = identityForm.nicknames.filter((_, i) => i !== index);
+                              setIdentityForm({...identityForm, nicknames: newNicknames});
+                            }
+                          }}
+                          className="text-red-500 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 px-2"
+                        >
+                          🗑️
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-sm text-gray-500 dark:text-gray-400 text-center py-2">등록된 닉네임이 없습니다</p>
                 )}
               </div>
               

@@ -188,11 +188,14 @@ router.get('/', auth, async (req, res) => {
         zodiac = calculateZodiac(identity.birth_date);
       }
       
+      const nicknames = identity.nickname ? [identity.nickname] : (identity.nicknames ? JSON.parse(identity.nicknames || '[]') : []);
+      
       return {
         ...identity,
         zodiac: zodiac,
         bank_accounts: JSON.parse(identity.bank_accounts || '[]'),
-        phone_numbers: JSON.parse(identity.phone_numbers || '[]')
+        phone_numbers: JSON.parse(identity.phone_numbers || '[]'),
+        nicknames: nicknames
       };
     });
     
@@ -349,6 +352,7 @@ router.post('/', auth, async (req, res) => {
       birth_date, 
       bank_accounts = [], 
       phone_numbers = [], 
+      nicknames = [],
       status = 'active', 
       notes = '' 
     } = req.body;
@@ -375,13 +379,15 @@ router.post('/', auth, async (req, res) => {
     
     const bankAccountsJson = JSON.stringify(bank_accounts);
     const phoneNumbersJson = JSON.stringify(phone_numbers);
+    const nicknamesJson = JSON.stringify(nicknames);
+    const nickname = nicknames && nicknames.length > 0 ? nicknames[0] : ''; // 하위 호환성을 위해 첫 번째 닉네임 저장
     const zodiac = calculateZodiac(birth_date);
     
     const result = await db.run(
       `INSERT INTO identities 
-       (account_id, name, birth_date, zodiac, bank_accounts, phone_numbers, status, notes) 
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      [filterAccountId, name, birth_date, zodiac, bankAccountsJson, phoneNumbersJson, status, notes]
+       (account_id, name, birth_date, zodiac, bank_accounts, phone_numbers, nickname, nicknames, status, notes) 
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [filterAccountId, name, birth_date, zodiac, bankAccountsJson, phoneNumbersJson, nickname, nicknamesJson, status, notes]
     );
     
     res.json({ success: true, identityId: result.lastID, message: '명의가 추가되었습니다' });
@@ -412,6 +418,7 @@ router.put('/:id', auth, async (req, res) => {
       birth_date, 
       bank_accounts, 
       phone_numbers, 
+      nicknames = [],
       status, 
       notes,
       display_order
@@ -419,22 +426,24 @@ router.put('/:id', auth, async (req, res) => {
     
     const bankAccountsJson = JSON.stringify(bank_accounts);
     const phoneNumbersJson = JSON.stringify(phone_numbers);
+    const nicknamesJson = JSON.stringify(nicknames);
+    const nickname = nicknames && nicknames.length > 0 ? nicknames[0] : ''; // 하위 호환성을 위해 첫 번째 닉네임 저장
     const zodiac = calculateZodiac(birth_date);
     
     // display_order가 제공된 경우에만 업데이트
     if (display_order !== undefined) {
       await db.run(
         `UPDATE identities 
-         SET name = ?, birth_date = ?, zodiac = ?, bank_accounts = ?, phone_numbers = ?, status = ?, notes = ?, display_order = ?
+         SET name = ?, birth_date = ?, zodiac = ?, bank_accounts = ?, phone_numbers = ?, nickname = ?, nicknames = ?, status = ?, notes = ?, display_order = ?
          WHERE id = ?`,
-        [name, birth_date, zodiac, bankAccountsJson, phoneNumbersJson, status, notes, display_order, id]
+        [name, birth_date, zodiac, bankAccountsJson, phoneNumbersJson, nickname, nicknamesJson, status, notes, display_order, id]
       );
     } else {
       await db.run(
         `UPDATE identities 
-         SET name = ?, birth_date = ?, zodiac = ?, bank_accounts = ?, phone_numbers = ?, status = ?, notes = ?
+         SET name = ?, birth_date = ?, zodiac = ?, bank_accounts = ?, phone_numbers = ?, nickname = ?, nicknames = ?, status = ?, notes = ?
          WHERE id = ?`,
-        [name, birth_date, zodiac, bankAccountsJson, phoneNumbersJson, status, notes, id]
+        [name, birth_date, zodiac, bankAccountsJson, phoneNumbersJson, nickname, nicknamesJson, status, notes, id]
       );
     }
     

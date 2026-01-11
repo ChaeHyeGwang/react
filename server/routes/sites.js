@@ -429,11 +429,15 @@ router.post('/merge-names', auth, async (req, res) => {
     if (req.user.isSuperAdmin) {
       query = `UPDATE site_accounts SET site_name = ? WHERE site_name = ?`;
     } else {
+      // 사무실 관리자: 해당 사무실의 계정들의 명의만 통합
       query = `
         UPDATE site_accounts 
         SET site_name = ? 
         WHERE site_name = ? AND identity_id IN (
-          SELECT id FROM identities WHERE office_id = ?
+          SELECT i.id 
+          FROM identities i
+          INNER JOIN accounts a ON i.account_id = a.id
+          WHERE a.office_id = ?
         )
       `;
       params.push(req.user.filterOfficeId);
@@ -441,18 +445,32 @@ router.post('/merge-names', auth, async (req, res) => {
     
     const result = await db.run(query, params);
     
-    // site_notes 테이블도 업데이트
-    let notesQuery;
-    const notesParams = [trimmedTarget, trimmedSource];
-    
-    if (req.user.isSuperAdmin) {
-      notesQuery = `UPDATE site_notes SET site_name = ? WHERE site_name = ?`;
-    } else {
-      notesQuery = `UPDATE site_notes SET site_name = ? WHERE site_name = ? AND office_id = ?`;
-      notesParams.push(req.user.filterOfficeId);
+    // site_notes 테이블도 업데이트 (office_id 컬럼이 있는 경우에만)
+    try {
+      // site_notes 테이블의 컬럼 확인
+      const columns = await db.all("PRAGMA table_info(site_notes)");
+      const hasOfficeId = columns && columns.some(col => col.name === 'office_id');
+      
+      let notesQuery;
+      const notesParams = [trimmedTarget, trimmedSource];
+      
+      if (hasOfficeId) {
+        if (req.user.isSuperAdmin) {
+          notesQuery = `UPDATE site_notes SET site_name = ? WHERE site_name = ?`;
+        } else {
+          notesQuery = `UPDATE site_notes SET site_name = ? WHERE site_name = ? AND office_id = ?`;
+          notesParams.push(req.user.filterOfficeId);
+        }
+      } else {
+        // office_id 컬럼이 없으면 office_id 조건 없이 업데이트
+        notesQuery = `UPDATE site_notes SET site_name = ? WHERE site_name = ?`;
+      }
+      
+      await db.run(notesQuery, notesParams);
+    } catch (notesError) {
+      // site_notes 업데이트 실패해도 계속 진행 (site_accounts 업데이트는 성공했으므로)
+      console.warn('site_notes 업데이트 실패 (무시됨):', notesError);
     }
-    
-    await db.run(notesQuery, notesParams);
     
     res.json({ 
       success: true, 
