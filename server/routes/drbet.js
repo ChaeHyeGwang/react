@@ -429,39 +429,45 @@ router.put('/:id', auth, async (req, res) => {
     // 먼저 해당 레코드가 현재 사용자의 계정에 속하는지 확인
     let existingRecord;
     
-    if (req.user.isOfficeManager && req.user.filterOfficeId) {
-      // 사무실 관리자: 자신의 사무실에 속한 계정의 레코드만 수정 가능
-      if (req.user.filterAccountId) {
-        // 특정 계정 선택 시: 해당 계정의 레코드만 수정 가능
-        existingRecord = await db.get(
-          `SELECT dr.* 
-           FROM drbet_records dr
-           INNER JOIN accounts a ON dr.account_id = a.id
-           WHERE dr.id = ? AND dr.account_id = ? AND a.office_id = ?`,
-          [id, req.user.filterAccountId, req.user.filterOfficeId]
-        );
+    try {
+      if (req.user.isOfficeManager && req.user.filterOfficeId) {
+        // 사무실 관리자: 자신의 사무실에 속한 계정의 레코드만 수정 가능
+        if (req.user.filterAccountId) {
+          // 특정 계정 선택 시: 해당 계정의 레코드만 수정 가능
+          existingRecord = await db.get(
+            `SELECT dr.* 
+             FROM drbet_records dr
+             INNER JOIN accounts a ON dr.account_id = a.id
+             WHERE dr.id = ? AND dr.account_id = ? AND a.office_id = ?`,
+            [id, req.user.filterAccountId, req.user.filterOfficeId]
+          );
+        } else {
+          // 계정 미선택 시: 사무실 내 모든 계정의 레코드 수정 가능
+          existingRecord = await db.get(
+            `SELECT dr.* 
+             FROM drbet_records dr
+             INNER JOIN accounts a ON dr.account_id = a.id
+             WHERE dr.id = ? AND a.office_id = ?`,
+            [id, req.user.filterOfficeId]
+          );
+        }
       } else {
-        // 계정 미선택 시: 사무실 내 모든 계정의 레코드 수정 가능
+        // 일반 사용자: 자신의 계정 레코드만 수정 가능
+        if (!req.user.filterAccountId) {
+          return res.status(403).json({ message: '계정을 선택해주세요.' });
+        }
         existingRecord = await db.get(
-          `SELECT dr.* 
-           FROM drbet_records dr
-           INNER JOIN accounts a ON dr.account_id = a.id
-           WHERE dr.id = ? AND a.office_id = ?`,
-          [id, req.user.filterOfficeId]
+          `SELECT * FROM drbet_records WHERE id = ? AND account_id = ?`,
+          [id, req.user.filterAccountId]
         );
       }
-    } else {
-      // 일반 사용자: 자신의 계정 레코드만 수정 가능
-      if (!req.user.filterAccountId) {
-        return res.status(403).json({ message: '계정을 선택해주세요.' });
-      }
-      existingRecord = await db.get(
-        `SELECT * FROM drbet_records WHERE id = ? AND account_id = ?`,
-        [id, req.user.filterAccountId]
-      );
+    } catch (error) {
+      console.error('레코드 조회 중 오류:', error);
+      return res.status(500).json({ message: '레코드 조회 중 오류가 발생했습니다.', error: error.message });
     }
 
     if (!existingRecord) {
+      console.error(`레코드를 찾을 수 없음: id=${id}, isOfficeManager=${req.user.isOfficeManager}, filterOfficeId=${req.user.filterOfficeId}, filterAccountId=${req.user.filterAccountId}`);
       return res.status(403).json({ message: '이 레코드에 대한 접근 권한이 없습니다.' });
     }
 
@@ -588,7 +594,7 @@ router.put('/:id', auth, async (req, res) => {
     // 자동 출석 처리 후 레코드 다시 조회 (attendance1~4 필드 업데이트 반영)
     updatedRecord = await db.get(
       `SELECT * FROM drbet_records WHERE id = ? AND account_id = ?`,
-      [id, req.user.filterAccountId]
+      [id, existingRecord.account_id]
     );
 
     // 응답에 출석일 정보 추가

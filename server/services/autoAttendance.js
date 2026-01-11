@@ -459,7 +459,7 @@ async function handleUpdateRecord(accountId, oldRecord, newRecord, newRecordDate
  * 로그 추가/삭제만 수행 (출석일 계산 없음)
  */
 async function processLogOnly(accountId, siteName, identityName, chargeValue, date) {
-  const settings = await getSiteSettings(accountId, siteName);
+  const settings = await getSiteSettings(accountId, siteName, identityName);
   if (settings.attendanceType !== '자동') {
     log(`   [출석] ${identityName}/${siteName}: 수동 모드 - 스킵`);
     return;
@@ -477,7 +477,7 @@ async function processLogOnly(accountId, siteName, identityName, chargeValue, da
  * 출석일 계산 및 업데이트 (커밋 후 호출)
  */
 async function calculateAndUpdateAttendance(accountId, siteName, identityName, chargeValue, date) {
-  const settings = await getSiteSettings(accountId, siteName);
+  const settings = await getSiteSettings(accountId, siteName, identityName);
   if (settings.attendanceType !== '자동') {
     return null;
   }

@@ -3259,20 +3259,20 @@ function DRBet() {
       }));
       setRefreshTick(t => t + 1);
 
-      // 서버에 저장
+      // 서버에 저장 (순차적으로 실행하여 트랜잭션 충돌 방지)
       try {
-        const promises = [];
+        // 소스 레코드 먼저 저장
         if (updatedSourceRecord.isNew || !updatedSourceRecord.id) {
-          promises.push(axiosInstance.post('/drbet', updatedSourceRecord));
+          await axiosInstance.post('/drbet', updatedSourceRecord);
         } else {
-          promises.push(axiosInstance.put(`/drbet/${updatedSourceRecord.id}`, updatedSourceRecord));
+          await axiosInstance.put(`/drbet/${updatedSourceRecord.id}`, updatedSourceRecord);
         }
+        // 목적지 레코드 저장
         if (updatedDestRecord.isNew || !updatedDestRecord.id) {
-          promises.push(axiosInstance.post('/drbet', updatedDestRecord));
+          await axiosInstance.post('/drbet', updatedDestRecord);
         } else {
-          promises.push(axiosInstance.put(`/drbet/${updatedDestRecord.id}`, updatedDestRecord));
+          await axiosInstance.put(`/drbet/${updatedDestRecord.id}`, updatedDestRecord);
         }
-        await Promise.all(promises);
         toast.success('사이트 위치가 변경되었습니다');
         await loadRecords();
       } catch (error) {
