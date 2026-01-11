@@ -165,6 +165,20 @@ function SettlementManagement() {
       const userData = record.user_data || {};
       const userInfo = userData[identityId] || {};
       currentValue = userInfo[field] || '';
+      
+      // 날짜 필드인 경우: yyyy-mm-dd에서 일자만 추출
+      if (field === 'date' || field === 'gift_date') {
+        if (currentValue) {
+          // yyyy-mm-dd 형식에서 일자만 추출
+          const dateMatch = currentValue.match(/\d{4}-\d{2}-(\d{2})/);
+          if (dateMatch) {
+            currentValue = dateMatch[1]; // 일자만 (예: "25")
+          } else {
+            // 이미 일자만 있는 경우 그대로 사용
+            currentValue = currentValue;
+          }
+        }
+      }
     } else {
       // 공통 필드
       currentValue = record[field] || '';
@@ -180,6 +194,24 @@ function SettlementManagement() {
 
     const { field, identityId } = editingCell;
     const updatedRecord = { ...record };
+    let valueToSave = editingValue;
+
+    // 날짜 필드인 경우: 일자를 yyyy-mm-dd 형식으로 변환
+    if ((field === 'date' || field === 'gift_date') && identityId !== null) {
+      if (valueToSave && valueToSave.trim() !== '') {
+        // 일자만 입력된 경우 (예: "25")
+        const day = parseInt(valueToSave.trim());
+        if (!isNaN(day) && day >= 1 && day <= 31) {
+          // 선택된 년월과 일자를 조합하여 yyyy-mm-dd 형식으로 변환
+          const dayStr = String(day).padStart(2, '0');
+          valueToSave = `${selectedYearMonth}-${dayStr}`;
+        } else {
+          // 유효하지 않은 일자
+          toast.error('유효한 일자(1-31)를 입력해주세요');
+          return;
+        }
+      }
+    }
 
     if (identityId !== null) {
       // 명의별 데이터 업데이트
@@ -187,11 +219,11 @@ function SettlementManagement() {
       if (!userData[identityId]) {
         userData[identityId] = {};
       }
-      userData[identityId][field] = editingValue;
+      userData[identityId][field] = valueToSave;
       updatedRecord.user_data = userData;
     } else {
       // 공통 필드 업데이트
-      updatedRecord[field] = editingValue;
+      updatedRecord[field] = valueToSave;
     }
 
     try {
@@ -282,14 +314,22 @@ function SettlementManagement() {
                       editingCell?.identityId === identityId;
     
     if (isEditing) {
+      // 날짜 필드는 일자만 입력받도록 number 타입 사용
+      const inputType = field === 'date' || field === 'gift_date' ? 'number' : 
+                       field.includes('amount') ? 'text' : 
+                       field.includes('number') ? 'number' : 'text';
+      
       return (
         <input
-          type={field.includes('amount') ? 'text' : field.includes('number') ? 'number' : field.includes('date') ? 'date' : 'text'}
+          type={inputType}
           value={editingValue}
           onChange={(e) => setEditingValue(e.target.value)}
           onBlur={() => handleCellBlur(record)}
           onKeyDown={(e) => handleKeyPress(e, record)}
           autoFocus
+          min={field === 'date' || field === 'gift_date' ? 1 : undefined}
+          max={field === 'date' || field === 'gift_date' ? 31 : undefined}
+          placeholder={field === 'date' || field === 'gift_date' ? '일자' : ''}
           className="w-full px-2 py-1 border border-blue-500 dark:border-blue-400 bg-white dark:bg-gray-700 text-gray-900 dark:text-white rounded focus:outline-none focus:ring-2 focus:ring-blue-500 hover:bg-gray-50 dark:hover:bg-gray-800"
         />
       );

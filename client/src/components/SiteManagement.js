@@ -69,6 +69,7 @@ const SiteManagement = () => {
   const [editingCell, setEditingCell] = useState(null); // { siteId, field }
   const [editingValue, setEditingValue] = useState('');
   const [isManualInputMode, setIsManualInputMode] = useState(false); // 수동입력 모드인지 체크
+  const [editingStatusDate, setEditingStatusDate] = useState(''); // 승인유무 날짜 (MM.DD 형식)
   const savingCellRef = useRef(false); // 저장 중복 방지
   
   // 새 행 추가 상태
@@ -128,6 +129,15 @@ const SiteManagement = () => {
   const [selectedMergeSource, setSelectedMergeSource] = useState(''); // 통합 원본
   const [selectedMergeTarget, setSelectedMergeTarget] = useState(''); // 통합 대상
   const siteNameInputRef = useRef(null); // 사이트명 입력 필드 ref
+
+  // KST 기준 오늘 날짜 (MM.DD)
+  const getTodayKSTDate = useCallback(() => {
+    const now = new Date();
+    const kstDate = new Date(now.toLocaleString('en-US', {timeZone: 'Asia/Seoul'}));
+    const month = String(kstDate.getMonth() + 1).padStart(2, '0');
+    const day = String(kstDate.getDate()).padStart(2, '0');
+    return `${month}.${day}`;
+  }, []);
 
   // 일괄 등록 상태 초기화
   const resetBulkImportState = () => {
@@ -2068,6 +2078,7 @@ const SiteManagement = () => {
   const cancelEditingCell = () => {
     setEditingCell(null);
     setEditingValue('');
+    setEditingStatusDate('');
   };
 
   // 승전(approval_call) 더블클릭 편집 시작
@@ -3292,6 +3303,46 @@ const SiteManagement = () => {
                       // 전체 이력 목록 (삭제용)
                       const statusHistory = site.status ? site.status.split('/').map(s => s.trim()).filter(s => s) : [];
                       
+                      // 기존 상태에서 날짜 추출 (없으면 오늘 날짜)
+                      const extractDateFromStatus = (status) => {
+                        if (!status) {
+                          // 한국 시간 기준 오늘 날짜
+                          const now = new Date();
+                          const kstDate = new Date(now.toLocaleString('en-US', {timeZone: 'Asia/Seoul'}));
+                          const month = String(kstDate.getMonth() + 1).padStart(2, '0');
+                          const day = String(kstDate.getDate()).padStart(2, '0');
+                          return `${month}.${day}`;
+                        }
+                        // 상태에서 마지막 날짜 추출 (예: "12.30 승인/01.11 장점검" -> "01.11")
+                        const parts = status.split('/');
+                        const lastPart = parts[parts.length - 1]?.trim() || '';
+                        const match = lastPart.match(/^(\d{1,2}\.\d{1,2})/);
+                        if (match) {
+                          return match[1];
+                        }
+                        // 날짜가 없으면 한국 시간 기준 오늘 날짜
+                        const now = new Date();
+                        const kstDate = new Date(now.toLocaleString('en-US', {timeZone: 'Asia/Seoul'}));
+                        const month = String(kstDate.getMonth() + 1).padStart(2, '0');
+                        const day = String(kstDate.getDate()).padStart(2, '0');
+                        return `${month}.${day}`;
+                      };
+                      
+                      // 편집 시작 시 날짜 초기화 (editingStatusDate가 없으면 오늘 한국 날짜 사용)
+                      const getTodayKSTDate = () => {
+                        const now = new Date();
+                        const kstDate = new Date(now.toLocaleString('en-US', {timeZone: 'Asia/Seoul'}));
+                        const month = String(kstDate.getMonth() + 1).padStart(2, '0');
+                        const day = String(kstDate.getDate()).padStart(2, '0');
+                        return `${month}.${day}`;
+                      };
+                      
+                      // editingStatusDate가 없으면 오늘 한국 날짜를 기본값으로 사용
+                      const initialDate = editingStatusDate !== '' ? editingStatusDate : getTodayKSTDate();
+                      
+                      // 편집 시작 시 editingStatusDate 초기화는 useEffect에서 처리하지 않고
+                      // value에서 editingStatusDate || initialDate로 처리
+                      
                       return (
                         <div className="space-y-1">
                           {/* 전체 이력 표시 (삭제 가능) */}
@@ -3328,6 +3379,7 @@ const SiteManagement = () => {
                                           // 편집 모드 종료
                                           setEditingCell(null);
                                           setEditingValue('');
+                                          setEditingStatusDate('');
                                           
                                           // 데이터 새로고침
                                           await loadSites(selectedIdentity.id);
@@ -3347,19 +3399,124 @@ const SiteManagement = () => {
                             </div>
                           )}
                           
+                          {/* 날짜 입력 필드 */}
+                          <div className="flex items-center gap-2 mb-1">
+                            <label className="text-xs font-bold text-gray-600 dark:text-gray-300 whitespace-nowrap">날짜:</label>
+                            <input
+                              type="text"
+                              value={editingStatusDate}
+                              onChange={(e) => {
+                                let value = e.target.value;
+                                // 모든 문자 허용 (사용자가 자유롭게 입력할 수 있도록)
+                                // 빈 문자열도 허용 (사용자가 모든 것을 지울 수 있도록)
+                                // 나중에 onBlur에서 검증
+                                setEditingStatusDate(value);
+                                
+                                // editingValue도 업데이트 (날짜 부분만 변경)
+                                if (editingValue) {
+                                  const pureStatus = editingValue.replace(/^\d{1,2}\.\d{1,2}\s*/, '').trim();
+                                  // value가 비어있어도 그대로 사용 (onBlur에서 검증)
+                                  setEditingValue(value !== '' ? `${value} ${pureStatus}` : ` ${pureStatus}`);
+                                }
+                              }}
+                              onMouseDown={(e) => {
+                                e.stopPropagation();
+                              }}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                              }}
+                              onBlur={(e) => {
+                                // 날짜 형식 검증 (MM.DD 형식)
+                                let dateValue = editingStatusDate ? editingStatusDate.trim() : '';
+                                const datePattern = /^(\d{1,2})\.(\d{1,2})$/;
+                                
+                                // 빈 값이면 오늘 날짜로 설정
+                                if (!dateValue) {
+                                  dateValue = initialDate;
+                                  setEditingStatusDate(initialDate);
+                                }
+                                
+                                // 형식이 맞지 않으면 토스트 표시
+                                if (!datePattern.test(dateValue)) {
+                                  // 편집 모드 유지하고 토스트 표시
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  toast.error('날짜 형식이 올바르지 않습니다. MM.DD 형식으로 입력해주세요. (예: 12.12, 01.13)');
+                                  // 포커스 다시 설정
+                                  setTimeout(() => {
+                                    e.target.focus();
+                                  }, 100);
+                                  return;
+                                }
+                                
+                                // 형식이 맞으면 editingValue 업데이트
+                                if (dateValue && editingValue) {
+                                  const pureStatus = editingValue.replace(/^\d{1,2}\.\d{1,2}\s*/, '').trim();
+                                  setEditingValue(`${dateValue} ${pureStatus}`);
+                                }
+                                
+                                // 다른 편집 가능한 필드로 포커스가 이동하는 경우는 허용
+                                const relatedTarget = e.relatedTarget;
+                                if (relatedTarget && (
+                                  relatedTarget.closest('.space-y-1') === e.target.closest('.space-y-1')
+                                )) {
+                                  // 같은 편집 영역 내의 다른 필드로 이동하는 경우는 허용
+                                  return;
+                                }
+                                // 외부로 포커스가 이동하는 경우에도 편집 모드 유지
+                                e.stopPropagation();
+                              }}
+                              placeholder="MM.DD"
+                              className="w-20 px-2 py-1 border border-blue-500 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm font-bold dark:bg-[#282C34] dark:text-white dark:border-blue-400"
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter' || e.key === 'Tab') {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  
+                                  // 날짜 형식 검증
+                                  const dateValue = editingStatusDate.trim();
+                                  const datePattern = /^(\d{1,2})\.(\d{1,2})$/;
+                                  
+                                  // 빈 값이거나 형식이 맞지 않으면 토스트 표시
+                                  if (!dateValue || !datePattern.test(dateValue)) {
+                                    toast.error('날짜 형식이 올바르지 않습니다. MM.DD 형식으로 입력해주세요. (예: 12.12, 01.13)');
+                                    return;
+                                  }
+                                  
+                                  // 형식이 맞으면 다음 필드로 포커스 이동
+                                  const selectElement = e.target.parentElement.nextElementSibling?.querySelector('select');
+                                  if (selectElement) {
+                                    selectElement.focus();
+                                  }
+                                } else if (e.key === 'Escape') {
+                                  // ESC 키는 편집 취소
+                                  cancelEditingCell();
+                                }
+                              }}
+                            />
+                          </div>
+                          
                           {!isManualInputMode ? (
                             // 유효한 옵션이거나 기존 값이면 셀렉트박스
                             <select
                               value={optionsList.includes(currentDisplayValue) ? currentDisplayValue : ''}
                               onChange={(e) => {
                                 const newValue = e.target.value;
-                                const now = new Date();
-                                const month = String(now.getMonth() + 1).padStart(2, '0');
-                                const day = String(now.getDate()).padStart(2, '0');
-                                const datePrefix = `${month}.${day}`;
+                                // 날짜 형식 검증
+                                const dateValue = editingStatusDate.trim();
+                                const datePattern = /^(\d{1,2})\.(\d{1,2})$/;
+                                const datePrefix = (editingStatusDate !== '' && datePattern.test(dateValue)) 
+                                  ? editingStatusDate.trim() 
+                                  : initialDate;
                                 setEditingValue(`${datePrefix} ${newValue}`);
                               }}
-                              onBlur={async () => {
+                              onBlur={async (e) => {
+                                // 날짜 입력 필드로 포커스가 이동하는 경우는 무시
+                                const relatedTarget = e.relatedTarget;
+                                if (relatedTarget && relatedTarget.type === 'text' && relatedTarget.placeholder === 'MM.DD') {
+                                  return;
+                                }
+                                
                                 // 삭제 버튼 클릭 중이면 무시
                                 if (isDeletingHistory) {
                                   return;
@@ -3381,8 +3538,23 @@ const SiteManagement = () => {
                                   ? editingStatusPure?.match(/^수동입력\s+(.+)$/)?.[1] || editingStatusPure
                                   : editingStatusPure;
                                 
-                                // 실제로 값이 변경되었는지 확인 (마지막 상태와 비교)
-                                const hasChanged = editingStatusClean !== lastStatusPure;
+                                // 사용자가 입력한 날짜 사용 (없으면 initialDate, 그것도 없으면 한국 시간 기준 오늘 날짜)
+                                const datePrefix = editingStatusDate !== '' ? editingStatusDate : (initialDate || (() => {
+                                  const now = new Date();
+                                  const kstDate = new Date(now.toLocaleString('en-US', {timeZone: 'Asia/Seoul'}));
+                                  const month = String(kstDate.getMonth() + 1).padStart(2, '0');
+                                  const day = String(kstDate.getDate()).padStart(2, '0');
+                                  return `${month}.${day}`;
+                                })());
+                                
+                                // 기존 날짜 추출
+                                const existingDateMatch = lastStatusPart.match(/^(\d{1,2}\.\d{1,2})/);
+                                const existingDate = existingDateMatch ? existingDateMatch[1] : '';
+                                
+                                // 상태값이 변경되었는지 또는 날짜가 변경되었는지 확인
+                                const statusChanged = editingStatusClean !== lastStatusPure;
+                                const dateChanged = datePrefix !== existingDate;
+                                const hasChanged = statusChanged || dateChanged;
                                 
                                 if (hasChanged) {
                                   // 새 행인 경우와 기존 행인 경우 분리
@@ -3392,11 +3564,7 @@ const SiteManagement = () => {
                                     saveEditingCell();
                                   } else {
                                     // 기존 행인 경우 PUT으로 수정
-                                    // 현재 날짜 계산
-                                    const now = new Date();
-                                    const month = String(now.getMonth() + 1).padStart(2, '0');
-                                    const day = String(now.getDate()).padStart(2, '0');
-                                    const datePrefix = `${month}.${day}`;
+                                    // datePrefix는 위에서 이미 계산됨
                                     
                                     // 편집 중인 값에서 날짜 제거 후 순수 상태값 추출
                                     let newStatusValue = editingValue.replace(/^\d{1,2}\.\d{1,2}\s*/, '').trim();
@@ -3492,26 +3660,62 @@ const SiteManagement = () => {
                               value={pureStatus}
                               onChange={(e) => {
                                 const newValue = e.target.value;
-                                const now = new Date();
-                                const month = String(now.getMonth() + 1).padStart(2, '0');
-                                const day = String(now.getDate()).padStart(2, '0');
-                                const datePrefix = `${month}.${day}`;
                                 
+                                // 날짜 형식 검증
+                                const dateValue = editingStatusDate.trim();
+                                const datePattern = /^(\d{1,2})\.(\d{1,2})$/;
+                                
+                                // 사용자가 입력한 날짜 사용 (없으면 initialDate, 그것도 없으면 한국 시간 기준 오늘 날짜)
+                                const datePrefix = (editingStatusDate !== '' && datePattern.test(dateValue))
+                                  ? editingStatusDate.trim()
+                                  : (initialDate || (() => {
+                                      const now = new Date();
+                                      const kstDate = new Date(now.toLocaleString('en-US', {timeZone: 'Asia/Seoul'}));
+                                      const month = String(kstDate.getMonth() + 1).padStart(2, '0');
+                                      const day = String(kstDate.getDate()).padStart(2, '0');
+                                      return `${month}.${day}`;
+                                    })());
                                 // 날짜와 값만 저장 (수동입력 텍스트 없이)
                                 setEditingValue(`${datePrefix} ${newValue}`);
                               }}
-                              onBlur={async () => {
+                              onBlur={async (e) => {
+                                // 날짜 입력 필드로 포커스가 이동하는 경우는 무시
+                                const relatedTarget = e.relatedTarget;
+                                if (relatedTarget && relatedTarget.type === 'text' && relatedTarget.placeholder === 'MM.DD') {
+                                  return;
+                                }
+                                
+                                // 날짜 형식 검증
+                                const dateValue = editingStatusDate.trim();
+                                const datePattern = /^(\d{1,2})\.(\d{1,2})$/;
+                                
+                                // 빈 값이거나 형식이 맞지 않으면 토스트 표시
+                                if (!dateValue || !datePattern.test(dateValue)) {
+                                  // 편집 모드 유지하고 토스트 표시
+                                  toast.error('날짜 형식이 올바르지 않습니다. MM.DD 형식으로 입력해주세요. (예: 12.12, 01.13)');
+                                  // 포커스 다시 설정
+                                  setTimeout(() => {
+                                    e.target.focus();
+                                  }, 100);
+                                  return;
+                                }
+                                
                                 // 편집 중인 값에서 날짜 제거 후 순수 상태값 추출
                                 let newStatusValue = editingValue.replace(/^\d{1,2}\.\d{1,2}\s*/, '').trim();
                                 
                                 // 수동입력 텍스트 제거 (이미 수동입력인 경우, DB에는 저장하지 않음)
                                 const pureStatusValue = newStatusValue.replace(/^수동입력\s+/, '').trim();
                                 
-                                // 현재 날짜 계산
-                                const now = new Date();
-                                const month = String(now.getMonth() + 1).padStart(2, '0');
-                                const day = String(now.getDate()).padStart(2, '0');
-                                const datePrefix = `${month}.${day}`;
+                                // 사용자가 입력한 날짜 사용 (없으면 initialDate, 그것도 없으면 한국 시간 기준 오늘 날짜)
+                                const datePrefix = editingStatusDate !== '' && datePattern.test(editingStatusDate.trim())
+                                  ? editingStatusDate.trim()
+                                  : (initialDate || (() => {
+                                      const now = new Date();
+                                      const kstDate = new Date(now.toLocaleString('en-US', {timeZone: 'Asia/Seoul'}));
+                                      const month = String(kstDate.getMonth() + 1).padStart(2, '0');
+                                      const day = String(kstDate.getDate()).padStart(2, '0');
+                                      return `${month}.${day}`;
+                                    })());
                                 
                                 // 날짜가 포함된 새 상태값 생성 (수동입력 텍스트 없이 저장)
                                 const newStatusWithDate = `${datePrefix} ${pureStatusValue}`;
@@ -3575,13 +3779,11 @@ const SiteManagement = () => {
                         onDoubleClick={() => {
                           setIsManualInputMode(false); // 더블클릭시 수동입력 모드 비활성화
                           
-                          // site.status의 마지막 상태를 추출하여 editingValue 설정
-                          const now = new Date();
-                          const month = String(now.getMonth() + 1).padStart(2, '0');
-                          const day = String(now.getDate()).padStart(2, '0');
-                          const datePrefix = `${month}.${day}`;
+                          // 편집 시작 시 항상 오늘 날짜를 기본값으로 사용
+                          const todayDate = getTodayKSTDate();
+                          setEditingStatusDate(todayDate);
                           
-                          // 마지막 상태 추출
+                          // site.status의 마지막 상태에서 순수 상태값만 추출
                           if (site.status) {
                             const parts = site.status.split('/').map(s => s.trim());
                             const lastPart = parts[parts.length - 1];
@@ -3592,39 +3794,41 @@ const SiteManagement = () => {
                             // 수동입력 텍스트 제거 (DB에는 저장되지 않지만 기존 데이터에 있을 수 있음)
                             pureStatus = pureStatus.replace(/^수동입력\s+/, '').trim();
                             
-                            // 처음에는 마지막 상태값으로 설정
-                            setEditingValue(`${datePrefix} ${pureStatus}`);
+                            // 오늘 날짜와 순수 상태값으로 설정
+                            setEditingValue(`${todayDate} ${pureStatus}`);
                           } else {
-                            setEditingValue(`${datePrefix} 대기`);
+                            setEditingValue(`${todayDate} 대기`);
                           }
                           
                           setEditingCell({ siteId: site.id, field: 'status' });
                         }}
-                        onContextMenu={(e) => {
-                          e.preventDefault(); // 기본 메뉴 방지
-                          // 우클릭하면 수동입력 모드로 전환
-                          const now = new Date();
-                          const month = String(now.getMonth() + 1).padStart(2, '0');
-                          const day = String(now.getDate()).padStart(2, '0');
-                          const datePrefix = `${month}.${day}`;
-                          
-                          // 마지막 수동입력 값 추출
-                          // 마지막 상태에서 모든 날짜 제거 후 순수 상태값 추출
-                          if (site.status) {
-                            const parts = site.status.split('/').map(s => s.trim());
-                            const lastPart = parts[parts.length - 1];
-                            // 모든 날짜 제거
-                            let pureStatus = lastPart.replace(/\d{1,2}\.\d{1,2}\s*/g, '').trim();
-                            // 수동입력 텍스트 제거 (기존 데이터에 있을 수 있음)
-                            pureStatus = pureStatus.replace(/^수동입력\s+/, '').trim();
-                            setEditingValue(`${datePrefix} ${pureStatus || ''}`);
-                          } else {
-                            setEditingValue(`${datePrefix} `);
-                          }
-                          
-                          setEditingCell({ siteId: site.id, field: 'status' });
-                          setIsManualInputMode(true); // 수동입력 모드 활성화
-                        }}
+                          onContextMenu={(e) => {
+                            e.preventDefault(); // 기본 메뉴 방지
+                            // 우클릭하면 수동입력 모드로 전환
+                            
+                            // 편집 시작 시 항상 오늘 날짜를 기본값으로 사용
+                            const todayDate = getTodayKSTDate();
+                            setEditingStatusDate(todayDate);
+                            
+                            // site.status의 마지막 상태에서 순수 상태값만 추출
+                            if (site.status) {
+                              const parts = site.status.split('/').map(s => s.trim());
+                              const lastPart = parts[parts.length - 1];
+                              
+                              // 모든 날짜 제거
+                              let pureStatus = lastPart.replace(/\d{1,2}\.\d{1,2}\s*/g, '').trim();
+                              // 수동입력 텍스트 제거 (기존 데이터에 있을 수 있음)
+                              pureStatus = pureStatus.replace(/^수동입력\s+/, '').trim();
+                              
+                              // 오늘 날짜와 순수 상태값으로 설정
+                              setEditingValue(`${todayDate} ${pureStatus || ''}`);
+                            } else {
+                              setEditingValue(`${todayDate} `);
+                            }
+                            
+                            setEditingCell({ siteId: site.id, field: 'status' });
+                            setIsManualInputMode(true); // 수동입력 모드 활성화
+                          }}
                         className="cursor-pointer hover:opacity-80 px-2 py-1 rounded text-center font-bold text-gray-900 dark:text-white"
                         title="더블클릭하여 수정 / 우클릭하여 수동입력"
                       >
