@@ -2667,7 +2667,7 @@ const SiteManagement = () => {
 
   return (
     <>
-    <div className="space-y-6" style={{ zoom: '0.75' }}>
+    <div className="space-y-6 bg-gray-100 dark:bg-gray-900 min-h-[calc(100vh/0.675-64px)]" style={{ zoom: '0.75' }}>
       {/* 명의 선택 영역 */}
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow dark:shadow-gray-900/50 p-6">
         <div className="flex items-center justify-between mb-4">

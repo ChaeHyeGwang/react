@@ -253,7 +253,7 @@ const OfficeManagement = () => {
   }
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="p-6 space-y-6 bg-gray-100 dark:bg-gray-900 min-h-[calc(100vh/0.9-64px)]">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white">🏢 사무실 관리</h1>
