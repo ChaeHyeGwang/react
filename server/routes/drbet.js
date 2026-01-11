@@ -427,10 +427,39 @@ router.put('/:id', auth, async (req, res) => {
     const margin = (!totalAmountNum || totalAmountNum === 0) ? 0 : (totalAmountNum - total_charge);
 
     // 먼저 해당 레코드가 현재 사용자의 계정에 속하는지 확인
-    const existingRecord = await db.get(
-      `SELECT * FROM drbet_records WHERE id = ? AND account_id = ?`,
-      [id, req.user.filterAccountId]
-    );
+    let existingRecord;
+    
+    if (req.user.isOfficeManager && req.user.filterOfficeId) {
+      // 사무실 관리자: 자신의 사무실에 속한 계정의 레코드만 수정 가능
+      if (req.user.filterAccountId) {
+        // 특정 계정 선택 시: 해당 계정의 레코드만 수정 가능
+        existingRecord = await db.get(
+          `SELECT dr.* 
+           FROM drbet_records dr
+           INNER JOIN accounts a ON dr.account_id = a.id
+           WHERE dr.id = ? AND dr.account_id = ? AND a.office_id = ?`,
+          [id, req.user.filterAccountId, req.user.filterOfficeId]
+        );
+      } else {
+        // 계정 미선택 시: 사무실 내 모든 계정의 레코드 수정 가능
+        existingRecord = await db.get(
+          `SELECT dr.* 
+           FROM drbet_records dr
+           INNER JOIN accounts a ON dr.account_id = a.id
+           WHERE dr.id = ? AND a.office_id = ?`,
+          [id, req.user.filterOfficeId]
+        );
+      }
+    } else {
+      // 일반 사용자: 자신의 계정 레코드만 수정 가능
+      if (!req.user.filterAccountId) {
+        return res.status(403).json({ message: '계정을 선택해주세요.' });
+      }
+      existingRecord = await db.get(
+        `SELECT * FROM drbet_records WHERE id = ? AND account_id = ?`,
+        [id, req.user.filterAccountId]
+      );
+    }
 
     if (!existingRecord) {
       return res.status(403).json({ message: '이 레코드에 대한 접근 권한이 없습니다.' });
@@ -526,14 +555,14 @@ router.put('/:id', auth, async (req, res) => {
         cumulative_withdraw2 || 0,
         timestamp,
         id,
-        req.user.filterAccountId
+        existingRecord.account_id
       ]
     );
 
     // 업데이트된 기록 조회
     let updatedRecord = await db.get(
       `SELECT * FROM drbet_records WHERE id = ? AND account_id = ?`,
-      [id, req.user.filterAccountId]
+      [id, existingRecord.account_id]
     );
 
     if (!updatedRecord) {
@@ -541,15 +570,15 @@ router.put('/:id', auth, async (req, res) => {
       return res.status(500).json({ message: '업데이트된 레코드를 찾을 수 없습니다' });
     }
 
-    await invalidateSummaryForDate(req.user.filterAccountId, existingRecord.record_date);
+    await invalidateSummaryForDate(existingRecord.account_id, existingRecord.record_date);
     if (record_date && record_date !== existingRecord.record_date) {
-      await invalidateSummaryForDate(req.user.filterAccountId, record_date);
+      await invalidateSummaryForDate(existingRecord.account_id, record_date);
     }
 
     // 🎯 자동 출석 처리 (새 모듈 사용)
     // 날짜 변경 시 이전 날짜 로그도 정리하도록 oldRecordDate 전달
     const attendanceDaysMap = await handleUpdateRecord(
-      req.user.filterAccountId, 
+      existingRecord.account_id, 
       existingRecord, 
       updatedRecord, 
       record_date,
