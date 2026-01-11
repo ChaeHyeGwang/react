@@ -1925,7 +1925,11 @@ const SiteManagement = () => {
   };
 
   // 커뮤니티 인라인 편집 시작
-  const startEditingCommunityCell = (communityId, field, currentValue) => {
+  const startEditingCommunityCell = async (communityId, field, currentValue) => {
+    // 다른 필드가 편집 중이면 먼저 저장
+    if (editingCommunityCell && (editingCommunityCell.communityId !== communityId || editingCommunityCell.field !== field)) {
+      await saveEditingCommunityCell();
+    }
     setEditingCommunityCell({ communityId, field });
     setEditingCommunityValue(currentValue || '');
   };
@@ -2082,16 +2086,111 @@ const SiteManagement = () => {
   };
 
   // 커뮤니티 인라인 편집 키보드 이벤트
-  const handleCommunityCellKeyDown = (e) => {
+  const handleCommunityCellKeyDown = async (e) => {
     if (e.key === 'Enter') {
-      saveEditingCommunityCell();
+      e.preventDefault();
+      await saveEditingCommunityCell();
     } else if (e.key === 'Escape') {
+      e.preventDefault();
       cancelEditingCommunityCell();
+    } else if (e.key === 'Tab') {
+      e.preventDefault();
+      
+      if (!editingCommunityCell) return;
+      
+      const { communityId, field } = editingCommunityCell;
+      const community = communities.find(c => c.id === communityId);
+      if (!community) return;
+      
+      // 현재 필드 저장
+      await saveEditingCommunityCell();
+      
+      // Shift+Tab: 이전 필드로 이동
+      if (e.shiftKey) {
+        const previousField = getPreviousCommunityField(field);
+        if (previousField) {
+          const previousValue = community[previousField] || '';
+          // 저장 완료 후 이동
+          await startEditingCommunityCell(communityId, previousField, previousValue);
+        }
+      } else {
+        // Tab: 다음 필드로 이동
+        const nextField = getNextCommunityField(field);
+        if (nextField) {
+          const nextValue = community[nextField] || '';
+          // 저장 완료 후 이동
+          await startEditingCommunityCell(communityId, nextField, nextValue);
+        }
+      }
     }
   };
 
+  // 편집 가능한 필드 순서 정의 (사이트 테이블 순서대로)
+  const editableFields = [
+    'domain',           // 도메인
+    'referral_path',    // 경로-코드
+    'account_id',       // 아이디
+    'password',         // 비번
+    'exchange_password', // 환비
+    'nickname',         // 닉네임
+    'referral_code',    // 경로
+    'category'          // 장
+  ];
+
+  // 커뮤니티 편집 가능한 필드 순서 정의 (테이블 순서대로)
+  const editableCommunityFields = [
+    'domain',           // 도메인
+    'referral_code',    // 경로-코드
+    'name',             // 아이디 (커뮤니티는 name 필드)
+    'user_id',          // 비번 (커뮤니티는 user_id 필드)
+    'password',         // 환비 (커뮤니티는 password 필드)
+    'exchange_password', // 환비
+    'nickname',         // 닉네임
+    'path'              // 경로
+  ];
+
+  // 다음 필드 찾기 (사이트용)
+  const getNextField = (currentField) => {
+    const currentIndex = editableFields.indexOf(currentField);
+    if (currentIndex === -1 || currentIndex === editableFields.length - 1) {
+      return null; // 마지막 필드이거나 찾을 수 없으면 null
+    }
+    return editableFields[currentIndex + 1];
+  };
+
+  // 이전 필드 찾기 (사이트용)
+  const getPreviousField = (currentField) => {
+    const currentIndex = editableFields.indexOf(currentField);
+    if (currentIndex <= 0) {
+      return null; // 첫 번째 필드이거나 찾을 수 없으면 null
+    }
+    return editableFields[currentIndex - 1];
+  };
+
+  // 다음 필드 찾기 (커뮤니티용)
+  const getNextCommunityField = (currentField) => {
+    const currentIndex = editableCommunityFields.indexOf(currentField);
+    if (currentIndex === -1 || currentIndex === editableCommunityFields.length - 1) {
+      return null; // 마지막 필드이거나 찾을 수 없으면 null
+    }
+    return editableCommunityFields[currentIndex + 1];
+  };
+
+  // 이전 필드 찾기 (커뮤니티용)
+  const getPreviousCommunityField = (currentField) => {
+    const currentIndex = editableCommunityFields.indexOf(currentField);
+    if (currentIndex <= 0) {
+      return null; // 첫 번째 필드이거나 찾을 수 없으면 null
+    }
+    return editableCommunityFields[currentIndex - 1];
+  };
+
   // 인라인 편집 시작
-  const startEditingCell = (siteId, field, currentValue) => {
+  const startEditingCell = async (siteId, field, currentValue) => {
+    // 다른 필드가 편집 중이면 먼저 저장
+    if (editingCell && (editingCell.siteId !== siteId || editingCell.field !== field)) {
+      await saveEditingCell();
+    }
     setEditingCell({ siteId, field });
     setEditingValue(currentValue || '');
   };
@@ -2323,12 +2422,43 @@ const SiteManagement = () => {
     }
   };
 
-  // Enter 키로 저장, ESC 키로 취소
-  const handleCellKeyDown = (e) => {
+  // Enter 키로 저장, ESC 키로 취소, Tab으로 다음 필드로 이동
+  const handleCellKeyDown = async (e) => {
     if (e.key === 'Enter') {
-      saveEditingCell();
+      e.preventDefault();
+      await saveEditingCell();
     } else if (e.key === 'Escape') {
+      e.preventDefault();
       cancelEditingCell();
+    } else if (e.key === 'Tab') {
+      e.preventDefault();
+      
+      if (!editingCell) return;
+      
+      const { siteId, field } = editingCell;
+      const site = filteredSites.find(s => s.id === siteId);
+      if (!site) return;
+      
+      // 현재 필드 저장
+      await saveEditingCell();
+      
+      // Shift+Tab: 이전 필드로 이동
+      if (e.shiftKey) {
+        const previousField = getPreviousField(field);
+        if (previousField) {
+          const previousValue = site[previousField] || '';
+          // 저장 완료 후 이동
+          await startEditingCell(siteId, previousField, previousValue);
+        }
+      } else {
+        // Tab: 다음 필드로 이동
+        const nextField = getNextField(field);
+        if (nextField) {
+          const nextValue = site[nextField] || '';
+          // 저장 완료 후 이동
+          await startEditingCell(siteId, nextField, nextValue);
+        }
+      }
     }
   };
 
@@ -3131,9 +3261,9 @@ const SiteManagement = () => {
                     if (field === 'domain') {
                       return (
                         <div
-                          onDoubleClick={(e) => {
+                          onDoubleClick={async (e) => {
                             e.stopPropagation();
-                            startEditingCell(site.id, field, value);
+                            await startEditingCell(site.id, field, value);
                           }}
                           className="cursor-pointer hover:bg-blue-50 dark:hover:bg-gray-700 px-2 py-1 rounded text-center font-medium text-gray-900 dark:text-white"
                           title="더블클릭하여 수정"
@@ -3147,7 +3277,7 @@ const SiteManagement = () => {
                     if (field === 'referral_path' && value && value.includes('@')) {
                     return (
                       <div
-                        onClick={() => startEditingCell(site.id, field, value)}
+                        onClick={async () => await startEditingCell(site.id, field, value)}
                           className="cursor-pointer hover:bg-blue-50 dark:hover:bg-gray-700 px-2 py-1 rounded text-center text-blue-600 dark:text-blue-400 font-bold"
                           title="클릭하여 수정"
                         >
@@ -3158,7 +3288,7 @@ const SiteManagement = () => {
                     
                     return (
                       <div
-                        onClick={() => startEditingCell(site.id, field, value)}
+                        onClick={async () => await startEditingCell(site.id, field, value)}
                         className={`cursor-pointer hover:bg-blue-50 dark:hover:bg-gray-700 px-2 py-1 rounded text-center font-bold text-gray-900 dark:text-white ${className}`}
                         title="클릭하여 수정"
                       >
@@ -4396,13 +4526,7 @@ const SiteManagement = () => {
                               saveEditingCommunityCell();
                             }
                           }}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') {
-                              saveEditingCommunityCell();
-                            } else if (e.key === 'Escape') {
-                              setEditingCommunityCell(null);
-                            }
-                          }}
+                          onKeyDown={handleCommunityCellKeyDown}
                           className="w-full border rounded px-2 py-1 text-center dark:bg-gray-700 dark:border-gray-600 dark:text-white"
                           autoFocus
                         />
@@ -4413,9 +4537,9 @@ const SiteManagement = () => {
                     if (field === 'domain') {
                       return (
                         <div
-                          onDoubleClick={(e) => {
+                          onDoubleClick={async (e) => {
                             e.stopPropagation();
-                            startEditingCommunityCell(community.id, field, value);
+                            await startEditingCommunityCell(community.id, field, value);
                           }}
                           className={`cursor-pointer hover:bg-blue-50 dark:hover:bg-gray-700 px-2 py-1 rounded text-center font-medium text-gray-900 dark:text-white ${className}`}
                           title="더블클릭하여 수정"
@@ -4429,7 +4553,7 @@ const SiteManagement = () => {
                     if (field === 'referral_code' && value) {
                       return (
                         <div
-                          onClick={() => startEditingCommunityCell(community.id, field, value)}
+                          onClick={async () => await startEditingCommunityCell(community.id, field, value)}
                           className="cursor-pointer hover:bg-blue-50 dark:hover:bg-gray-700 px-2 py-1 rounded text-center text-blue-600 dark:text-blue-400 font-bold"
                           title="클릭하여 수정"
                         >
@@ -4440,7 +4564,7 @@ const SiteManagement = () => {
                     
                     return (
                       <div
-                        onClick={() => startEditingCommunityCell(community.id, field, value)}
+                        onClick={async () => await startEditingCommunityCell(community.id, field, value)}
                         className={`cursor-pointer hover:bg-blue-50 dark:hover:bg-gray-700 px-2 py-1 rounded text-center font-bold text-gray-900 dark:text-white ${className}`}
                         title="클릭하여 수정"
                       >
@@ -4534,13 +4658,7 @@ const SiteManagement = () => {
                                       value={editingCommunityValue}
                                       onChange={(e) => setEditingCommunityValue(e.target.value)}
                                       onBlur={() => saveEditingCommunityCell()}
-                                      onKeyDown={(e) => {
-                                        if (e.key === 'Enter') {
-                                          saveEditingCommunityCell();
-                                        } else if (e.key === 'Escape') {
-                                          setEditingCommunityCell(null);
-                                        }
-                                      }}
+                                      onKeyDown={handleCommunityCellKeyDown}
                                       className="w-full border rounded px-2 py-1 text-center dark:bg-gray-700 dark:border-gray-600 dark:text-white"
                                       autoFocus
                                     />
@@ -4627,9 +4745,9 @@ const SiteManagement = () => {
                                       toast.error('상태 변경에 실패했습니다');
                                     }
                                   }}
-                                  onDoubleClick={() => {
+                                  onDoubleClick={async () => {
                                     setIsManualInputMode(true);
-                                    startEditingCommunityCell(community.id, 'status', community.status);
+                                    await startEditingCommunityCell(community.id, 'status', community.status);
                                   }}
                                   className="cursor-pointer hover:bg-blue-50 dark:hover:bg-gray-700 px-2 py-1 rounded text-center font-bold text-gray-900 dark:text-white"
                                   title="클릭: 상태 순환, 더블클릭: 수동 입력"
