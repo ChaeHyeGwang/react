@@ -618,11 +618,39 @@ function DRBet() {
     }
     
     fetchingDailySummaryRef.current = true;
-    log(`[클라이언트] fetchDailySummary 호출: selectedDate=${selectedDate}`);
+    
+    // 선택된 날짜의 요일 계산
+    const dateObj = new Date(`${selectedDate}T00:00:00+09:00`);
+    const dayOfWeek = dateObj.getDay(); // 0=일요일, 1=월요일, ..., 6=토요일
+    const dayNames = ['일', '월', '화', '수', '목', '금', '토'];
+    const currentDayName = dayNames[dayOfWeek];
+    
+    console.log('📅 [선택된 날짜 정보]', {
+      selectedDate: selectedDate,
+      dayOfWeek: dayOfWeek,
+      dayName: currentDayName,
+      fullDate: dateObj.toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })
+    });
+    
+    log(`[클라이언트] fetchDailySummary 호출: selectedDate=${selectedDate}, 요일=${currentDayName}`);
     try {
       log(`[클라이언트] API 호출: GET /drbet/summary/${selectedDate}`);
       const response = await axiosInstance.get(`/drbet/summary/${selectedDate}`);
       log(`[클라이언트] API 응답 받음:`, response.data);
+      
+      // 페이백 데이터의 지급요일 정보도 로그로 출력
+      if (response.data?.success && response.data.paybackData) {
+        console.log('💰 [페이백 데이터 지급요일 정보]', {
+          selectedDate: selectedDate,
+          currentDayName: currentDayName,
+          paybackItems: response.data.paybackData.map(item => ({
+            identityName: item.identityName,
+            siteName: item.siteName,
+            paybackAmounts: item.paybackAmounts,
+            paybackDays: Object.keys(item.paybackAmounts || {}).filter(k => !k.startsWith('당일'))
+          }))
+        });
+      }
       
       if (response.data?.success) {
         const summaryPaybacks = response.data.paybackData || [];
