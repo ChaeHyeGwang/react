@@ -166,8 +166,9 @@ function SettlementManagement() {
       const userInfo = userData[identityId] || {};
       currentValue = userInfo[field] || '';
       
-      // 날짜 필드인 경우: yyyy-mm-dd에서 일자만 추출
-      if (field === 'date' || field === 'gift_date') {
+      // 날짜 필드 처리
+      if (field === 'date') {
+        // date 필드: 일자만 추출 (원래대로)
         if (currentValue) {
           // yyyy-mm-dd 형식에서 일자만 추출
           const dateMatch = currentValue.match(/\d{4}-\d{2}-(\d{2})/);
@@ -176,6 +177,21 @@ function SettlementManagement() {
           } else {
             // 이미 일자만 있는 경우 그대로 사용
             currentValue = currentValue;
+          }
+        }
+      } else if (field === 'gift_date') {
+        // gift_date 필드: yyyy-mm-dd 형식 유지 (년월일 선택 가능)
+        if (currentValue) {
+          // yyyy-mm-dd 형식이면 그대로 사용
+          if (currentValue.match(/^\d{4}-\d{2}-\d{2}$/)) {
+            currentValue = currentValue;
+          } else {
+            // 일자만 있는 경우 (레거시 데이터) 선택된 년월과 조합
+            const day = parseInt(currentValue);
+            if (!isNaN(day) && day >= 1 && day <= 31) {
+              const dayStr = String(day).padStart(2, '0');
+              currentValue = `${selectedYearMonth}-${dayStr}`;
+            }
           }
         }
       }
@@ -196,8 +212,9 @@ function SettlementManagement() {
     const updatedRecord = { ...record };
     let valueToSave = editingValue;
 
-    // 날짜 필드인 경우: 일자를 yyyy-mm-dd 형식으로 변환
-    if ((field === 'date' || field === 'gift_date') && identityId !== null) {
+    // 날짜 필드 처리
+    if (field === 'date' && identityId !== null) {
+      // date 필드: 일자만 입력받아 yyyy-mm-dd 형식으로 변환 (원래대로)
       if (valueToSave && valueToSave.trim() !== '') {
         // 일자만 입력된 경우 (예: "25")
         const day = parseInt(valueToSave.trim());
@@ -209,6 +226,43 @@ function SettlementManagement() {
           // 유효하지 않은 일자
           toast.error('유효한 일자(1-31)를 입력해주세요');
           return;
+        }
+      }
+    } else if (field === 'gift_date' && identityId !== null) {
+      // gift_date 필드: yyyy-mm-dd 형식 검증 (년월일 선택 가능)
+      if (valueToSave && valueToSave.trim() !== '') {
+        const trimmedValue = valueToSave.trim();
+        // yyyy-mm-dd 형식인지 확인
+        const dateMatch = trimmedValue.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+        if (dateMatch) {
+          const [, year, month, day] = dateMatch;
+          const yearNum = parseInt(year);
+          const monthNum = parseInt(month);
+          const dayNum = parseInt(day);
+          
+          // 유효한 날짜인지 확인
+          if (monthNum >= 1 && monthNum <= 12 && dayNum >= 1 && dayNum <= 31) {
+            const date = new Date(yearNum, monthNum - 1, dayNum);
+            if (date.getFullYear() === yearNum && date.getMonth() === monthNum - 1 && date.getDate() === dayNum) {
+              valueToSave = trimmedValue;
+            } else {
+              toast.error('유효한 날짜를 입력해주세요 (예: 2026-01-15)');
+              return;
+            }
+          } else {
+            toast.error('유효한 날짜를 입력해주세요 (예: 2026-01-15)');
+            return;
+          }
+        } else {
+          // 일자만 입력된 경우 (레거시 지원) 선택된 년월과 조합
+          const day = parseInt(trimmedValue);
+          if (!isNaN(day) && day >= 1 && day <= 31) {
+            const dayStr = String(day).padStart(2, '0');
+            valueToSave = `${selectedYearMonth}-${dayStr}`;
+          } else {
+            toast.error('유효한 날짜 형식을 입력해주세요 (예: 2026-01-15 또는 일자만)');
+            return;
+          }
         }
       }
     }
@@ -314,8 +368,9 @@ function SettlementManagement() {
                       editingCell?.identityId === identityId;
     
     if (isEditing) {
-      // 날짜 필드는 일자만 입력받도록 number 타입 사용
-      const inputType = field === 'date' || field === 'gift_date' ? 'number' : 
+      // date 필드는 일자만 입력 (number 타입), gift_date 필드는 년월일 선택 가능 (date 타입)
+      const inputType = field === 'date' ? 'number' : 
+                       field === 'gift_date' ? 'date' :
                        field.includes('amount') ? 'text' : 
                        field.includes('number') ? 'number' : 'text';
       
@@ -327,9 +382,9 @@ function SettlementManagement() {
           onBlur={() => handleCellBlur(record)}
           onKeyDown={(e) => handleKeyPress(e, record)}
           autoFocus
-          min={field === 'date' || field === 'gift_date' ? 1 : undefined}
-          max={field === 'date' || field === 'gift_date' ? 31 : undefined}
-          placeholder={field === 'date' || field === 'gift_date' ? '일자' : ''}
+          min={field === 'date' ? 1 : undefined}
+          max={field === 'date' ? 31 : undefined}
+          placeholder={field === 'date' ? '일자' : field === 'gift_date' ? 'YYYY-MM-DD' : ''}
           className="w-full px-2 py-1 border border-blue-500 dark:border-blue-400 bg-white dark:bg-gray-700 text-gray-900 dark:text-white rounded focus:outline-none focus:ring-2 focus:ring-blue-500 hover:bg-gray-50 dark:hover:bg-gray-800"
         />
       );
