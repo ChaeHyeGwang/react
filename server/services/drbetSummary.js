@@ -224,7 +224,13 @@ const computePaybackData = async ({ allRecords, date, accountId, officeId }) => 
     return pureStatus === '승인';
   };
 
-  const currentDayName = DAY_NAMES[new Date(`${date}T00:00:00+09:00`).getDay()];
+  // 선택된 날짜의 요일을 KST 기준으로 정확하게 계산
+  // date 형식: "YYYY-MM-DD"
+  const [year, month, day] = date.split('-').map(Number);
+  const dateObj = new Date(year, month - 1, day, 0, 0, 0, 0); // 로컬 시간으로 생성
+  const dayOfWeek = dateObj.getDay(); // 0=일요일, 1=월요일, ..., 6=토요일
+  const currentDayName = DAY_NAMES[dayOfWeek];
+  
   const paybackResults = [];
 
   for (const combo of combos) {
@@ -801,11 +807,22 @@ const invalidateSummaryForDate = async (accountId, date) => {
   const normalizedDate = normalizeDateInput(date);
   const weekRange = getWeekRange(normalizedDate);
   const monthPrefix = normalizedDate.substring(0, 7);
+  
+  // 해당 날짜의 캐시 삭제 (가장 정확)
+  await db.run(
+    `DELETE FROM drbet_daily_summary 
+     WHERE account_id = ? AND summary_date = ?`,
+    [accountId, normalizedDate]
+  );
+  
+  // 해당 주의 캐시 삭제 (주간 페이백이 영향을 받을 수 있음)
   await db.run(
     `DELETE FROM drbet_daily_summary 
      WHERE account_id = ? AND summary_date BETWEEN ? AND ?`,
     [accountId, weekRange.start, weekRange.end]
   );
+  
+  // 해당 월의 캐시 삭제
   await db.run(
     `DELETE FROM drbet_daily_summary 
      WHERE account_id = ? AND summary_date LIKE ?`,
