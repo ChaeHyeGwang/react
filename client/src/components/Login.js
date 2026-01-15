@@ -152,15 +152,6 @@ const Login = () => {
             </button>
           </div>
         </form>
-
-        <div className="mt-6 p-4 bg-black/20 backdrop-blur-sm rounded-lg border border-amber-500/20">
-          <h3 className="text-xs sm:text-sm font-medium text-amber-400 dark:text-amber-300 mb-3">🔑 테스트 계정</h3>
-          <div className="text-xs text-gray-300 dark:text-gray-400 space-y-1.5">
-            <div><strong className="text-amber-400">admin</strong> / admin123 (관리자)</div>
-            <div><strong className="text-amber-400">maenggu</strong> / pass123 (맹구)</div>
-            <div><strong className="text-amber-400">jjanggu</strong> / pass123 (짱구)</div>
-          </div>
-        </div>
         </div>
       </div>
     </div>
