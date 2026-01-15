@@ -102,7 +102,7 @@ const Login = () => {
         >
         <div>
           <h2 className="text-center text-3xl font-bold text-amber-400 dark:text-amber-300 mb-2 tracking-wide">
-            🎰 로그인
+            로그인
           </h2>
           <p className="text-center text-sm text-gray-300 dark:text-gray-400">
             웹 버전에 로그인하세요
@@ -152,6 +152,37 @@ const Login = () => {
             </button>
           </div>
         </form>
+        
+        {/* 법적 고지 */}
+        <div className="mt-6 pt-6 border-t border-gray-700/50">
+          <div className="text-xs text-gray-400 dark:text-gray-500 text-center leading-relaxed space-y-1">
+            <p className="font-semibold text-amber-500/80 dark:text-amber-400/70 mb-2">
+              ⚖️ 법적 고지
+            </p>
+            <p>
+              본 시스템은 <span className="text-amber-400/90 dark:text-amber-300/90 font-medium">학습 및 포트폴리오 목적</span>으로 제작된 관리 도구입니다.
+            </p>
+            <p>
+              실제 도박 사이트 운영, 도박 중개, 불법 금융거래 등 
+            </p>
+            <p className="text-red-400/90 dark:text-red-300/90 font-medium">
+              불법적인 용도로 사용할 경우
+            </p>
+            <p>
+              형법 제246조(도박죄), 정보통신망법, 외환거래법 등 관련 법령에 따라
+            </p>
+            <p className="text-red-400 dark:text-red-300 font-semibold">
+              처벌받을 수 있습니다.
+            </p>
+            <p className="mt-2 text-gray-500 dark:text-gray-600">
+              본 시스템은 실제 도박과 무관하며
+            </p>
+            <p className="mt-2 text-gray-500 dark:text-gray-600">
+              불법적인 용도로의 사용을 금지합니다.
+            </p>
+            
+          </div>
+        </div>
         </div>
       </div>
     </div>

@@ -5,7 +5,7 @@ import toast from 'react-hot-toast';
 
 function SiteInfoView() {
   const [identities, setIdentities] = useState([]);
-  const [allSites, setAllSites] = useState([]); // 모든 명의의 사이트 목록
+  const [allSites, setAllSites] = useState([]); // 모든 유저의 사이트 목록
   const [searchTerm, setSearchTerm] = useState('');
   const [filteredSites, setFilteredSites] = useState([]);
   const [selectedSite, setSelectedSite] = useState(null);
@@ -14,20 +14,20 @@ function SiteInfoView() {
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [highlightedIndex, setHighlightedIndex] = useState(-1);
 
-  // 명의 목록 로드
+  // 유저 목록 로드
   useEffect(() => {
     const loadIdentities = async () => {
       try {
         const list = await getIdentitiesCached();
         setIdentities(list || []);
       } catch (error) {
-        console.error('명의 로드 실패:', error);
+        console.error('유저 로드 실패:', error);
       }
     };
     loadIdentities();
   }, []);
 
-  // 모든 명의의 사이트 목록 로드
+  // 모든 유저의 사이트 목록 로드
   useEffect(() => {
     const loadAllSites = async () => {
       if (identities.length === 0) return;
@@ -50,7 +50,7 @@ function SiteInfoView() {
               });
             }
           } catch (error) {
-            console.error(`명의 ${identity.name}의 사이트 로드 실패:`, error);
+            console.error(`유저 ${identity.name}의 사이트 로드 실패:`, error);
           }
         }
 
@@ -233,7 +233,7 @@ function SiteInfoView() {
                   {site.site_name}
                 </div>
                 <div className="text-xs text-gray-500 dark:text-gray-400">
-                  명의: {site.identity_name}
+                  유저: {site.identity_name}
                 </div>
               </button>
             ))}

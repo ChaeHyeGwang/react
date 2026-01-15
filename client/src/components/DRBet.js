@@ -138,7 +138,7 @@ function DRBet() {
   const siteNotesCacheRef = useRef({});
   const savingSiteNotesRef = useRef(false); // 사이트 정보 저장 중복 방지
   const attendanceStatsCacheRef = useRef({}); // 출석 통계 캐시: { "siteName||identityName": { consecutiveDays, timestamp } }
-  const previousCombosRef = useRef(null); // 이전 사이트/명의 조합 (중복 호출 방지용)
+  const previousCombosRef = useRef(null); // 이전 사이트/유저 조합 (중복 호출 방지용)
   const savingRecordRef = useRef({}); // 레코드 저장 중복 방지: { recordId: true }
   const isFirstMountRef = useRef(true); // 초기 마운트 여부 (중복 API 호출 방지)
   const fetchingDailySummaryRef = useRef(false); // fetchDailySummary 중복 호출 방지
@@ -285,7 +285,7 @@ function DRBet() {
     open: false,
     readonly: false,
     siteName: '',
-    identityName: '', // 명의명 추가
+    identityName: '', // 유저명 추가
     recordedBy: '',
     startDate: '',
     monthlyStats: {
@@ -388,7 +388,7 @@ function DRBet() {
       }));
     }
     
-    // 2) 연속 출석일 로드 (명의가 있는 경우만, 캐시 활용)
+    // 2) 연속 출석일 로드 (유저가 있는 경우만, 캐시 활용)
     const toLoadStats = [];
     const cacheKeyToCombo = {};
     for (const key of Object.keys(combos)) {
@@ -698,7 +698,7 @@ function DRBet() {
   const loadIdentities = useCallback(async () => {
     try {
       const response = await axiosInstance.get('/identities');
-      log('[DRBet] 명의 로드 응답:', response.data);
+      log('[DRBet] 유저 로드 응답:', response.data);
       
       // success가 false이거나 없어도 identities 배열이 있으면 사용
       const identityList = response.data?.identities || response.data || [];
@@ -706,7 +706,7 @@ function DRBet() {
       if (Array.isArray(identityList) && identityList.length > 0) {
         setIdentities(identityList);
         
-        // 각 명의별로 사이트 목록 병렬로 가져오기 (성능 개선)
+        // 각 유저별로 사이트 목록 병렬로 가져오기 (성능 개선)
         const sitesPromises = identityList.map(async (identity) => {
           try {
             const sitesResponse = await axiosInstance.get(`/sites?identity_id=${identity.id}`);
@@ -744,7 +744,7 @@ function DRBet() {
               pendingSites: pendingList
             };
           } catch (err) {
-            console.error(`명의 ${identity.id}의 사이트 로드 실패:`, err);
+            console.error(`유저 ${identity.id}의 사이트 로드 실패:`, err);
             return { identityId: identity.id, sites: [], pendingSites: [] };
           }
         });
@@ -759,8 +759,8 @@ function DRBet() {
         setIdentitySitesMap(sitesMap);
         setPendingSites(allPendingSites);
       } else if (response.data?.success === false) {
-        console.error('[DRBet] 명의 로드 실패:', response.data.message || '알 수 없는 오류');
-        toast.error(response.data.message || '명의 목록을 불러오는데 실패했습니다');
+        console.error('[DRBet] 유저 로드 실패:', response.data.message || '알 수 없는 오류');
+        toast.error(response.data.message || '유저 목록을 불러오는데 실패했습니다');
         setIdentities([]);
         setIdentitySitesMap({});
         setPendingSites([]);
@@ -771,9 +771,9 @@ function DRBet() {
         setPendingSites([]);
       }
     } catch (error) {
-      console.error('[DRBet] 명의 로드 실패:', error);
+      console.error('[DRBet] 유저 로드 실패:', error);
       console.error('[DRBet] 오류 상세:', error.response?.data || error.message);
-      toast.error(`명의 목록을 불러오는데 실패했습니다: ${error.response?.data?.message || error.message}`);
+      toast.error(`유저 목록을 불러오는데 실패했습니다: ${error.response?.data?.message || error.message}`);
       setIdentities([]);
       setIdentitySitesMap({});
       setPendingSites([]);
@@ -853,7 +853,7 @@ function DRBet() {
     
     weekRecords.forEach((record) => {
       try {
-        // 각 사이트 컬럼(1~4)에서 충전/환전 정보 추출 (명의별로)
+        // 각 사이트 컬럼(1~4)에서 충전/환전 정보 추출 (유저별로)
         for (let i = 1; i <= 4; i++) {
           const identityName = record[`identity${i}`];
           const siteName = record[`site_name${i}`];
@@ -877,7 +877,7 @@ function DRBet() {
               }
             }
             
-            // 명의별 사이트 통계를 위한 복합 키 생성 (계정ID 포함)
+            // 유저별 사이트 통계를 위한 복합 키 생성 (계정ID 포함)
             const accountId = record.account_id || 'unknown';
             const statsKey = `${accountId}-${identityName}-${trimmedSiteName}`;
             
@@ -915,7 +915,7 @@ function DRBet() {
     const dayNames = ['일', '월', '화', '수', '목', '금', '토'];
     const currentDayName = dayNames[currentDate.getDay()];
 
-    // 각 명의별 사이트의 페이백 설정 가져오기 (병렬 처리로 속도 향상)
+    // 각 유저별 사이트의 페이백 설정 가져오기 (병렬 처리로 속도 향상)
     const paybackResults = [];
     const statsKeys = Object.keys(siteStats);
     
@@ -1040,7 +1040,7 @@ function DRBet() {
 
   // 페이백 금액 계산 로직은 서버 요약 API(fetchDailySummary)로 이전되었습니다.
 
-  // 사이트 메타데이터 조회 (명의별 출석일 포함)
+  // 사이트 메타데이터 조회 (유저별 출석일 포함)
   const fetchSiteNotes = async (siteName, identityName = null, options = {}) => {
     if (!siteName) return null;
     const cacheKey = getSiteNotesCacheKey(siteName, identityName);
@@ -1056,7 +1056,7 @@ function DRBet() {
     return siteNotesCacheRef.current[cacheKey] || null;
   };
 
-  // 정착 시작일 계산: 해당 명의/사이트로 충환전이 최초 기록된 날짜
+  // 정착 시작일 계산: 해당 유저/사이트로 충환전이 최초 기록된 날짜
   const findSettlementStartDate = (identityName, siteName) => {
     const dates = allRecords
       .filter(r => !!r.record_date)
@@ -1126,7 +1126,7 @@ function DRBet() {
         const debugRows = [];
         const pairsArray = Array.from(pairs);
         
-        // 명의별 사이트 노트를 병렬로 미리 조회
+        // 유저별 사이트 노트를 병렬로 미리 조회
         const notesForIdsMap = {};
         const notesToLoad = pairsArray.map(key => {
           const [idn, site] = key.split('||');
@@ -1180,7 +1180,7 @@ function DRBet() {
 
           // 디버그 행은 조건과 무관하게 모두 출력
           debugRows.push({
-            명의: idn,
+            유저: idn,
             사이트: site,
             기간: startStr && endStr ? `${startStr} ~ ${endStr}` : '(시작일 없음)',
           '충전 합계(만)': totalChargeManRounded,
@@ -1240,7 +1240,7 @@ function DRBet() {
   };
   */
 
-  // 클릭: 편집 모달 열기 (현재 행의 명의를 정리한사람으로 기록)
+  // 클릭: 편집 모달 열기 (현재 행의 유저를 정리한사람으로 기록)
   const openSiteNotesEditor = async (record, siteIndex) => {
     const siteField = `site_name${siteIndex}`;
     const identityField = `identity${siteIndex}`;
@@ -1252,7 +1252,7 @@ function DRBet() {
     }
     const existing = await fetchSiteNotes(siteName, identityName);
     
-    // 이달의 충환 정보 계산 (명의별 필터링)
+    // 이달의 충환 정보 계산 (유저별 필터링)
     const yearMonth = selectedDate.substring(0, 7); // "YYYY-MM"
     const monthlyRecords = allRecords.filter(r => r.record_date && r.record_date.startsWith(yearMonth));
     
@@ -1260,7 +1260,7 @@ function DRBet() {
     
     let totalCharge = 0;
     let totalWithdraw = 0;
-    // 날짜별 재충 횟수(동일 명의+사이트가 하루에 2건 이상인 경우: (건수-1))
+    // 날짜별 재충 횟수(동일 유저+사이트가 하루에 2건 이상인 경우: (건수-1))
     const dailyCounts = {};
     
     monthlyRecords.forEach(rec => {
@@ -1270,7 +1270,7 @@ function DRBet() {
         const identityField = `identity${i}`;
         const chargeWithdrawField = `charge_withdraw${i}`;
         
-        // 사이트 이름 AND 명의 이름이 모두 일치하는 경우만
+        // 사이트 이름 AND 유저 이름이 모두 일치하는 경우만
         if (rec[siteNameField] === siteName && rec[identityField] === identityName && rec[chargeWithdrawField]) {
           const parts = rec[chargeWithdrawField].split(' ');
           const charge = parseFloat(parts[0]) || 0;
@@ -1288,7 +1288,7 @@ function DRBet() {
     
     const recovery = totalCharge - totalWithdraw;
     
-    // 이주의 충환 정보 계산 (명의별 필터링)
+    // 이주의 충환 정보 계산 (유저별 필터링)
     // 실제 주간 범위 사용 (월요일 ~ 일요일)
     const actualWeekRange = getActualWeekRange(selectedDate);
     const weeklyRecords = allRecords.filter(r => 
@@ -1305,7 +1305,7 @@ function DRBet() {
         const identityField = `identity${i}`;
         const chargeWithdrawField = `charge_withdraw${i}`;
         
-        // 사이트 이름 AND 명의 이름이 모두 일치하는 경우만
+        // 사이트 이름 AND 유저 이름이 모두 일치하는 경우만
         if (rec[siteNameField] === siteName && rec[identityField] === identityName && rec[chargeWithdrawField]) {
           const parts = rec[chargeWithdrawField].split(' ');
           const charge = parseFloat(parts[0]) || 0;
@@ -1374,7 +1374,7 @@ function DRBet() {
       rolling: evt.rolling || ''
     }));
     
-    // 시작일 계산 (해당 명의/사이트의 최초 충환전 입력일)
+    // 시작일 계산 (해당 유저/사이트의 최초 충환전 입력일)
     const startDate = findSettlementStartDate(identityName, siteName) || '';
 
     // 재충 배열 생성 (건수-1이 1 이상인 날만)
@@ -1756,7 +1756,7 @@ function DRBet() {
       rolling: evt.rolling || ''
     }));
     
-    // 이달의 충환 정보 계산 (현재 계정의 모든 명의 합계)
+    // 이달의 충환 정보 계산 (현재 계정의 모든 유저 합계)
     const yearMonth = selectedDate.substring(0, 7); // "YYYY-MM"
     const monthlyRecords = allRecords.filter(r => r.record_date && r.record_date.startsWith(yearMonth));
     
@@ -1771,7 +1771,7 @@ function DRBet() {
         const siteNameField = `site_name${i}`;
         const chargeWithdrawField = `charge_withdraw${i}`;
         
-        // 현재 계정의 모든 명의 데이터 (allRecords는 이미 계정별로 필터링됨)
+        // 현재 계정의 모든 유저 데이터 (allRecords는 이미 계정별로 필터링됨)
         if (record[siteNameField] === siteName && record[chargeWithdrawField]) {
           const parts = record[chargeWithdrawField].split(' ');
           const charge = parseFloat(parts[0]) || 0;
@@ -1787,7 +1787,7 @@ function DRBet() {
     
     const recovery = totalCharge - totalWithdraw;
     
-    // 이주의 충환 정보 계산 (현재 계정의 모든 명의 합계)
+    // 이주의 충환 정보 계산 (현재 계정의 모든 유저 합계)
     // 실제 주간 범위 사용 (월요일 ~ 일요일)
     const actualWeekRange = getActualWeekRange(selectedDate);
     const weeklyRecords = allRecords.filter(r => 
@@ -1803,7 +1803,7 @@ function DRBet() {
         const siteNameField = `site_name${i}`;
         const chargeWithdrawField = `charge_withdraw${i}`;
         
-        // 현재 계정의 모든 명의 데이터 (allRecords는 이미 계정별로 필터링됨)
+        // 현재 계정의 모든 유저 데이터 (allRecords는 이미 계정별로 필터링됨)
         if (record[siteNameField] === siteName && record[chargeWithdrawField]) {
           const parts = record[chargeWithdrawField].split(' ');
           const charge = parseFloat(parts[0]) || 0;
@@ -1821,7 +1821,7 @@ function DRBet() {
       open: true,
       readonly: false, // 수정 가능하도록 변경
       siteName,
-      identityName: '', // 우클릭 시에는 명의 정보 없음 (모든 명의 합계 표시)
+      identityName: '', // 우클릭 시에는 유저 정보 없음 (모든 유저 합계 표시)
       recordedBy: existing.recorded_by_identity || '',
       monthlyStats: {
         totalCharge,
@@ -1921,7 +1921,7 @@ function DRBet() {
     }
   };
 
-  // 배너에서 직접 지급 처리: 해당 명의/사이트/시작일에 대해 settlementCleared[startDate]에 규칙 인덱스 추가
+  // 배너에서 직접 지급 처리: 해당 유저/사이트/시작일에 대해 settlementCleared[startDate]에 규칙 인덱스 추가
   // 정착 지급 완료 처리 (단일 체크박스 - 모든 조건 영구 숨김)
   const markSettlementPaidFromBanner = async (identityName, siteName) => {
     try {
@@ -1955,7 +1955,7 @@ function DRBet() {
         }
       );
 
-      // 해당 사이트+명의의 모든 배너 제거
+      // 해당 사이트+유저의 모든 배너 제거
       setSettlementBanners(prev => prev.filter(b => !(
         b.identity === identityName && b.site === siteName
       )));
@@ -2025,13 +2025,13 @@ function DRBet() {
     const siteValue = record[siteField] || '';
     const chargeWithdrawValue = record[chargeWithdrawField] || '';
     
-    // 명의, 사이트, 충환전이 모두 비어있으면 삭제할 것이 없음
+    // 유저, 사이트, 충환전이 모두 비어있으면 삭제할 것이 없음
     if (!identityValue && !siteValue && !chargeWithdrawValue) {
       return;
     }
     
     // 확인 다이얼로그
-    const confirmMessage = `정말 삭제하시겠습니까?\n명의: ${identityValue || '(없음)'}\n사이트: ${siteValue || '(없음)'}\n충환전: ${chargeWithdrawValue || '(없음)'}`;
+    const confirmMessage = `정말 삭제하시겠습니까?\n유저: ${identityValue || '(없음)'}\n사이트: ${siteValue || '(없음)'}\n충환전: ${chargeWithdrawValue || '(없음)'}`;
     if (!window.confirm(confirmMessage)) {
       return;
     }
@@ -2042,7 +2042,7 @@ function DRBet() {
       const oldIdentity = identityValue || '';
       const oldSite = siteValue || '';
       
-      // 레코드 업데이트: 명의, 사이트, 충환전 필드를 모두 비움
+      // 레코드 업데이트: 유저, 사이트, 충환전 필드를 모두 비움
       const updatedRecord = {
         ...record,
         [identityField]: '',
@@ -2057,7 +2057,7 @@ function DRBet() {
         await axiosInstance.put(`/drbet/${record.id}`, updatedRecord);
       }
       
-      // 자동 출석 감소 처리 (명의+사이트+충전금액이 있었던 경우)
+      // 자동 출석 감소 처리 (유저+사이트+충전금액이 있었던 경우)
       if (oldIdentity && oldSite && oldChargeWithdraw) {
         // 충전금액이 있었는지 확인
         const parseCharge = (str) => {
@@ -2244,18 +2244,18 @@ function DRBet() {
     const paybackKey = `${identityName}||${siteValue}||${weekStartDate}`;
     const paybackCleared = paybackInfo?.cleared ?? (paybackClearedMap[paybackKey] || false);
     
-    // 재충전 여부 확인: 같은 명의, 같은 사이트에서 현재 레코드보다 앞에 있는 레코드가 있는지 확인
+    // 재충전 여부 확인: 같은 유저, 같은 사이트에서 현재 레코드보다 앞에 있는 레코드가 있는지 확인
     const isRecharge = (() => {
       if (!identityName || !siteValue) return false;
       
       // 현재 레코드의 display_order
       const currentOrder = record.display_order || 0;
       
-      // 동일한 명의/사이트를 가진 다른 레코드 찾기
+      // 동일한 유저/사이트를 가진 다른 레코드 찾기
       const duplicateRecords = records.filter(r => {
         if (r.id === record.id) return false; // 자기 자신 제외
         
-        // siteIndex에 해당하는 명의/사이트가 동일한지 확인
+        // siteIndex에 해당하는 유저/사이트가 동일한지 확인
         const otherIdentity = r[`identity${siteIndex}`];
         const otherSite = r[`site_name${siteIndex}`];
         
@@ -2308,7 +2308,7 @@ function DRBet() {
     if (isRecharge) return null;
     
     const attendanceLabel = hasAttended ? `출완(${attendanceDays})` : `출필(${attendanceDays})`;
-    // 사이트 이름(및 명의)과 동일한 글자 크기 사용
+    // 사이트 이름(및 유저)과 동일한 글자 크기 사용
     const textSizeClass = isCompactVariant ? 'text-sm' : 'text-lg';
     const paddingClass = isCompactVariant ? 'px-1.5 py-0.5' : 'px-2 py-1';
     const widthClass = isRowLayout ? 'flex-shrink-0' : '';
@@ -2558,7 +2558,7 @@ function DRBet() {
         ...prev,
         [key]: oldState
       }));
-      toast.error('사이트와 명의를 먼저 선택하세요');
+      toast.error('사이트와 유저를 먼저 선택하세요');
       return;
     }
     
@@ -2666,7 +2666,7 @@ function DRBet() {
     
     if (!identityName || !siteName) return false;
     
-    // 같은 명의, 같은 사이트를 가진 다른 레코드 찾기
+    // 같은 유저, 같은 사이트를 가진 다른 레코드 찾기
     const duplicateRecords = allRecordsList.filter(r => {
       if (r.id === record.id) return false; // 자기 자신 제외
       const otherIdentity = r[identityField];
@@ -3559,7 +3559,7 @@ function DRBet() {
     }
   };
 
-  // 자동어제불러오기: 어제 데이터의 명의/사이트 조합을 그대로 가져와서 충전금액 범위 기반으로 자동 생성
+  // 자동어제불러오기: 어제 데이터의 유저/사이트 조합을 그대로 가져와서 충전금액 범위 기반으로 자동 생성
   const loadAutoYesterdayData = async () => {
     try {
       const today = new Date(selectedDate);
@@ -3577,13 +3577,13 @@ function DRBet() {
         return;
       }
       
-      // 어제 데이터에서 명의/사이트 조합 추출 (재충 제외, 충전금액 없는 것 제외)
+      // 어제 데이터에서 유저/사이트 조합 추출 (재충 제외, 충전금액 없는 것 제외)
       const yesterdayPairs = []; // { identityName, siteName, yesterdayCharge }[]
       const yesterdayCharges = {}; // { "identityName||siteName": chargeAmount } (어제와 다른 금액 생성용)
-      const seenPairs = new Set(); // 이미 본 명의/사이트 조합 (재충 확인용)
+      const seenPairs = new Set(); // 이미 본 유저/사이트 조합 (재충 확인용)
       
       // 통계용
-      let totalItems = 0; // 전체 항목 수 (명의/사이트/충환전이 모두 있는 것)
+      let totalItems = 0; // 전체 항목 수 (유저/사이트/충환전이 모두 있는 것)
       let noChargeCount = 0; // 충전금액 없는 항목 수
       let duplicateCount = 0; // 재충 항목 수
       const duplicatePairs = []; // 재충된 조합 목록
@@ -3609,7 +3609,7 @@ function DRBet() {
               continue;
             }
             
-            // 재충(중복된 명의/사이트 조합) 제외
+            // 재충(중복된 유저/사이트 조합) 제외
             if (seenPairs.has(pairKey)) {
               duplicateCount++;
               duplicatePairs.push({ identityName: identityName.trim(), siteName: siteName.trim() });
@@ -3618,10 +3618,10 @@ function DRBet() {
             
             seenPairs.add(pairKey);
             
-            // 어제 충전금액 저장 (어제와 다른 금액 생성용) - 명의+사이트 조합별로 저장
+            // 어제 충전금액 저장 (어제와 다른 금액 생성용) - 유저+사이트 조합별로 저장
             yesterdayCharges[pairKey] = charge;
             
-            // 명의/사이트 조합 저장
+            // 유저/사이트 조합 저장
             yesterdayPairs.push({
               identityName: identityName.trim(),
               siteName: siteName.trim(),
@@ -3632,18 +3632,18 @@ function DRBet() {
       });
       
       if (yesterdayPairs.length === 0) {
-        toast.error('어제 데이터에 유효한 명의/사이트 조합이 없습니다');
+        toast.error('어제 데이터에 유효한 유저/사이트 조합이 없습니다');
         return;
       }
       
       log('[자동어제불러오기] 어제 데이터 분석:');
       log('  - 전체 어제 레코드 수:', yesterdayRecords.length, '개');
-      log('  - 전체 항목 수 (명의/사이트/충환전 모두 있는 것):', totalItems, '개');
+      log('  - 전체 항목 수 (유저/사이트/충환전 모두 있는 것):', totalItems, '개');
       log('  - 충전금액 없는 항목:', noChargeCount, '개', noChargePairs.length > 0 ? noChargePairs : '');
       log('  - 재충 항목:', duplicateCount, '개', duplicatePairs.length > 0 ? duplicatePairs : '');
       log('  - 재충 및 충전금액 없는 항목 제외 후:', yesterdayPairs.length, '개');
       log('  - 계산 확인:', totalItems, '-', noChargeCount, '-', duplicateCount, '=', yesterdayPairs.length);
-      log('  - 유효한 명의/사이트 조합:', yesterdayPairs);
+      log('  - 유효한 유저/사이트 조합:', yesterdayPairs);
       
       // 어제 조합에서 사용된 사이트 목록 수집 (중복 제거)
       const uniqueSites = [...new Set(yesterdayPairs.map(p => p.siteName))];
@@ -3693,8 +3693,8 @@ function DRBet() {
         return;
       }
       
-      // 명의 순서 기준으로 정렬 (사이트 관리의 명의 순서 사용)
-      // identities 배열의 순서를 기준으로 명의 우선순위 설정
+      // 유저 순서 기준으로 정렬 (사이트 관리의 유저 순서 사용)
+      // identities 배열의 순서를 기준으로 유저 우선순위 설정
       const identityOrder = identities.map(id => id.name);
       const identityOrderMap = new Map();
       identityOrder.forEach((name, index) => {
@@ -3707,23 +3707,23 @@ function DRBet() {
         const range = siteChargeRanges[pair.siteName];
         const mid = (range.chargeMin + range.chargeMax) / 2;
         const groupKey = Math.round(mid / 10) * 10; // 10 단위로 반올림 (보조용)
-        const identityOrderIndex = identityOrderMap.get(pair.identityName) ?? 999; // 명의 순서 인덱스
+        const identityOrderIndex = identityOrderMap.get(pair.identityName) ?? 999; // 유저 순서 인덱스
         return { ...pair, mid, groupKey, identityOrderIndex };
       });
       
-      // 명의 순서 우선으로 정렬 (첫 번째 항목 선택을 위해)
+      // 유저 순서 우선으로 정렬 (첫 번째 항목 선택을 위해)
       pairsWithDistance.sort((a, b) => {
         if (a.identityOrderIndex !== b.identityOrderIndex) {
           return a.identityOrderIndex - b.identityOrderIndex;
         }
-        // 같은 명의면 중간값 순서
+        // 같은 유저면 중간값 순서
         return a.mid - b.mid;
       });
       
       // 거리 기반으로 행 생성
       const newRecords = [];
       let remainingPairs = [...pairsWithDistance];
-      const usedPairsGlobal = new Set(); // 전체 행에서 사용된 명의/사이트 조합 (전역 중복 방지)
+      const usedPairsGlobal = new Set(); // 전체 행에서 사용된 유저/사이트 조합 (전역 중복 방지)
       const skippedPairs = []; // 전역 중복으로 스킵된 조합 (디버깅용)
       
       log('[자동어제불러오기] 행 생성 시작:', {
@@ -3734,14 +3734,14 @@ function DRBet() {
       // 모든 항목이 처리될 때까지 반복
       while (remainingPairs.length > 0) {
         let currentRow = { sites: [] };
-        const usedIdentitiesInRow = new Set(); // 현재 행에서 사용된 명의
+        const usedIdentitiesInRow = new Set(); // 현재 행에서 사용된 유저
         const usedSitesInRow = new Set(); // 현재 행에서 사용된 사이트
         const processedIndices = []; // 이번 반복에서 처리된 인덱스
         let baseMid = null; // 첫 번째 항목의 중간값 (거리 계산 기준)
         let baseGroupKey = null; // 첫 번째 항목의 그룹 키 (보조 기준)
         let firstCharge = null; // 첫 번째 항목의 충전금액 (나머지 항목들이 사용할 값)
         
-        // 첫 번째 항목 선택 (명의 순서 우선, 이미 사용된 조합 제외)
+        // 첫 번째 항목 선택 (유저 순서 우선, 이미 사용된 조합 제외)
         let firstPairIndex = -1;
         for (let i = 0; i < remainingPairs.length; i++) {
           const pair = remainingPairs[i];
@@ -3773,7 +3773,7 @@ function DRBet() {
           }
           
           // 충전금액 범위 내에서 랜덤 금액 생성 (어제와 다른 금액) - 첫 번째 항목만 랜덤
-          // 명의+사이트 조합별로 어제 충전금액과 비교
+          // 유저+사이트 조합별로 어제 충전금액과 비교
           const range = siteChargeRanges[siteName];
           const currentPairKey = `${identityName}||${siteName}`;
           const yesterdayCharge = yesterdayCharges[currentPairKey];
@@ -3809,7 +3809,7 @@ function DRBet() {
         }
         
         // 두 번째 항목부터: 첫 번째 항목의 금액이 포함되는 충전금액 범위를 가진 사이트들 찾기
-        // 그 다음 명의 순서대로 정렬해서 배치
+        // 그 다음 유저 순서대로 정렬해서 배치
         const compatiblePairs = remainingPairs
           .map((pair, idx) => ({ pair, idx }))
           .filter(({ pair, idx }) => {
@@ -3821,7 +3821,7 @@ function DRBet() {
             // 이미 다른 행에서 사용된 조합이면 제외
             if (usedPairsGlobal.has(pairKey)) return false;
             
-            // 현재 행에 이미 사용된 명의나 사이트면 제외
+            // 현재 행에 이미 사용된 유저나 사이트면 제외
             if (usedIdentitiesInRow.has(pair.identityName) || usedSitesInRow.has(pair.siteName)) return false;
             
             // 첫 번째 항목의 금액이 이 사이트의 충전금액 범위에 포함되는지 확인
@@ -3831,23 +3831,23 @@ function DRBet() {
           })
           .map(({ pair, idx }) => ({ ...pair, originalIndex: idx }))
           .sort((a, b) => {
-            // 명의 순서 우선
+            // 유저 순서 우선
             if (a.identityOrderIndex !== b.identityOrderIndex) {
               return a.identityOrderIndex - b.identityOrderIndex;
             }
-            // 같은 명의면 원래 인덱스 순서 유지
+            // 같은 유저면 원래 인덱스 순서 유지
             return a.originalIndex - b.originalIndex;
           });
         
-        // 호환되는 항목들을 명의 순서대로 추가 (최대 4개까지)
-        // 한 행에는 같은 명의나 같은 사이트가 중복되지 않도록 체크
+        // 호환되는 항목들을 유저 순서대로 추가 (최대 4개까지)
+        // 한 행에는 같은 유저나 같은 사이트가 중복되지 않도록 체크
         for (let j = 0; j < compatiblePairs.length && currentRow.sites.length < 4; j++) {
           const compatiblePair = compatiblePairs[j];
           const pairKey = `${compatiblePair.identityName}||${compatiblePair.siteName}`;
           
-          // 한 행에 같은 명의나 같은 사이트가 중복되지 않도록 다시 한 번 확인
+          // 한 행에 같은 유저나 같은 사이트가 중복되지 않도록 다시 한 번 확인
           if (usedIdentitiesInRow.has(compatiblePair.identityName)) {
-            log(`[자동어제불러오기] 명의 중복으로 스킵: ${compatiblePair.identityName} (이미 사용됨)`);
+            log(`[자동어제불러오기] 유저 중복으로 스킵: ${compatiblePair.identityName} (이미 사용됨)`);
             continue;
           }
           if (usedSitesInRow.has(compatiblePair.siteName)) {
@@ -3954,7 +3954,7 @@ function DRBet() {
       const maxOrder = records.length > 0 ? Math.max(...records.map(r => r.display_order || 0)) : -1;
       
       // 저장된 레코드들의 출석일 정보를 수집 (loadRecords 후에 다시 적용하기 위해)
-      const savedAttendanceDaysMap = {}; // { "명의||사이트": 출석일 }
+      const savedAttendanceDaysMap = {}; // { "유저||사이트": 출석일 }
       const savedRecords = []; // 저장된 레코드들
       
       for (let i = 0; i < newRecords.length; i++) {
@@ -5585,7 +5585,7 @@ function DRBet() {
       const withdrawTotalWon = withdrawTotalMan * 10000;
       updatedRecord.total_amount = inputValue + withdrawTotalWon;
     }
-    // 명의 필드인 경우 유효성 검증 및 출석일 감소 처리
+    // 유저 필드인 경우 유효성 검증 및 출석일 감소 처리
     else if (field.startsWith('identity')) {
       const index = field.replace('identity', '');
       const siteField = `site_name${index}`;
@@ -5596,13 +5596,13 @@ function DRBet() {
       
       const identitiesList = editingValue ? identities.filter(id => id.name.toLowerCase().includes(editingValue.toLowerCase())) : [];
       if (editingValue && !identities.find(id => id.name === editingValue)) {
-        toast.error(`등록되지 않은 명의입니다: ${editingValue}`);
+        toast.error(`등록되지 않은 유저입니다: ${editingValue}`);
         setEditingCell(null);
         setEditingValue('');
         return;
       }
       
-      // 명의가 변경되거나 삭제될 때 이전 값에 충전금액이 있었으면 출석일 감소
+      // 유저가 변경되거나 삭제될 때 이전 값에 충전금액이 있었으면 출석일 감소
       if (oldIdentityName && oldSiteName && oldChargeWithdraw) {
         const parseCharge = (str) => {
           if (!str || str.trim() === '') return 0;
@@ -5611,18 +5611,18 @@ function DRBet() {
         };
         const oldCharge = parseCharge(oldChargeWithdraw);
         if (oldCharge > 0 && (!editingValue || editingValue !== oldIdentityName)) {
-          // 명의가 삭제되거나 변경된 경우 출석일 감소 (재충전 체크를 위해 record와 siteIndex 전달)
+          // 유저가 삭제되거나 변경된 경우 출석일 감소 (재충전 체크를 위해 record와 siteIndex 전달)
           const siteIndex = parseInt(index);
           await handleAutoAttendance(oldSiteName, oldIdentityName, oldChargeWithdraw, '', record, siteIndex);
         }
       }
       
       updatedRecord[field] = editingValue;
-      // 명의가 삭제되면 사이트도 함께 삭제
+      // 유저가 삭제되면 사이트도 함께 삭제
       if (!editingValue || editingValue.trim() === '') {
         updatedRecord[siteField] = '';
       } else {
-        // 명의가 변경된 경우, 새로운 명의의 출석일 증가 처리
+        // 유저가 변경된 경우, 새로운 유저의 출석일 증가 처리
         const newIdentityName = editingValue;
         const newSiteName = updatedRecord[siteField] || oldSiteName;
         const newChargeWithdraw = updatedRecord[chargeWithdrawField] || oldChargeWithdraw;
@@ -5635,7 +5635,7 @@ function DRBet() {
           };
           const newCharge = parseCharge(newChargeWithdraw);
           if (newCharge > 0) {
-            // 새로운 명의의 출석일 증가 처리 (재충전 체크를 위해 record와 siteIndex 전달)
+            // 새로운 유저의 출석일 증가 처리 (재충전 체크를 위해 record와 siteIndex 전달)
             const siteIndex = parseInt(index);
             await handleAutoAttendance(newSiteName, newIdentityName, '', newChargeWithdraw, record, siteIndex);
           }
@@ -5799,9 +5799,9 @@ function DRBet() {
         const savedWithDays = { ...saved };
         
         // 새 레코드 생성 시에는 항상 출석일 조회 (조건 없이)
-        // 기존 레코드 수정 시에는 충전금액/명의/사이트 필드 변경 시에만 조회
+        // 기존 레코드 수정 시에는 충전금액/유저/사이트 필드 변경 시에만 조회
         
-        // 조회할 사이트/명의 목록 수집
+        // 조회할 사이트/유저 목록 수집
         const sitesToLoad = [];
         for (let i = 1; i <= 4; i++) {
           const identityName = saved[`identity${i}`];
@@ -5988,12 +5988,12 @@ function DRBet() {
           }
         }
         
-        // 기존 레코드 수정 시에는 충전금액/명의/사이트 필드 변경 시에만 조회
+        // 기존 레코드 수정 시에는 충전금액/유저/사이트 필드 변경 시에만 조회
         const needsAttendanceRefresh = field.startsWith('charge_withdraw') || 
                                        field.startsWith('identity') || 
                                        field.startsWith('site_name');
         
-        // 조회할 사이트/명의 목록 수집
+        // 조회할 사이트/유저 목록 수집
         const sitesToLoad = [];
         for (let i = 1; i <= 4; i++) {
           const identityName = saved[`identity${i}`];
@@ -6004,7 +6004,7 @@ function DRBet() {
         }
         
         // 배치 API로 한 번에 조회 (N+1 문제 해결)
-        // 기존 레코드 수정 시에는 충전금액/명의/사이트 필드 변경 시에만 조회
+        // 기존 레코드 수정 시에는 충전금액/유저/사이트 필드 변경 시에만 조회
         const daysUpdates = {}; // state 업데이트를 모아서 한 번에 처리 (스코프 확장)
         
         // 서버 응답에 출석일 정보가 포함되어 있으면 우선 사용
@@ -6437,7 +6437,7 @@ function DRBet() {
     const currentIndex = records.findIndex(r => r.id === record.id);
     if (currentIndex === -1) return false;
     
-    // 동일한 명의/사이트를 가진 레코드 찾기
+    // 동일한 유저/사이트를 가진 레코드 찾기
     const duplicateRecords = [];
     for (let i = 0; i < records.length; i++) {
       const r = records[i];
@@ -6473,7 +6473,7 @@ function DRBet() {
   };
 
 
-  // 사이트 입력 렌더링 (명의/사이트/충환전 3개 input)
+  // 사이트 입력 렌더링 (유저/사이트/충환전 3개 input)
   const renderSiteInputs = (record, siteIndex, layoutVariant = 'default') => {
     const identityField = `identity${siteIndex}`;
     const siteField = `site_name${siteIndex}`;
@@ -6502,16 +6502,16 @@ function DRBet() {
     const isEditingChargeWithdraw = editingCell?.recordId === (record.id || 'new') && 
                                      editingCell?.field === chargeWithdrawField;
     
-  // 현재 선택된 명의의 사이트 목록
+  // 현재 선택된 유저의 사이트 목록
   const getCurrentIdentity = () => {
-    // 저장된 명의 값을 우선 확인
+    // 저장된 유저 값을 우선 확인
     if (identityValue) {
       return identities.find(id => id.name === identityValue);
     }
     // 편집 중일 때는 편집 중인 값을 기준으로 (한글자라도 입력하면)
     if (isEditingIdentity && editingValue) {
       const foundIdentity = identities.find(id => id.name === editingValue);
-      // 정확히 일치하는 명의를 찾으면 반환
+      // 정확히 일치하는 유저를 찾으면 반환
       if (foundIdentity) {
         return foundIdentity;
       }
@@ -6533,7 +6533,7 @@ function DRBet() {
       return deposit > 0;
     })();
     
-    // 중복 명의/사이트 확인 (최적화: 편집 중이 아니고 값이 있을 때만 계산)
+    // 중복 유저/사이트 확인 (최적화: 편집 중이 아니고 값이 있을 때만 계산)
     const isDuplicate = (() => {
       // 편집 중이면 계산 스킵 (입력 중 렉 방지)
       if (isEditingIdentity || isEditingSite || isEditingChargeWithdraw) return false;
@@ -6555,7 +6555,7 @@ function DRBet() {
           currentIndex = i;
         }
         
-        // 동일한 명의/사이트를 가진 레코드 찾기
+        // 동일한 유저/사이트를 가진 레코드 찾기
         const otherIdentity = r[`identity${siteIndex}`];
         const otherSite = r[`site_name${siteIndex}`];
         if (otherIdentity === identityValue && otherSite === siteValue) {
@@ -6584,10 +6584,10 @@ function DRBet() {
     })();
     
     // 배경색 우선순위: 재충(중복) > ㄷ > 환전
-    // 재충일 때는 셀 배경색만 변경하고, 명의/사이트/충환전 영역 배경색은 제거
-    // 환전 대기(ㄷ)일 때는 일반 환전일 때처럼 명의/사이트/충환전 영역 스타일 변경
+    // 재충일 때는 셀 배경색만 변경하고, 유저/사이트/충환전 영역 배경색은 제거
+    // 환전 대기(ㄷ)일 때는 일반 환전일 때처럼 유저/사이트/충환전 영역 스타일 변경
     if (isDuplicate) {
-      containerBgColor = ''; // 재충일 때는 명의/사이트/충환전 영역 배경색 제거
+      containerBgColor = ''; // 재충일 때는 유저/사이트/충환전 영역 배경색 제거
     } else if (hasD) {
       containerBgColor = ''; // 환전 대기(ㄷ)일 때는 일반 환전처럼 (hasRedStyle로 배경색 변경됨)
     } else if (hasWithdraw) {
@@ -6596,7 +6596,7 @@ function DRBet() {
     
     // 텍스트 색상 및 테두리 색상 설정
     // 재충이면서 환전이 있을 때도 일반 환전처럼 빨간색 스타일 적용
-    // 충전금액이 없고 명의/사이트가 있으면 보라색 텍스트 (배경은 없음)
+    // 충전금액이 없고 유저/사이트가 있으면 보라색 텍스트 (배경은 없음)
     const hasPurpleStyle = !isDuplicate && !hasD && !hasCharge && identityValue && siteValue && !hasWithdraw;
     // 환전 대기(ㄷ) 또는 환전이 있으면 빨간색 (재충이면서 환전이 있을 때도 포함)
     const hasRedStyle = hasD || hasWithdraw;
@@ -6688,8 +6688,8 @@ function DRBet() {
                     setEditingValue(record[prevChargeField] || '');
                   }, 0);
                 } catch (error) {
-                  console.error('명의 저장 실패:', error);
-                  toast.error('명의 저장에 실패했습니다');
+                  console.error('유저 저장 실패:', error);
+                  toast.error('유저 저장에 실패했습니다');
                 }
                 return;
               }
@@ -6708,8 +6708,8 @@ function DRBet() {
                   setEditingValue(record[siteField] || '');
                 }, 0);
               } catch (error) {
-                console.error('명의 저장 실패:', error);
-                toast.error('명의 저장에 실패했습니다');
+                console.error('유저 저장 실패:', error);
+                toast.error('유저 저장에 실패했습니다');
               }
               return;
             } else if (e.key === 'Escape') {
@@ -6733,8 +6733,8 @@ function DRBet() {
                 setEditingCell(null);
                 setEditingValue('');
               } catch (error) {
-                console.error('명의 저장 실패:', error);
-                toast.error('명의 저장에 실패했습니다');
+                console.error('유저 저장 실패:', error);
+                toast.error('유저 저장에 실패했습니다');
               }
             }
           }}
@@ -6762,7 +6762,7 @@ function DRBet() {
         }}
         className={`${identityDisplayClass} ${!identityValue ? 'opacity-50' : ''}`}
       >
-        {identityValue || '명의'}
+        {identityValue || '유저'}
       </div>
     );
     const siteFieldContent = isEditingSite ? (
@@ -6805,7 +6805,7 @@ function DRBet() {
             if (e.key === 'Tab') {
               e.preventDefault();
               if (e.shiftKey) {
-                // 현재 입력 저장 후 이전 필드(명의)로 이동
+                // 현재 입력 저장 후 이전 필드(유저)로 이동
                 const currentVal = e.currentTarget.value || '';
                 setEditingValue(currentVal);
                 
@@ -6827,7 +6827,7 @@ function DRBet() {
                 
                 try {
                   await handleCellBlur({ ...record, [siteField]: currentVal });
-                  // 저장 성공 후 명의 입력으로 이동
+                  // 저장 성공 후 유저 입력으로 이동
                   setEditingCell({ recordId: record.id || 'new', field: identityField });
                   setEditingValue(identityValue);
                 } catch (error) {
@@ -6836,7 +6836,7 @@ function DRBet() {
                 }
                 return;
               } else if (!currentIdentity) {
-                toast.error('먼저 명의를 선택해주세요');
+                toast.error('먼저 유저를 선택해주세요');
                 return;
               }
               // 현재 입력 저장 후 충환전 입력으로 이동
@@ -6929,7 +6929,7 @@ function DRBet() {
           autoFocus
           className={`${siteInputClass}`}
           disabled={!currentIdentity}
-          placeholder={currentIdentity ? '사이트' : '명의 먼저'}
+          placeholder={currentIdentity ? '사이트' : '유저 먼저'}
         />
       </div>
     ) : (
@@ -6937,7 +6937,7 @@ function DRBet() {
         key={`site-display-${record.id || record.tmpId}-${record._v || 0}`}
         onClick={() => {
           if (!currentIdentity) {
-            toast.error('먼저 명의를 선택해주세요');
+            toast.error('먼저 유저를 선택해주세요');
             return;
           }
           editingLockRef.current = true;
@@ -6953,9 +6953,9 @@ function DRBet() {
           }
         }}
         className={`${siteDisplayClass} ${!siteValue ? 'opacity-50' : ''} overflow-hidden text-ellipsis whitespace-nowrap`}
-        title={siteValue || (currentIdentity ? '사이트' : '명의 먼저')}
+        title={siteValue || (currentIdentity ? '사이트' : '유저 먼저')}
       >
-        {siteValue || (currentIdentity ? '사이트' : '명의 먼저')}
+        {siteValue || (currentIdentity ? '사이트' : '유저 먼저')}
       </div>
     );
     const chargeFieldContent = isEditingChargeWithdraw ? (
@@ -6998,10 +6998,10 @@ function DRBet() {
                     }
                   }
                   
-                  // 기존 레코드 수정 시에는 충전금액/명의/사이트 필드 변경 시에만 조회
+                  // 기존 레코드 수정 시에는 충전금액/유저/사이트 필드 변경 시에만 조회
                   const needsAttendanceRefresh = true; // charge_withdraw 필드이므로 항상 true
                   
-                  // 조회할 사이트/명의 목록 수집
+                  // 조회할 사이트/유저 목록 수집
                   const sitesToLoad = [];
                   for (let i = 1; i <= 4; i++) {
                     const identityName = saved[`identity${i}`];
@@ -7194,7 +7194,7 @@ function DRBet() {
                 toast.error('충환전 저장에 실패했습니다');
               }
             } else {
-              // 현재 입력 저장 후 다음 필드: 다음 명의로 이동
+              // 현재 입력 저장 후 다음 필드: 다음 유저로 이동
               const currentVal = editingValue;
               try {
                 const oldChargeWithdraw = editingCell?.originalValue !== undefined 
@@ -7225,10 +7225,10 @@ function DRBet() {
                     }
                   }
                   
-                  // 기존 레코드 수정 시에는 충전금액/명의/사이트 필드 변경 시에만 조회
+                  // 기존 레코드 수정 시에는 충전금액/유저/사이트 필드 변경 시에만 조회
                   const needsAttendanceRefresh = true; // charge_withdraw 필드이므로 항상 true
                   
-                  // 조회할 사이트/명의 목록 수집
+                  // 조회할 사이트/유저 목록 수집
                   const sitesToLoad = [];
                   for (let i = 1; i <= 4; i++) {
                     const identityName = saved[`identity${i}`];
@@ -7465,10 +7465,10 @@ function DRBet() {
                 }
               }
               
-              // 기존 레코드 수정 시에는 충전금액/명의/사이트 필드 변경 시에만 조회
+              // 기존 레코드 수정 시에는 충전금액/유저/사이트 필드 변경 시에만 조회
               const needsAttendanceRefresh = true; // charge_withdraw 필드이므로 항상 true
               
-              // 조회할 사이트/명의 목록 수집
+              // 조회할 사이트/유저 목록 수집
               const sitesToLoad = [];
               for (let i = 1; i <= 4; i++) {
                 const identityName = saved[`identity${i}`];
@@ -7691,10 +7691,10 @@ function DRBet() {
                   }
                 }
                 
-                // 기존 레코드 수정 시에는 충전금액/명의/사이트 필드 변경 시에만 조회
+                // 기존 레코드 수정 시에는 충전금액/유저/사이트 필드 변경 시에만 조회
                 const needsAttendanceRefresh = true; // charge_withdraw 필드이므로 항상 true
                 
-                // 조회할 사이트/명의 목록 수집
+                // 조회할 사이트/유저 목록 수집
                 const sitesToLoad = [];
                 for (let i = 1; i <= 4; i++) {
                   const identityName = saved[`identity${i}`];
@@ -7937,7 +7937,7 @@ function DRBet() {
                           {deleteButtonElement}
                         </div>
                       )}
-                      {/* 통합 버튼 형태: 명의/사이트/충전금액 */}
+                      {/* 통합 버튼 형태: 유저/사이트/충전금액 */}
                       <div className={`inline-flex items-center ${containerBgColor || 'bg-gray-50 dark:bg-gray-800'} overflow-hidden`}>
                         <div className={`flex-1 min-w-0 ${hasRedStyle ? 'bg-red-50 dark:bg-red-900/20' : hasPurpleStyle ? 'bg-purple-50 dark:bg-purple-900/20' : 'bg-gray-50 dark:bg-gray-800'}`}>
                           {identityFieldContent}
@@ -8005,7 +8005,7 @@ function DRBet() {
             </button>
           </div>
         )}
-        {/* 통합 버튼 형태: 명의/사이트/충전금액 */}
+        {/* 통합 버튼 형태: 유저/사이트/충전금액 */}
         <div className={`inline-flex items-center ${containerBgColor || 'bg-white dark:bg-gray-800'} overflow-hidden`}>
           <div className={`flex-1 min-w-0 ${hasRedStyle ? 'bg-red-50 dark:bg-red-900/20' : hasPurpleStyle ? 'bg-purple-50 dark:bg-purple-900/20' : 'bg-gray-50 dark:bg-gray-800'}`}>
             {identityFieldContent}
@@ -9340,7 +9340,7 @@ function DRBet() {
 
         {/* 정착 금액 배너 - 페이백 섹션과 동일한 UI */}
         {!isFutureDate && settlementBanners.length > 0 && (() => {
-          // ✅ 사이트+명의별로 그룹화 (하나의 카드만 표시)
+          // ✅ 사이트+유저별로 그룹화 (하나의 카드만 표시)
           const groupedBanners = {};
           settlementBanners.forEach(b => {
             const key = `${b.identity}||${b.site}`;
@@ -9468,7 +9468,7 @@ function DRBet() {
                   <table className="w-full text-sm border-collapse">
                     <thead>
                       <tr className="bg-orange-100 dark:bg-orange-900/30">
-                        <th className="px-3 py-2 text-left font-bold text-orange-800 dark:text-orange-300 border-b border-orange-200 dark:border-orange-800">명의</th>
+                        <th className="px-3 py-2 text-left font-bold text-orange-800 dark:text-orange-300 border-b border-orange-200 dark:border-orange-800">유저</th>
                         <th className="px-3 py-2 text-left font-bold text-orange-800 dark:text-orange-300 border-b border-orange-200 dark:border-orange-800">사이트</th>
                         <th className="px-3 py-2 text-center font-bold text-orange-800 dark:text-orange-300 border-b border-orange-200 dark:border-orange-800">타입</th>
                         <th className="px-3 py-2 text-right font-bold text-orange-800 dark:text-orange-300 border-b border-orange-200 dark:border-orange-800">당일충전</th>
@@ -9567,7 +9567,7 @@ function DRBet() {
                   <table className="w-full text-sm border-collapse">
                     <thead>
                       <tr className="bg-green-100 dark:bg-green-900/30">
-                        <th className="px-3 py-2 text-left font-bold text-green-800 dark:text-green-300 border-b border-green-200 dark:border-green-800">명의</th>
+                        <th className="px-3 py-2 text-left font-bold text-green-800 dark:text-green-300 border-b border-green-200 dark:border-green-800">유저</th>
                         <th className="px-3 py-2 text-left font-bold text-green-800 dark:text-green-300 border-b border-green-200 dark:border-green-800">사이트</th>
                         <th className="px-3 py-2 text-center font-bold text-green-800 dark:text-green-300 border-b border-green-200 dark:border-green-800">타입</th>
                         <th className="px-3 py-2 text-right font-bold text-green-800 dark:text-green-300 border-b border-green-200 dark:border-green-800">주간손실</th>
@@ -9762,7 +9762,7 @@ function DRBet() {
                         {renderCell(record, 'rate_amount', formatCurrency(record.rate_amount) + '원')}
                       </td>
 
-                      {/* 사이트 1-4 (각 셀에 명의/사이트/충환전 input 3개) */}
+                      {/* 사이트 1-4 (각 셀에 유저/사이트/충환전 input 3개) */}
                       <td className={`${tableCellBaseClass} ${isSiteDuplicate(record, 1) ? 'bg-green-100 dark:bg-green-800/40' : hasSiteD(record, 1) ? 'bg-red-50 dark:bg-red-900/30' : ''} text-center dark:text-white`} style={{ minWidth: '200px' }}>
                         {renderSiteInputs(record, 1, isCompactLayout ? 'compact' : 'default')}
                       </td>
@@ -10006,7 +10006,7 @@ function DRBet() {
             
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-bold text-gray-700 dark:text-white mb-1">명의</label>
+                <label className="block text-sm font-bold text-gray-700 dark:text-white mb-1">유저</label>
                 <div className="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-md px-3 py-2 bg-gray-50 dark:bg-gray-700">
                   {siteAccountInfo.identityName}
                 </div>

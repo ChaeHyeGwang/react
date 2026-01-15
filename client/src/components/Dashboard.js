@@ -108,7 +108,7 @@ const Dashboard = () => {
       });
       setIdentityStats(response.data);
     } catch (error) {
-      console.error('명의별 통계 로드 실패:', error);
+      console.error('유저별 통계 로드 실패:', error);
     }
   };
 
@@ -486,15 +486,15 @@ const Dashboard = () => {
         </div>
       </div>
 
-      {/* 명의별 통계 */}
+      {/* 유저별 통계 */}
       <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md dark:shadow-gray-900/50 p-6">
-        <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-4">👤 명의별 포인트 분석</h2>
+        <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-4">👤 유저별 포인트 분석</h2>
         <div className="overflow-x-auto">
           <table className="w-full border-collapse min-w-[720px] sm:min-w-0">
             <thead>
               <tr className="bg-gray-100 dark:bg-gray-700">
                 <th className="border border-gray-300 dark:border-gray-600 sm:px-4 sm:py-2 px-2 py-1 text-left dark:text-white whitespace-nowrap">순위</th>
-                <th className="border border-gray-300 dark:border-gray-600 sm:px-4 sm:py-2 px-2 py-1 text-left dark:text-white whitespace-nowrap">명의</th>
+                <th className="border border-gray-300 dark:border-gray-600 sm:px-4 sm:py-2 px-2 py-1 text-left dark:text-white whitespace-nowrap">유저</th>
                 <th className="border border-gray-300 dark:border-gray-600 sm:px-4 sm:py-2 px-2 py-1 text-right dark:text-white whitespace-nowrap">총 포인트</th>
                 <th className="border border-gray-300 dark:border-gray-600 sm:px-4 sm:py-2 px-2 py-1 text-center dark:text-white whitespace-nowrap">사이트 수</th>
                 <th className="border border-gray-300 dark:border-gray-600 sm:px-4 sm:py-2 px-2 py-1 text-center dark:text-white whitespace-nowrap">승인</th>
@@ -538,7 +538,7 @@ const Dashboard = () => {
                 <th className="border border-gray-300 dark:border-gray-600 sm:px-4 sm:py-2 px-2 py-1 text-left dark:text-white whitespace-nowrap">사이트</th>
                 <th className="border border-gray-300 dark:border-gray-600 sm:px-4 sm:py-2 px-2 py-1 text-right dark:text-white whitespace-nowrap">총 포인트</th>
                 <th className="border border-gray-300 dark:border-gray-600 sm:px-4 sm:py-2 px-2 py-1 text-center dark:text-white whitespace-nowrap">기록 수</th>
-                <th className="border border-gray-300 dark:border-gray-600 sm:px-4 sm:py-2 px-2 py-1 text-center dark:text-white whitespace-nowrap">명의 수</th>
+                <th className="border border-gray-300 dark:border-gray-600 sm:px-4 sm:py-2 px-2 py-1 text-center dark:text-white whitespace-nowrap">유저 수</th>
                 <th className="border border-gray-300 dark:border-gray-600 sm:px-4 sm:py-2 px-2 py-1 text-right dark:text-white whitespace-nowrap">평균</th>
               </tr>
             </thead>

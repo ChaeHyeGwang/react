@@ -73,7 +73,7 @@ function SettlementManagement() {
       // 초기 진입 시 선택 월 기준으로만 초기화 (중복 방지 로직은 initializeMonthData 내부)
       await initializeMonthData();
 
-      // 명의 목록 가져오기
+      // 유저 목록 가져오기
       const identitiesRes = await axiosInstance.get('/settlements/identities');
       setIdentities(identitiesRes.data);
       
@@ -161,7 +161,7 @@ function SettlementManagement() {
     let currentValue = '';
     
     if (identityId !== null) {
-      // 명의별 데이터
+      // 유저별 데이터
       const userData = record.user_data || {};
       const userInfo = userData[identityId] || {};
       currentValue = userInfo[field] || '';
@@ -268,7 +268,7 @@ function SettlementManagement() {
     }
 
     if (identityId !== null) {
-      // 명의별 데이터 업데이트
+      // 유저별 데이터 업데이트
       const userData = { ...(record.user_data || {}) };
       if (!userData[identityId]) {
         userData[identityId] = {};
@@ -334,7 +334,7 @@ function SettlementManagement() {
       return { identity, total };
     });
     
-    // 총합계: 수익 + 모든 명의별 금액 합계
+    // 총합계: 수익 + 모든 유저별 금액 합계
     const totalAmountSum = totalAmountsByIdentity.reduce((sum, item) => sum + (item.total || 0), 0);
     const grandTotal = totalRevenue + totalAmountSum;
     
@@ -343,7 +343,7 @@ function SettlementManagement() {
 
   const { totalRevenue, totalAmountsByIdentity, grandTotal } = calculateTotal();
 
-  // 특정 명의의 금액이 문자열인지 확인
+  // 특정 유저의 금액이 문자열인지 확인
   const hasStringAmountForIdentity = (record, identityId) => {
     const userData = record.user_data || {};
     const userInfo = userData[identityId] || {};
@@ -413,7 +413,7 @@ function SettlementManagement() {
     );
   };
 
-  // 명의별 데이터 가져오기
+  // 유저별 데이터 가져오기
   const getUserData = (record, identityId, field) => {
     const userData = record.user_data || {};
     const userInfo = userData[identityId] || {};
@@ -557,7 +557,7 @@ function SettlementManagement() {
                   <th className="px-4 py-3 text-center text-xs font-bold text-gray-700 dark:text-white uppercase whitespace-nowrap w-20 border-r border-gray-300 dark:border-gray-600">수익</th>
                   <th className="px-4 py-3 text-center text-xs font-bold text-gray-700 dark:text-white uppercase whitespace-nowrap w-40 border-r-2 border-green-500 dark:border-green-400">사이트/내용</th>
                   
-                  {/* 동적으로 명의별 컬럼 생성 */}
+                  {/* 동적으로 유저별 컬럼 생성 */}
                   {identities.map((identity, idx) => (
                     <th key={identity.id} colSpan="4" className={`px-4 py-3 text-center text-xs font-bold text-gray-700 dark:text-white uppercase ${colors[idx % colors.length]} border-r-2 border-green-500 dark:border-green-400`}>
                       {identity.name}
@@ -570,7 +570,7 @@ function SettlementManagement() {
                   <th className="border-r border-gray-300 dark:border-gray-600"></th>
                   <th className="border-r-2 border-green-500 dark:border-green-400"></th>
                   
-                  {/* 각 명의별 서브 헤더 */}
+                  {/* 각 유저별 서브 헤더 */}
                   {identities.map((identity) => (
                     <React.Fragment key={`sub-${identity.id}`}>
                       <th className={`px-2 py-2 text-center text-xs font-bold text-gray-600 dark:text-white whitespace-nowrap border-r border-gray-300 dark:border-gray-600`}>날짜</th>
@@ -607,7 +607,7 @@ function SettlementManagement() {
                         {renderCell(record, 'site_content', record.site_content)}
                       </td>
                       
-                      {/* 동적으로 명의별 데이터 렌더링 */}
+                      {/* 동적으로 유저별 데이터 렌더링 */}
                       {identities.map((identity) => {
                         const hasString = hasStringAmountForIdentity(record, identity.id);
                         const redBgClass = hasString ? 'bg-red-100 dark:bg-red-900/30' : '';
@@ -661,7 +661,7 @@ function SettlementManagement() {
                       </td>
                     </React.Fragment>
                   ))}
-                  {/* 총합계: 수익 + 모든 명의별 금액 합계 */}
+                  {/* 총합계: 수익 + 모든 유저별 금액 합계 */}
                   <td className="px-4 py-3 text-right text-sm font-bold text-yellow-700 dark:text-yellow-300 bg-yellow-100 dark:bg-yellow-900/30 border-l-2 border-yellow-400 dark:border-yellow-600">
                     {formatCurrency(grandTotal)}
                   </td>

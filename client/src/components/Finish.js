@@ -244,7 +244,7 @@ function Finish({ isStartMode = false }) {
         axiosInstance.get('/finish/summary', { params: { date: selectedDate, mode: dataMode } })
       ]);
       
-      // 명의 목록 설정
+      // 유저 목록 설정
       setIdentities(identitiesList || []);
       
       // 마무리 데이터 처리
@@ -703,7 +703,7 @@ function Finish({ isStartMode = false }) {
     );
   };
 
-  // 총합 계산 (받치기 제외, 명의들만)
+  // 총합 계산 (받치기 제외, 유저들만)
   const balanceTotal = Array.isArray(identities) 
     ? identities.reduce((sum, identity) => {
         const name = identity?.name;
@@ -754,7 +754,7 @@ function Finish({ isStartMode = false }) {
           {isStartMode ? '🚀 시작' : '🏁 마무리'}
         </h1>
         <p className="text-gray-600 dark:text-white">
-          {isStartMode ? '금일 시작 금액 산출 및 관리' : '명의별 잔액 및 환전 대기 현황'}
+          {isStartMode ? '금일 시작 금액 산출 및 관리' : '유저별 잔액 및 환전 대기 현황'}
         </p>
         
         <p className="text-sm text-blue-600 mt-1">💡 셀을 클릭하여 수정하세요</p>
@@ -807,7 +807,7 @@ function Finish({ isStartMode = false }) {
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50 dark:bg-[#282C34]">
                 <tr>
-                  <th className="px-4 py-3 text-center text-xs font-bold text-gray-700 dark:text-white uppercase">명의</th>
+                  <th className="px-4 py-3 text-center text-xs font-bold text-gray-700 dark:text-white uppercase">유저</th>
                   <th className="px-4 py-3 text-center text-xs font-bold text-gray-700 dark:text-white uppercase">남은금액</th>
                 </tr>
               </thead>
@@ -822,11 +822,11 @@ function Finish({ isStartMode = false }) {
                   </td>
                 </tr>
                 
-                {/* 명의별 행 */}
+                {/* 유저별 행 */}
                 {!Array.isArray(identities) || identities.length === 0 ? (
                   <tr>
                     <td colSpan={2} className="px-6 py-4 text-center text-gray-500 dark:text-white text-xs">
-                      명의 정보를 불러오는 중...
+                      유저 정보를 불러오는 중...
                     </td>
                   </tr>
                 ) : (
@@ -847,7 +847,7 @@ function Finish({ isStartMode = false }) {
                     ));
                   })()
                 )}
-                {/* 합계 행 (받치기 + 명의들) */}
+                {/* 합계 행 (받치기 + 유저들) */}
                 <tr className="bg-blue-100 dark:bg-gray-700 font-bold">
                   <td className="px-4 py-3 text-sm text-center dark:text-white">합계</td>
                   <td className="px-4 py-3 text-sm text-right dark:text-white">
@@ -890,7 +890,7 @@ function Finish({ isStartMode = false }) {
               <thead className="bg-gray-50 dark:bg-[#282C34]">
                 <tr>
                   <th className="px-4 py-3 text-center text-xs font-bold text-gray-700 dark:text-white uppercase">날짜</th>
-                  <th className="px-4 py-3 text-center text-xs font-bold text-gray-700 dark:text-white uppercase">명의</th>
+                  <th className="px-4 py-3 text-center text-xs font-bold text-gray-700 dark:text-white uppercase">유저</th>
                   <th className="px-4 py-3 text-center text-xs font-bold text-gray-700 dark:text-white uppercase">사이트</th>
                   <th className="px-4 py-3 text-center text-xs font-bold text-gray-700 dark:text-white uppercase">금액</th>
                   <th className="px-4 py-3 text-center text-xs font-bold text-gray-700 dark:text-white uppercase w-20">삭제</th>

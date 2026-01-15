@@ -1240,12 +1240,12 @@ const SiteManagement = () => {
       
       if (editingIdentity) {
         await axiosInstance.put(`/identities/${editingIdentity.id}`, identityForm);
-        toast.success('명의가 수정되었습니다');
+        toast.success('유저가 수정되었습니다');
         savedIdentityId = editingIdentity.id;
         savedIdentityName = identityForm.name;
       } else {
         const response = await axiosInstance.post('/identities', identityForm);
-        toast.success('명의가 추가되었습니다');
+        toast.success('유저가 추가되었습니다');
         
         // 서버 응답에서 ID 추출 (서버는 identityId로 반환)
         savedIdentityId = response.data?.identityId || 
@@ -1304,8 +1304,8 @@ const SiteManagement = () => {
         }
       }
     } catch (error) {
-      console.error('명의 저장 실패:', error);
-      toast.error('명의 저장에 실패했습니다');
+      console.error('유저 저장 실패:', error);
+      toast.error('유저 저장에 실패했습니다');
     }
   };
 
@@ -1346,11 +1346,11 @@ const SiteManagement = () => {
       // 캐시 무효화
       invalidateIdentitiesCache();
       
-      toast.success('명의 순서가 변경되었습니다');
+      toast.success('유저 순서가 변경되었습니다');
     } catch (error) {
-      console.error('명의 순서 변경 실패:', error);
+      console.error('유저 순서 변경 실패:', error);
       console.error('에러 상세:', error.response?.data || error.message);
-      const errorMessage = error.response?.data?.message || error.message || '명의 순서 변경에 실패했습니다';
+      const errorMessage = error.response?.data?.message || error.message || '유저 순서 변경에 실패했습니다';
       toast.error(errorMessage);
       // 실패 시 원래 데이터로 복구
       loadIdentities();
@@ -1359,13 +1359,13 @@ const SiteManagement = () => {
 
   // 명의 삭제
   const deleteIdentity = async (identity) => {
-    if (!window.confirm(`"${identity.name}" 명의를 삭제하시겠습니까?\n관련된 모든 사이트도 함께 삭제됩니다.`)) {
+    if (!window.confirm(`"${identity.name}" 유저를 삭제하시겠습니까?\n관련된 모든 사이트도 함께 삭제됩니다.`)) {
       return;
     }
     
     try {
       await axiosInstance.delete(`/identities/${identity.id}`);
-      toast.success('명의가 삭제되었습니다');
+      toast.success('유저가 삭제되었습니다');
       
       // 캐시 무효화 후 명의 목록 다시 로드
       invalidateIdentitiesCache();
@@ -1388,8 +1388,8 @@ const SiteManagement = () => {
         await loadCommunities();
       }
     } catch (error) {
-      console.error('명의 삭제 실패:', error);
-      toast.error('명의 삭제에 실패했습니다');
+      console.error('유저 삭제 실패:', error);
+      toast.error('유저 삭제에 실패했습니다');
     }
   };
 
@@ -1420,7 +1420,7 @@ const SiteManagement = () => {
     
     // 정착 정보는 명의가 필수이므로 확인
     if (!identityName || identityName.trim() === '') {
-      toast.warn('💡 정착 정보를 저장하려면 명의를 먼저 선택해주세요');
+      toast.warn('💡 정착 정보를 저장하려면 유저를 먼저 선택해주세요');
     }
     
     const existing = await fetchSiteNotes(siteName, identityName || null);
@@ -1719,7 +1719,7 @@ const SiteManagement = () => {
   // 사이트 추가/수정 모달 열기
   const openSiteModal = (site = null) => {
     if (!selectedIdentity) {
-      toast.error('먼저 명의를 선택해주세요');
+      toast.error('먼저 유저를 선택해주세요');
       return;
     }
     
@@ -1979,7 +1979,7 @@ const SiteManagement = () => {
         
         // selectedIdentity가 없으면 저장하지 않음
         if (!selectedIdentity || !selectedIdentity.name) {
-          toast.error('명의를 먼저 선택해주세요');
+          toast.error('유저를 먼저 선택해주세요');
           cancelEditingCommunityCell();
           return;
         }
@@ -2465,7 +2465,7 @@ const SiteManagement = () => {
   // 일괄 등록 모달 열기
   const openBulkImportModal = () => {
     if (!selectedIdentity) {
-      toast.error('먼저 명의를 선택해주세요');
+      toast.error('먼저 유저를 선택해주세요');
       return;
     }
     resetBulkImportState();
@@ -2820,15 +2820,15 @@ const SiteManagement = () => {
   return (
     <>
     <div className="space-y-6 bg-gray-100 dark:bg-gray-900 min-h-[calc(100vh/0.675-64px)]" style={{ zoom: '0.75' }}>
-      {/* 명의 선택 영역 */}
+      {/* 유저 선택 영역 */}
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow dark:shadow-gray-900/50 p-6">
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-xl font-bold text-gray-900 dark:text-white">👤 명의 관리</h2>
+          <h2 className="text-xl font-bold text-gray-900 dark:text-white">👤 유저 관리</h2>
           <button
             onClick={() => openIdentityModal()}
             className="bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700 font-bold text-sm"
           >
-            ➕ 새 명의 추가
+            ➕ 새 유저 추가
           </button>
         </div>
         
@@ -2941,7 +2941,7 @@ const SiteManagement = () => {
                 {provided.placeholder}
                 {identities.length === 0 && (
                   <div className="col-span-full text-center py-8 text-gray-500 dark:text-white">
-                    명의가 없습니다. 새 명의를 추가해보세요!
+                    유저가 없습니다. 새 유저를 추가해보세요!
                   </div>
                 )}
               </div>
@@ -2953,7 +2953,7 @@ const SiteManagement = () => {
           <div className="mt-4 p-4 bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-[#282C34] dark:to-[#282C34] rounded-lg border-l-4 border-blue-500 dark:border-blue-400">
             <div className="space-y-3">
               <div className="flex items-center gap-4 text-base">
-                <span className="font-bold text-blue-700 dark:text-blue-300 text-lg">선택된 명의:</span>
+                <span className="font-bold text-blue-700 dark:text-blue-300 text-lg">선택된 유저:</span>
                 <span className="text-gray-900 dark:text-white font-bold text-lg">{selectedIdentity.name}</span>
                 <span className="text-gray-400 dark:text-white text-lg">|</span>
                 <span className="text-gray-600 dark:text-white text-lg">생년월일: {selectedIdentity.birth_date}</span>
@@ -3141,12 +3141,12 @@ const SiteManagement = () => {
           <table className="min-w-[960px] w-full text-base">
             <thead>
               <tr className="bg-gradient-to-br from-blue-600 via-blue-500 to-blue-600 dark:from-slate-900 dark:via-slate-800 dark:to-slate-900">
-                {/* 전체 모드에서 명의명 컬럼 추가 */}
+                {/* 전체 모드에서 유저명 컬럼 추가 */}
                 {selectedIdentity?.id === 'all' && (
                   <th className="px-5 py-5 text-center font-semibold text-white text-sm tracking-widest border-r border-white/10 first:rounded-tl-2xl">
                     <span className="flex items-center justify-center gap-2">
                       <span className="w-1.5 h-1.5 rounded-full bg-white/60"></span>
-                      명의
+                      유저
                     </span>
                   </th>
                 )}
@@ -3176,7 +3176,7 @@ const SiteManagement = () => {
               {filteredSites.length === 0 ? (
                 <tr>
                   <td colSpan="13" className="px-4 py-8 text-center text-gray-500 dark:text-white">
-                    {selectedIdentity ? '사이트가 없습니다. 새 사이트를 추가해보세요!' : '명의를 선택해주세요'}
+                    {selectedIdentity ? '사이트가 없습니다. 새 사이트를 추가해보세요!' : '유저를 선택해주세요'}
                   </td>
                 </tr>
               ) : (
@@ -4055,7 +4055,7 @@ const SiteManagement = () => {
                       {...provided.dragHandleProps}
                       className={`group border-b border-gray-100 dark:border-gray-800/50 hover:bg-gradient-to-r hover:from-gray-50 hover:to-gray-100/50 dark:hover:from-gray-800/30 dark:hover:to-gray-800/50 hover:shadow-lg hover:shadow-gray-200/50 dark:hover:shadow-gray-900/50 transition-all duration-300 ease-out cursor-grab active:cursor-grabbing ${getRowBgColor()} ${isHighlighted ? 'bg-gradient-to-r from-yellow-50 to-amber-50 dark:from-yellow-900/30 dark:to-amber-900/30 border-l-4 border-yellow-400 dark:border-yellow-500 shadow-lg ring-2 ring-yellow-200 dark:ring-yellow-800' : ''} ${snapshot.isDragging ? 'bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/40 dark:to-indigo-900/40 shadow-2xl scale-[1.02] ring-4 ring-blue-300 dark:ring-blue-700 border-l-4 border-blue-400 dark:border-blue-500' : ''}`}
                     >
-                      {/* 전체 모드에서 명의명 컬럼 */}
+                      {/* 전체 모드에서 유저명 컬럼 */}
                       {selectedIdentity?.id === 'all' && (
                         <td className="px-5 py-5 text-center border-r border-gray-100 dark:border-gray-800/30">
                           <span className="inline-flex items-center px-3 py-1.5 rounded-full bg-gradient-to-r from-purple-100 to-violet-100 dark:from-purple-900/40 dark:to-violet-900/40 text-purple-700 dark:text-purple-300 font-medium text-sm shadow-sm">
@@ -4318,7 +4318,7 @@ const SiteManagement = () => {
                     notes: ''
                   });
                 } else {
-                  toast.error('먼저 명의를 선택해주세요');
+                  toast.error('먼저 유저를 선택해주세요');
                 }
               }}
               className="bg-teal-500 text-white px-6 py-3 rounded-md hover:bg-teal-600 font-bold"
@@ -4359,7 +4359,7 @@ const SiteManagement = () => {
               {filteredCommunities.length === 0 && !newCommunityRow ? (
                 <tr>
                   <td colSpan="13" className="px-4 py-8 text-center text-gray-500 dark:text-white">
-                    {selectedIdentity ? '커뮤니티가 없습니다. 새 커뮤니티를 추가해보세요!' : '명의를 선택해주세요'}
+                    {selectedIdentity ? '커뮤니티가 없습니다. 새 커뮤니티를 추가해보세요!' : '유저를 선택해주세요'}
                   </td>
                 </tr>
               ) : (
@@ -4800,12 +4800,12 @@ const SiteManagement = () => {
       )}
     </div>
 
-      {/* 명의 추가/수정 모달 - transform div 밖에 렌더링 */}
+      {/* 유저 추가/수정 모달 - transform div 밖에 렌더링 */}
       {showIdentityModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white dark:bg-gray-800 rounded-lg p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
             <h3 className="text-xl font-bold mb-4 text-gray-900 dark:text-white">
-              {editingIdentity ? '✏️ 명의 수정' : '➕ 새 명의 추가'}
+              {editingIdentity ? '✏️ 유저 수정' : '➕ 새 유저 추가'}
             </h3>
             
             <div className="space-y-4">

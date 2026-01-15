@@ -54,14 +54,14 @@ const Layout = () => {
     navigate('/login');
   };
 
-  // 명의 목록 로드
+  // 유저 목록 로드
   useEffect(() => {
     const loadIdentities = async () => {
       try {
         const list = await getIdentitiesCached();
         setIdentities(list || []);
       } catch (error) {
-        console.error('명의 로드 실패:', error);
+        console.error('유저 로드 실패:', error);
       }
     };
     loadIdentities();
@@ -148,7 +148,7 @@ const Layout = () => {
 
   // 계정 삭제 핸들러
   const handleDeleteAccount = async (accountId, accountName) => {
-    if (!window.confirm(`"${accountName}" 계정을 정말 삭제하시겠습니까?\n\n이 작업은 되돌릴 수 없으며, 관련된 모든 데이터(명의, 사이트, 커뮤니티 등)가 함께 삭제됩니다.`)) {
+    if (!window.confirm(`"${accountName}" 계정을 정말 삭제하시겠습니까?\n\n이 작업은 되돌릴 수 없으며, 관련된 모든 데이터(유저, 사이트, 커뮤니티 등)가 함께 삭제됩니다.`)) {
       return;
     }
 
