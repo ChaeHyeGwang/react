@@ -168,7 +168,7 @@ router.get('/', auth, (req, res) => {
   });
 });
 
-// 명의 목록 조회 (현재 사용자의 명의만)
+// 유저 목록 조회 (현재 사용자의 유저만)
 router.get('/identities', auth, async (req, res) => {
   try {
     // 관리자가 선택한 계정 ID 또는 자신의 계정 ID 사용
@@ -181,7 +181,7 @@ router.get('/identities', auth, async (req, res) => {
     
     res.json(identities);
   } catch (error) {
-    console.error('명의 조회 실패:', error);
+    console.error('유저 조회 실패:', error);
     res.status(500).json({ error: error.message });
   }
 });

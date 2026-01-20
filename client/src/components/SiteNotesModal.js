@@ -39,6 +39,13 @@ const SiteNotesModal = ({
   const [bulkReason, setBulkReason] = useState('');
   const [addingBulkAttendance, setAddingBulkAttendance] = useState(false);
   
+  // 기간별 출석 일괄 취소 관련 state
+  const [showBulkCancelModal, setShowBulkCancelModal] = useState(false);
+  const [bulkCancelStartDate, setBulkCancelStartDate] = useState('');
+  const [bulkCancelEndDate, setBulkCancelEndDate] = useState('');
+  const [bulkCancelReason, setBulkCancelReason] = useState('');
+  const [cancelingBulkAttendance, setCancelingBulkAttendance] = useState(false);
+  
   // 출석 히스토리 관련 state
   const [showAttendanceHistory, setShowAttendanceHistory] = useState(false);
   const [historyMonth, setHistoryMonth] = useState(new Date());
@@ -641,19 +648,32 @@ const SiteNotesModal = ({
                 </button>
               )}
               
-              {/* 관리자 전용: 기간별 출석 일괄 추가 버튼 */}
+              {/* 관리자 전용: 기간별 출석 일괄 추가/취소 버튼 */}
               {(isAdmin || isOfficeManager) && identityName && !readonly && (
-                <button
-                  onClick={() => {
-                    setShowBulkAttendanceModal(true);
-                    setBulkStartDate('');
-                    setBulkEndDate('');
-                    setBulkReason('');
-                  }}
-                  className="w-full bg-purple-500 dark:bg-purple-600 text-white px-3 py-2 rounded text-xs font-semibold hover:bg-purple-600 dark:hover:bg-purple-700 transition-colors"
-                >
-                  📅 기간별 출석 일괄 추가
-                </button>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => {
+                      setShowBulkAttendanceModal(true);
+                      setBulkStartDate('');
+                      setBulkEndDate('');
+                      setBulkReason('');
+                    }}
+                    className="flex-1 bg-purple-500 dark:bg-purple-600 text-white px-3 py-2 rounded text-xs font-semibold hover:bg-purple-600 dark:hover:bg-purple-700 transition-colors"
+                  >
+                    📅 기간별 출석 일괄 추가
+                  </button>
+                  <button
+                    onClick={() => {
+                      setShowBulkCancelModal(true);
+                      setBulkCancelStartDate('');
+                      setBulkCancelEndDate('');
+                      setBulkCancelReason('');
+                    }}
+                    className="flex-1 bg-red-500 dark:bg-red-600 text-white px-3 py-2 rounded text-xs font-semibold hover:bg-red-600 dark:hover:bg-red-700 transition-colors"
+                  >
+                    ❌ 기간별 출석 일괄 취소
+                  </button>
+                </div>
               )}
             </div>
           </div>
@@ -1471,6 +1491,193 @@ const SiteNotesModal = ({
                 className="flex-1 bg-purple-500 dark:bg-purple-600 text-white px-4 py-2 rounded font-semibold hover:bg-purple-600 dark:hover:bg-purple-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {addingBulkAttendance ? '추가 중...' : '일괄 추가'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      
+      {/* 기간별 출석 일괄 취소 모달 */}
+      {showBulkCancelModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[70]" onClick={(e) => e.stopPropagation()}>
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-2xl w-full max-w-md mx-4 p-6" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-4">
+              ❌ 기간별 출석 일괄 취소
+            </h3>
+            
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  사이트 / 유저
+                </label>
+                <div className="text-sm text-gray-600 dark:text-gray-400 bg-gray-50 dark:bg-gray-700 px-3 py-2 rounded">
+                  {siteName} / {identityName}
+                </div>
+              </div>
+              
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    시작일 *
+                  </label>
+                  <input
+                    type="date"
+                    value={bulkCancelStartDate}
+                    onChange={(e) => setBulkCancelStartDate(e.target.value)}
+                    max={new Date().toISOString().split('T')[0]}
+                    className="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500"
+                  />
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    종료일 *
+                  </label>
+                  <input
+                    type="date"
+                    value={bulkCancelEndDate}
+                    onChange={(e) => setBulkCancelEndDate(e.target.value)}
+                    max={new Date().toISOString().split('T')[0]}
+                    className="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500"
+                  />
+                </div>
+              </div>
+              
+              {/* 기간 미리보기 */}
+              {bulkCancelStartDate && bulkCancelEndDate && bulkCancelStartDate <= bulkCancelEndDate && (
+                <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded p-3">
+                  <div className="text-sm text-red-800 dark:text-red-300">
+                    ⚠️ 총 <span className="font-bold">
+                      {Math.ceil((new Date(bulkCancelEndDate) - new Date(bulkCancelStartDate)) / (1000 * 60 * 60 * 24)) + 1}일
+                    </span>의 출석이 취소됩니다
+                  </div>
+                </div>
+              )}
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  취소 사유 * (필수)
+                </label>
+                <textarea
+                  value={bulkCancelReason}
+                  onChange={(e) => setBulkCancelReason(e.target.value)}
+                  rows={3}
+                  placeholder="예: 잘못 추가된 출석 데이터 보정, 시스템 오류 수정 등"
+                  className="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 resize-none"
+                />
+                <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                  💡 왜 이 기간의 출석을 일괄 취소하는지 이유를 명확히 입력해주세요
+                </div>
+              </div>
+              
+              <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded p-3">
+                <div className="text-xs text-red-800 dark:text-red-300 space-y-1">
+                  <div className="font-bold">⚠️ 주의사항</div>
+                  <div>• 출석 기록이 없는 날짜는 자동으로 제외됩니다</div>
+                  <div>• 최대 365일까지만 일괄 취소할 수 있습니다</div>
+                  <div>• 취소 후 연속 출석일이 자동으로 재계산됩니다</div>
+                  <div>• 모든 변경 내역은 로그로 기록됩니다</div>
+                  <div className="font-bold mt-2">⚠️ 이 작업은 되돌릴 수 없습니다!</div>
+                </div>
+              </div>
+            </div>
+            
+            <div className="mt-6 flex gap-3">
+              <button
+                onClick={() => {
+                  setShowBulkCancelModal(false);
+                  setBulkCancelStartDate('');
+                  setBulkCancelEndDate('');
+                  setBulkCancelReason('');
+                }}
+                disabled={cancelingBulkAttendance}
+                className="flex-1 bg-gray-500 dark:bg-gray-600 text-white px-4 py-2 rounded font-semibold hover:bg-gray-600 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
+              >
+                취소
+              </button>
+              <button
+                onClick={async () => {
+                  // 입력 검증
+                  if (!bulkCancelStartDate || !bulkCancelEndDate) {
+                    toast.error('시작일과 종료일을 선택해주세요');
+                    return;
+                  }
+                  
+                  if (bulkCancelStartDate > bulkCancelEndDate) {
+                    toast.error('시작일은 종료일보다 이전이어야 합니다');
+                    return;
+                  }
+                  
+                  if (!bulkCancelReason || bulkCancelReason.trim() === '') {
+                    toast.error('취소 사유를 입력해주세요');
+                    return;
+                  }
+                  
+                  // 오늘 이후 날짜 체크
+                  const endDate = new Date(bulkCancelEndDate);
+                  const today = new Date();
+                  today.setHours(0, 0, 0, 0);
+                  
+                  if (endDate >= today) {
+                    toast.error('오늘 이전 날짜만 선택할 수 있습니다');
+                    return;
+                  }
+                  
+                  // 최대 기간 체크 (365일)
+                  const daysDiff = Math.ceil((endDate - new Date(bulkCancelStartDate)) / (1000 * 60 * 60 * 24)) + 1;
+                  if (daysDiff > 365) {
+                    toast.error('최대 365일까지만 일괄 취소할 수 있습니다');
+                    return;
+                  }
+                  
+                  // 최종 확인
+                  const confirmed = window.confirm(
+                    `정말로 ${daysDiff}일의 출석을 취소하시겠습니까?\n\n` +
+                    `기간: ${bulkCancelStartDate} ~ ${bulkCancelEndDate}\n` +
+                    `사유: ${bulkCancelReason.trim()}\n\n` +
+                    `이 작업은 되돌릴 수 없습니다.`
+                  );
+                  
+                  if (!confirmed) {
+                    return;
+                  }
+                  
+                  try {
+                    setCancelingBulkAttendance(true);
+                    
+                    const response = await axiosInstance.post('/attendance/bulk-remove', {
+                      siteName,
+                      identityName,
+                      startDate: bulkCancelStartDate,
+                      endDate: bulkCancelEndDate,
+                      reason: bulkCancelReason.trim()
+                    });
+                    
+                    if (response.data.success) {
+                      const { removedCount, skippedCount } = response.data;
+                      toast.success(`✅ ${removedCount}일의 출석이 취소되었습니다 (${skippedCount}일 스킵)`);
+                      
+                      // 출석 통계 다시 로드
+                      await loadAttendanceStats();
+                      
+                      // 모달 닫기
+                      setShowBulkCancelModal(false);
+                      setBulkCancelStartDate('');
+                      setBulkCancelEndDate('');
+                      setBulkCancelReason('');
+                    }
+                  } catch (error) {
+                    const errorMessage = error.response?.data?.message || '일괄 출석 취소에 실패했습니다';
+                    toast.error(errorMessage);
+                    console.error('기간별 출석 일괄 취소 실패:', error);
+                  } finally {
+                    setCancelingBulkAttendance(false);
+                  }
+                }}
+                disabled={cancelingBulkAttendance || !bulkCancelStartDate || !bulkCancelEndDate || !bulkCancelReason}
+                className="flex-1 bg-red-500 dark:bg-red-600 text-white px-4 py-2 rounded font-semibold hover:bg-red-600 dark:hover:bg-red-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {cancelingBulkAttendance ? '취소 중...' : '일괄 취소'}
               </button>
             </div>
           </div>

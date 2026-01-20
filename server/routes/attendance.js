@@ -574,4 +574,234 @@ router.post('/bulk-add', auth, async (req, res) => {
   }
 });
 
+// 기간별 출석 일괄 취소 API (관리자 전용)
+router.post('/bulk-remove', auth, async (req, res) => {
+  try {
+    const { siteName, identityName, startDate, endDate, reason } = req.body;
+    
+    // 필수 파라미터 검증
+    if (!siteName || !identityName || !startDate || !endDate) {
+      return res.status(400).json({ 
+        success: false, 
+        message: '사이트명, 유저명, 시작일, 종료일이 필요합니다' 
+      });
+    }
+    
+    // 사유 필수
+    if (!reason || reason.trim() === '') {
+      return res.status(400).json({ 
+        success: false, 
+        message: '출석 취소 사유를 입력해주세요' 
+      });
+    }
+    
+    // 권한 체크: 관리자 또는 사무실 관리자만 가능
+    if (req.user.accountType !== 'super_admin' && !req.user.isOfficeManager) {
+      return res.status(403).json({ 
+        success: false, 
+        message: '관리자만 기간별 출석을 취소할 수 있습니다' 
+      });
+    }
+    
+    // 날짜 형식 검증 (YYYY-MM-DD)
+    const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+    if (!dateRegex.test(startDate) || !dateRegex.test(endDate)) {
+      return res.status(400).json({ 
+        success: false, 
+        message: '날짜 형식은 YYYY-MM-DD 형식이어야 합니다 (예: 2025-12-01)' 
+      });
+    }
+    
+    // 시작일이 종료일보다 늦으면 오류
+    if (startDate > endDate) {
+      return res.status(400).json({ 
+        success: false, 
+        message: '시작일은 종료일보다 이전이어야 합니다' 
+      });
+    }
+    
+    // 최대 기간 제한 (365일)
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+    const daysDiff = Math.ceil((end - start) / (1000 * 60 * 60 * 24));
+    
+    if (daysDiff > 365) {
+      return res.status(400).json({ 
+        success: false, 
+        message: '최대 365일까지만 일괄 취소할 수 있습니다' 
+      });
+    }
+    
+    const accountId = req.user.filterAccountId || req.user.accountId;
+    
+    // 날짜 범위 내의 모든 날짜 생성
+    const dates = [];
+    const currentDate = new Date(start);
+    while (currentDate <= end) {
+      dates.push(currentDate.toISOString().split('T')[0]);
+      currentDate.setDate(currentDate.getDate() + 1);
+    }
+    
+    let removedCount = 0;
+    let skippedCount = 0;
+    const removedDates = [];
+    const skippedDates = [];
+    
+    // 각 날짜에 대해 출석 로그 삭제
+    for (const date of dates) {
+      try {
+        // 출석 기록이 있는지 확인
+        const exists = await checkAttendanceExists({
+          accountId,
+          siteName,
+          identityName,
+          attendanceDate: date
+        });
+        
+        if (!exists) {
+          skippedCount++;
+          skippedDates.push(date);
+          continue;
+        }
+        
+        // 출석 로그 삭제
+        const removed = await removeAttendanceLog({
+          accountId,
+          siteName,
+          identityName,
+          attendanceDate: date
+        });
+        
+        if (removed) {
+          removedCount++;
+          removedDates.push(date);
+        } else {
+          skippedCount++;
+          skippedDates.push(date);
+        }
+      } catch (error) {
+        console.error(`출석 로그 삭제 실패 (${date}):`, error);
+        skippedCount++;
+        skippedDates.push(date);
+      }
+    }
+    
+    // 출석일 재계산 (site_attendance 테이블 업데이트)
+    try {
+      // 사이트 설정 조회 (이월 설정 등)
+      const { getSiteNoteData, getAccountOfficeId } = require('../services/siteNotesService');
+      const officeId = await getAccountOfficeId(accountId);
+      const siteNote = await getSiteNoteData({
+        siteName,
+        identityName: null, // 이월 설정은 명의별이 아니므로 null
+        accountId,
+        officeId
+      });
+      
+      const rollover = siteNote?.data?.rollover || 'X';
+      
+      // 출석 통계 재계산
+      const stats = await getAttendanceStats({
+        accountId,
+        siteName,
+        identityName
+      });
+      
+      // site_attendance 테이블 업데이트
+      const identity = await db.get(
+        `SELECT id as identity_id FROM identities 
+         WHERE account_id = ? AND name = ?`,
+        [accountId, identityName]
+      );
+      
+      if (identity) {
+        const siteAccount = await db.get(
+          `SELECT id FROM site_accounts 
+           WHERE identity_id = ? AND site_name = ?`,
+          [identity.identity_id, siteName]
+        );
+        
+        if (siteAccount) {
+          const now = new Date();
+          const kstDate = new Date(now.toLocaleString('en-US', {timeZone: 'Asia/Seoul'}));
+          const year = kstDate.getFullYear();
+          const month = String(kstDate.getMonth() + 1).padStart(2, '0');
+          const currentMonth = `${year}-${month}`;
+          
+          // 출석 기록 조회 또는 업데이트
+          let attendance = await db.get(
+            `SELECT * FROM site_attendance
+             WHERE account_id = ? AND identity_id = ? AND site_account_id = ?
+             AND period_type = 'total' AND period_value = 'all'`,
+            [accountId, identity.identity_id, siteAccount.id]
+          );
+          
+          const timestamp = new Date().toISOString();
+          
+          if (!attendance) {
+            // 출석 기록이 없으면 새로 생성
+            await db.run(
+              `INSERT INTO site_attendance (account_id, identity_id, site_account_id, period_type, period_value, attendance_days, current_month, last_recorded_at, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+              [accountId, identity.identity_id, siteAccount.id, 'total', 'all', stats.consecutiveDays, currentMonth, stats.lastAttendanceDate || null, timestamp, timestamp]
+            );
+          } else {
+            // 출석 기록 업데이트
+            await db.run(
+              `UPDATE site_attendance
+               SET attendance_days = ?, current_month = ?, last_recorded_at = ?, updated_at = ?
+               WHERE account_id = ? AND identity_id = ? AND site_account_id = ?
+               AND period_type = 'total' AND period_value = 'all'`,
+              [stats.consecutiveDays, currentMonth, stats.lastAttendanceDate || attendance.last_recorded_at, timestamp, accountId, identity.identity_id, siteAccount.id]
+            );
+          }
+        }
+      }
+    } catch (recalcError) {
+      console.error('출석일 재계산 실패:', recalcError);
+      // 재계산 실패해도 응답은 정상 반환
+    }
+    
+    // 변경 로그 기록 (access_logs에 저장)
+    await db.run(
+      `INSERT INTO access_logs (account_id, action, details, ip_address, user_agent, timestamp)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      [
+        req.user.accountId,
+        'BULK_ATTENDANCE_REMOVE',
+        `기간별 출석 일괄 취소: ${siteName} / ${identityName} / ${startDate}~${endDate} (${removedCount}일 취소, ${skippedCount}일 스킵) / 사유: ${reason}`,
+        req.ip || '',
+        req.get('User-Agent') || '',
+        new Date().toISOString()
+      ]
+    );
+    
+    // 최신 통계 조회
+    const stats = await getAttendanceStats({
+      accountId,
+      siteName,
+      identityName
+    });
+    
+    res.json({
+      success: true,
+      message: `${removedCount}일의 출석이 취소되었습니다 (${skippedCount}일 스킵)`,
+      removedCount,
+      skippedCount,
+      totalDays: dates.length,
+      removedDates: removedDates.slice(0, 10), // 최대 10개만 반환
+      skippedDates: skippedDates.slice(0, 10), // 최대 10개만 반환
+      ...stats
+    });
+    
+  } catch (error) {
+    console.error('기간별 출석 일괄 취소 실패:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: '기간별 출석 일괄 취소 실패',
+      error: error.message 
+    });
+  }
+});
+
 module.exports = router;

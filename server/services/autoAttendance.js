@@ -416,14 +416,24 @@ async function handleUpdateRecord(accountId, oldRecord, newRecord, newRecordDate
       // 이름 정규화 적용
       const oldSite = normalizeName(oldRecord?.[`site_name${i}`]);
       const oldIdentity = normalizeName(oldRecord?.[`identity${i}`]);
+      const oldChargeRaw = oldRecord?.[`charge_withdraw${i}`] || '';
       
       const newSite = normalizeName(newRecord?.[`site_name${i}`]);
       const newIdentity = normalizeName(newRecord?.[`identity${i}`]);
       const newChargeRaw = newRecord?.[`charge_withdraw${i}`] || '';
       
+      const oldCharge = parseCharge(oldChargeRaw);
+      const newCharge = parseCharge(newChargeRaw);
+      
       // 새 데이터가 있을 때만 처리
       if (newSite && newIdentity && newDate) {
-        await processLogOnly(accountId, newSite, newIdentity, newChargeRaw, newDate);
+        // 충전금액이 변경된 경우만 출석 로그 추가/삭제
+        // (레코드가 처음 생성될 때는 oldRecord가 null이므로 oldCharge가 0이 됨)
+        if (oldCharge !== newCharge) {
+          await processLogOnly(accountId, newSite, newIdentity, newChargeRaw, newDate);
+          log(`   [출석] ${newIdentity}/${newSite}: 충전금액 변경 (${oldCharge} → ${newCharge}), 출석 로그 ${newCharge > 0 ? '추가' : '삭제'}`);
+        }
+        // 충전금액이 변경되지 않았어도 출석일은 재계산해야 함 (다른 날짜의 출석 로그가 변경되었을 수 있음)
         sitesToCalculate.push({ siteName: newSite, identityName: newIdentity, chargeRaw: newChargeRaw, date: newDate });
       }
       
