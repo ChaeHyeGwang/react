@@ -30,10 +30,35 @@ function Finish({ isStartMode = false }) {
   const [isSendingSettlement, setIsSendingSettlement] = useState(false);
   const [editingWithdrawalCell, setEditingWithdrawalCell] = useState(null); // { index, field } 형태로 편집 중인 취침 셀 추적
   const [isDataLoaded, setIsDataLoaded] = useState(false);
+  const [isSavingWithdrawal, setIsSavingWithdrawal] = useState(false); // 저장 중 상태
   const inflightByDateRef = useRef(new Map());
   const lastSavedStartRef = useRef({ date: null, value: null });
   const dataMode = isStartMode ? 'start' : 'finish';
   const lastSavedManualWithdrawalsRef = useRef(null); // 마지막으로 저장된 manualWithdrawals 추적
+  const saveQueueRef = useRef([]); // 저장 대기열
+  const isSavingRef = useRef(false); // 저장 중 플래그 (ref로 관리)
+
+  // 저장 대기열 처리 함수
+  const processSaveQueue = async () => {
+    if (isSavingRef.current || saveQueueRef.current.length === 0) {
+      return;
+    }
+    
+    isSavingRef.current = true;
+    setIsSavingWithdrawal(true);
+    
+    while (saveQueueRef.current.length > 0) {
+      const saveTask = saveQueueRef.current.shift();
+      try {
+        await saveTask();
+      } catch (error) {
+        console.error('저장 실패:', error);
+      }
+    }
+    
+    isSavingRef.current = false;
+    setIsSavingWithdrawal(false);
+  };
 
   // 날짜 변경 전에 저장되지 않은 데이터가 있는지 확인
   const handleDateChange = async (newDate) => {
@@ -52,80 +77,86 @@ function Finish({ isStartMode = false }) {
     // eslint-disable-next-line
   }, [selectedDate]);
 
-  // 수동 추가 취침 데이터 저장 (사이트 관리처럼 단순하게)
+  // 수동 추가 취침 데이터 저장 (저장 대기열 사용)
   const saveManualWithdrawals = async () => {
     if (!editingWithdrawalCell) {
       return;
     }
     
     const { id, field } = editingWithdrawalCell;
-    const item = manualWithdrawals.find(w => w.id === id);
+    const currentEditingValue = editingValue; // 현재 편집 값 캡처
+    const currentDate = selectedDate; // 현재 날짜 캡처
     
-    if (!item) {
+    // 먼저 편집 상태 초기화 (다음 편집을 위해)
+    setEditingWithdrawalCell(null);
+    setEditingValue('');
+    
+    // 날짜 형식 정규화 (YYYY-MM-DD 형식으로)
+    const normalizedSelectedDate = currentDate.split(' ')[0];
+    
+    // 최신 manualWithdrawals를 기반으로 업데이트
+    let updatedValue;
+    if (field === 'identity') {
+      updatedValue = { identity: currentEditingValue };
+    } else if (field === 'site') {
+      updatedValue = { site: currentEditingValue };
+    } else if (field === 'amount') {
+      updatedValue = { amount: parseFloat(currentEditingValue) || 0 };
+    } else {
       return;
     }
     
-    try {
-      let updated;
-      
-      if (field === 'identity') {
-        updated = manualWithdrawals.map(w => 
-          w.id === id ? { ...w, identity: editingValue, record_date: w.record_date || selectedDate } : w
-        );
-      } else if (field === 'site') {
-        updated = manualWithdrawals.map(w => 
-          w.id === id ? { ...w, site: editingValue, record_date: w.record_date || selectedDate } : w
-        );
-      } else if (field === 'amount') {
-        const amount = parseFloat(editingValue) || 0;
-        updated = manualWithdrawals.map(w => 
-          w.id === id ? { ...w, amount: amount, record_date: w.record_date || selectedDate } : w
-        );
-      } else {
-        setEditingWithdrawalCell(null);
-        setEditingValue('');
-        return;
-      }
-      
-      // Optimistic update
-      setManualWithdrawals(updated);
-      setEditingWithdrawalCell(null);
-      setEditingValue('');
-      
-      // 현재 선택된 날짜의 데이터만 저장 (record_date가 없으면 현재 날짜로 설정)
-      const dataToSave = updated
-        .map(item => ({ ...item, record_date: item.record_date || selectedDate }))
-        .filter(item => item.record_date === selectedDate);
-      
-      // 저장 (타임아웃 30초로 증가)
-      const response = await axiosInstance.put('/finish/summary', {
-        date: selectedDate,
-        cash_on_hand: cashOnHand,
-        yesterday_balance: yesterdayBalance,
-        coin_wallet: coinWallet,
-        manual_withdrawals: JSON.stringify(dataToSave),
-        start_amount_total: startAmountTotal,
-        mode: dataMode
-      }, {
-        timeout: 30000
+    // Optimistic update (즉시 UI에 반영)
+    setManualWithdrawals(prev => 
+      prev.map(w => 
+        w.id === id ? { ...w, ...updatedValue, record_date: (w.record_date || normalizedSelectedDate).split(' ')[0] } : w
+      )
+    );
+    
+    // 저장 작업을 대기열에 추가
+    const saveTask = async () => {
+      // 최신 상태에서 데이터 가져오기 (setManualWithdrawals의 최신 값 사용)
+      return new Promise((resolve, reject) => {
+        setManualWithdrawals(currentData => {
+          // 현재 날짜의 데이터만 저장
+          const dataToSave = currentData
+            .filter(item => {
+              const itemDate = (item.record_date || currentDate).split(' ')[0];
+              return itemDate === normalizedSelectedDate;
+            })
+            .map(item => {
+              const { isManual, ...rest } = item;
+              return { ...rest, record_date: normalizedSelectedDate };
+            });
+          
+          // 비동기 저장 실행
+          axiosInstance.put('/finish/summary', {
+            date: currentDate,
+            cash_on_hand: cashOnHand,
+            yesterday_balance: yesterdayBalance,
+            coin_wallet: coinWallet,
+            manual_withdrawals: JSON.stringify(dataToSave),
+            start_amount_total: startAmountTotal,
+            mode: dataMode
+          }, {
+            timeout: 30000
+          }).then(() => {
+            lastSavedManualWithdrawalsRef.current = currentData;
+            resolve();
+          }).catch((error) => {
+            console.error('저장 실패:', error);
+            toast.error('저장에 실패했습니다');
+            reject(error);
+          });
+          
+          // 상태는 변경하지 않음
+          return currentData;
+        });
       });
-      // 저장 성공 후 isManual 플래그 완전히 제거 (저장된 데이터로 표시)
-      const savedDataForDate = dataToSave.map(item => {
-        const { isManual, ...rest } = item;
-        return rest;
-      });
-      setManualWithdrawals(savedDataForDate);
-      lastSavedManualWithdrawalsRef.current = savedDataForDate;
-      toast.success('저장되었습니다');
-    } catch (error) {
-      
-      // 롤백: 원래 값으로 복구
-      setManualWithdrawals(manualWithdrawals.map(w => 
-        w.id === id ? item : w
-      ));
-      
-      toast.error('저장에 실패했습니다');
-    }
+    };
+    
+    saveQueueRef.current.push(saveTask);
+    processSaveQueue();
   };
   
   // 취침 데이터 편집 시작
@@ -136,65 +167,60 @@ function Finish({ isStartMode = false }) {
   
   // 수동 추가 데이터 저장 함수 (데이터를 파라미터로 받음 - 삭제 시 사용)
   const saveManualWithdrawalsWithData = async (dataToSave) => {
-    try {
-      // 현재 선택된 날짜의 데이터만 저장 (마무리 모드와 동일)
-      // 날짜 형식 정규화 (YYYY-MM-DD 형식으로)
-      const normalizedSelectedDate = selectedDate.split(' ')[0];
-      const dataToSaveFinal = (dataToSave || manualWithdrawals)
-        .map(item => {
-          const itemDate = item.record_date || selectedDate;
-          const normalizedItemDate = itemDate.split(' ')[0]; // 날짜 형식 정규화
-          // 현재 선택된 날짜의 데이터만 저장하므로 record_date를 현재 날짜로 설정
-          return { ...item, record_date: normalizedSelectedDate };
-        })
-        .filter(item => {
-          // dataToSave가 전달되면 그대로 사용, 아니면 현재 선택된 날짜의 데이터만 필터링
-          if (dataToSave) {
-            return true; // dataToSave가 전달되면 이미 필터링된 데이터
-          }
-          const itemDate = item.record_date || selectedDate;
-          const normalizedItemDate = itemDate.split(' ')[0];
-          return normalizedItemDate === normalizedSelectedDate;
+    const currentDate = selectedDate; // 현재 날짜 캡처
+    const normalizedSelectedDate = currentDate.split(' ')[0];
+    
+    // 저장 작업을 대기열에 추가
+    const saveTask = async () => {
+      try {
+        // 현재 날짜의 데이터만 필터링
+        const dataToSaveFinal = (dataToSave || [])
+          .filter(item => {
+            const itemDate = item.record_date || currentDate;
+            const normalizedItemDate = itemDate.split(' ')[0];
+            return normalizedItemDate === normalizedSelectedDate;
+          })
+          .map(item => {
+            const { isManual, ...rest } = item;
+            return { ...rest, record_date: normalizedSelectedDate };
+          });
+        
+        // 서버에 저장
+        await axiosInstance.put('/finish/summary', {
+          date: currentDate,
+          cash_on_hand: cashOnHand,
+          yesterday_balance: yesterdayBalance,
+          coin_wallet: coinWallet,
+          manual_withdrawals: JSON.stringify(dataToSaveFinal),
+          start_amount_total: startAmountTotal,
+          mode: dataMode
+        }, {
+          timeout: 30000
         });
-      
-      // isManual 플래그 제거
-      const cleanData = dataToSaveFinal.map(item => {
-        const { isManual, ...rest } = item;
-        return rest;
-      });
-      
-      // 현재 선택된 날짜의 데이터만 서버에 저장
-      await axiosInstance.put('/finish/summary', {
-        date: selectedDate,
-        cash_on_hand: cashOnHand,
-        yesterday_balance: yesterdayBalance,
-        coin_wallet: coinWallet,
-        manual_withdrawals: JSON.stringify(cleanData),
-        start_amount_total: startAmountTotal,
-        mode: dataMode
-      }, {
-        timeout: 30000
-      });
-      
-      // 저장 성공 후 isManual 플래그 완전히 제거 (저장된 데이터로 표시)
-      // 현재 날짜의 데이터를 저장된 데이터로 완전히 교체하고 다른 날짜의 데이터는 유지
-      setManualWithdrawals(prev => {
-        // 다른 날짜의 데이터 유지
-        const otherDatesData = prev.filter(item => {
-          const itemDate = item.record_date || selectedDate;
-          const normalizedItemDate = itemDate.split(' ')[0];
-          return normalizedItemDate !== normalizedSelectedDate;
+        
+        // 저장 성공 후 상태 업데이트
+        setManualWithdrawals(prev => {
+          const otherDatesData = prev.filter(item => {
+            const itemDate = item.record_date || currentDate;
+            const normalizedItemDate = itemDate.split(' ')[0];
+            return normalizedItemDate !== normalizedSelectedDate;
+          });
+          const updated = [...dataToSaveFinal, ...otherDatesData];
+          lastSavedManualWithdrawalsRef.current = updated;
+          return updated;
         });
-        // 저장된 데이터 (isManual 플래그 제거된)와 다른 날짜의 데이터 합치기
-        const savedData = cleanData.map(item => ({ ...item, record_date: normalizedSelectedDate }));
-        const updated = [...savedData, ...otherDatesData];
-        lastSavedManualWithdrawalsRef.current = updated;
-        return updated;
-      });
-      toast.success('저장되었습니다');
-    } catch (error) {
-      toast.error('수동 취침 데이터 저장에 실패했습니다');
-    }
+        
+        toast.success('삭제되었습니다');
+      } catch (error) {
+        console.error('삭제 저장 실패:', error);
+        toast.error('삭제에 실패했습니다. 다시 시도해주세요.');
+        // 삭제 실패 시 데이터 복구 (로드)
+        loadData();
+      }
+    };
+    
+    saveQueueRef.current.push(saveTask);
+    await processSaveQueue();
   };
 
   const saveStartAmountTotal = async (value) => {
@@ -862,7 +888,12 @@ function Finish({ isStartMode = false }) {
         {/* 2. 사이트취침 (환전 대기) 테이블 */}
         <div className="bg-white dark:bg-[#282C34] rounded-lg shadow overflow-hidden">
           <div className="flex justify-between items-center p-4 bg-purple-50 dark:bg-[#282C34]">
-            <h2 className="text-xl font-bold text-gray-900 dark:text-white">🌙 사이트취침 (환전 대기)</h2>
+            <div className="flex items-center gap-2">
+              <h2 className="text-xl font-bold text-gray-900 dark:text-white">🌙 사이트취침 (환전 대기)</h2>
+              {isSavingWithdrawal && (
+                <span className="text-sm text-blue-600 dark:text-blue-400 animate-pulse">저장 중...</span>
+              )}
+            </div>
             <button
               onClick={() => {
                 const tempId = `manual_${Date.now()}`;
@@ -1009,13 +1040,19 @@ function Finish({ isStartMode = false }) {
                       <td className="px-4 py-2 text-center">
                         <button
                           onClick={async () => {
+                            if (isSavingWithdrawal) return; // 저장 중이면 무시
                             const updated = manualWithdrawals.filter(w => w.id !== item.id);
                             setManualWithdrawals(updated);
                             await saveManualWithdrawalsWithData(updated);
                           }}
-                          className="px-3 py-1 bg-red-500 text-white rounded hover:bg-red-600 text-sm"
+                          disabled={isSavingWithdrawal}
+                          className={`px-3 py-1 text-white rounded text-sm ${
+                            isSavingWithdrawal 
+                              ? 'bg-gray-400 cursor-not-allowed' 
+                              : 'bg-red-500 hover:bg-red-600'
+                          }`}
                         >
-                          삭제
+                          {isSavingWithdrawal ? '저장중' : '삭제'}
                         </button>
                       </td>
                     </tr>

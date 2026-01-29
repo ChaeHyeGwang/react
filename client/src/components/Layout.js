@@ -4,6 +4,7 @@ import { useAuth } from '../contexts/AuthContext';
 import axiosInstance from '../api/axios';
 import { getIdentitiesCached } from '../api/identitiesCache';
 import toast from 'react-hot-toast';
+import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 
 const Layout = () => {
   const { user, logout, selectedAccountId, setSelectedAccountId, isAdmin, isOfficeManager } = useAuth();
@@ -25,6 +26,9 @@ const Layout = () => {
   });
   const [offices, setOffices] = useState([]);
   const [selectedOfficeId, setSelectedOfficeId] = useState('');
+  const [editingAccountId, setEditingAccountId] = useState(null);
+  const [editingAccountName, setEditingAccountName] = useState('');
+  const [isEditMode, setIsEditMode] = useState(false);
 
   // 다크 모드 상태 로드 및 적용
   useEffect(() => {
@@ -173,6 +177,70 @@ const Layout = () => {
       const errorMessage = error.response?.data?.error || '계정 삭제에 실패했습니다.';
       toast.error(errorMessage);
       console.error('계정 삭제 실패:', error);
+    }
+  };
+
+  // 계정 이름 편집 저장
+  const handleSaveAccountName = async (accountId) => {
+    if (!editingAccountName.trim()) {
+      toast.error('이름을 입력해주세요.');
+      return;
+    }
+
+    try {
+      const response = await axiosInstance.put(`/auth/accounts/${accountId}`, {
+        display_name: editingAccountName.trim()
+      });
+
+      if (response.data?.success) {
+        setAccounts(prev => prev.map(acc => 
+          acc.id === accountId 
+            ? { ...acc, display_name: editingAccountName.trim() }
+            : acc
+        ));
+        toast.success('계정 이름이 변경되었습니다.');
+      }
+    } catch (error) {
+      toast.error(error.response?.data?.error || '이름 변경에 실패했습니다.');
+    } finally {
+      setEditingAccountId(null);
+      setEditingAccountName('');
+    }
+  };
+
+  // 드래그 앤 드롭 순서 변경
+  const handleDragEnd = async (result) => {
+    if (!result.destination) return;
+
+    const sourceIndex = result.source.index;
+    const destIndex = result.destination.index;
+
+    if (sourceIndex === destIndex) return;
+
+    const reorderedAccounts = Array.from(accounts);
+    const [removed] = reorderedAccounts.splice(sourceIndex, 1);
+    reorderedAccounts.splice(destIndex, 0, removed);
+
+    // 즉시 UI 업데이트
+    setAccounts(reorderedAccounts);
+
+    // 서버에 순서 저장
+    try {
+      const accountOrders = reorderedAccounts.map((acc, index) => ({
+        id: acc.id,
+        display_order: index
+      }));
+
+      await axiosInstance.put('/auth/accounts/reorder', { accountOrders });
+      toast.success('순서가 변경되었습니다.');
+    } catch (error) {
+      toast.error('순서 변경에 실패했습니다.');
+      // 실패 시 원래 순서로 복원
+      fetchedAccountsOnce.current = false;
+      const response = await axiosInstance.get('/auth/accounts');
+      if (response.data.success) {
+        setAccounts(response.data.accounts || []);
+      }
     }
   };
 
@@ -565,48 +633,163 @@ const Layout = () => {
               </div>
             </form>
             <div className="mt-6 border-t border-gray-200 dark:border-gray-700 pt-4">
-              <h4 className="text-sm font-semibold text-gray-800 dark:text-gray-100 mb-2">
-                {isAdmin ? '계정 목록' : '내 사무실 계정 목록'}
-              </h4>
-              <div className="max-h-40 overflow-y-auto space-y-2">
+              <div className="flex items-center justify-between mb-2">
+                <h4 className="text-sm font-semibold text-gray-800 dark:text-gray-100">
+                  {isAdmin ? '계정 목록' : '내 사무실 계정 목록'}
+                </h4>
+                <button
+                  type="button"
+                  onClick={() => setIsEditMode(!isEditMode)}
+                  className={`text-xs px-2 py-1 rounded transition-colors ${
+                    isEditMode 
+                      ? 'bg-blue-600 text-white hover:bg-blue-700' 
+                      : 'bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-200 hover:bg-gray-300 dark:hover:bg-gray-500'
+                  }`}
+                >
+                  {isEditMode ? '✓ 편집완료' : '✏️ 편집모드'}
+                </button>
+              </div>
+              
+              {isEditMode && (
+                <p className="text-xs text-blue-600 dark:text-blue-400 mb-2">
+                  💡 드래그하여 순서 변경, 이름 클릭하여 수정
+                </p>
+              )}
+              
+              <div className="max-h-48 overflow-y-auto">
                 {accounts.length === 0 ? (
-                  <div className="text-sm text-gray-500 dark:text-gray-400">등록된 계정이 없습니다.</div>
+                  <div className="text-sm text-gray-500 dark:text-gray-400 py-2">등록된 계정이 없습니다.</div>
+                ) : isEditMode ? (
+                  <DragDropContext onDragEnd={handleDragEnd}>
+                    <Droppable droppableId="accounts-list">
+                      {(provided) => (
+                        <div 
+                          ref={provided.innerRef}
+                          {...provided.droppableProps}
+                          className="space-y-2"
+                        >
+                          {accounts.map((account, index) => (
+                            <Draggable 
+                              key={account.id} 
+                              draggableId={String(account.id)} 
+                              index={index}
+                            >
+                              {(provided, snapshot) => (
+                                <div
+                                  ref={provided.innerRef}
+                                  {...provided.draggableProps}
+                                  className={`flex items-center justify-between text-sm text-gray-700 dark:text-gray-200 bg-gray-50 dark:bg-gray-700/50 px-3 py-2 rounded border-2 ${
+                                    snapshot.isDragging 
+                                      ? 'border-blue-500 shadow-lg' 
+                                      : 'border-transparent'
+                                  }`}
+                                >
+                                  <div className="flex items-center gap-2 flex-1">
+                                    {/* 드래그 핸들 */}
+                                    <div 
+                                      {...provided.dragHandleProps}
+                                      className="cursor-grab active:cursor-grabbing text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+                                    >
+                                      ⋮⋮
+                                    </div>
+                                    
+                                    {/* 이름 편집 */}
+                                    {editingAccountId === account.id ? (
+                                      <input
+                                        type="text"
+                                        value={editingAccountName}
+                                        onChange={(e) => setEditingAccountName(e.target.value)}
+                                        onBlur={() => handleSaveAccountName(account.id)}
+                                        onKeyDown={(e) => {
+                                          if (e.key === 'Enter') handleSaveAccountName(account.id);
+                                          if (e.key === 'Escape') {
+                                            setEditingAccountId(null);
+                                            setEditingAccountName('');
+                                          }
+                                        }}
+                                        autoFocus
+                                        className="flex-1 px-2 py-0.5 text-sm border border-blue-500 rounded bg-white dark:bg-gray-700 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                      />
+                                    ) : (
+                                      <span 
+                                        className="font-medium cursor-pointer hover:text-blue-600 dark:hover:text-blue-400"
+                                        onClick={() => {
+                                          setEditingAccountId(account.id);
+                                          setEditingAccountName(account.display_name);
+                                        }}
+                                        title="클릭하여 이름 수정"
+                                      >
+                                        {account.display_name}
+                                      </span>
+                                    )}
+                                    
+                                    {account.isOfficeManager && (
+                                      <span className="text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 px-2 py-0.5 rounded">
+                                        관리자
+                                      </span>
+                                    )}
+                                  </div>
+                                  
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-xs text-gray-500 dark:text-gray-400">@{account.username}</span>
+                                    {account.id !== user?.id && (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleDeleteAccount(account.id, account.display_name || account.username)}
+                                        className="text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300 text-xs px-2 py-1 rounded hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+                                        title="계정 삭제"
+                                      >
+                                        🗑️
+                                      </button>
+                                    )}
+                                  </div>
+                                </div>
+                              )}
+                            </Draggable>
+                          ))}
+                          {provided.placeholder}
+                        </div>
+                      )}
+                    </Droppable>
+                  </DragDropContext>
                 ) : (
-                  accounts.map(account => (
-                    <div
-                      key={account.id}
-                      className="flex items-center justify-between text-sm text-gray-700 dark:text-gray-200 bg-gray-50 dark:bg-gray-700/50 px-3 py-2 rounded"
-                    >
-                      <div className="flex flex-col flex-1">
-                        <div className="flex items-center gap-2">
-                          <span className="font-medium">{account.display_name}</span>
-                          {account.isOfficeManager && (
-                            <span className="text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 px-2 py-0.5 rounded">
-                              관리자
+                  <div className="space-y-2">
+                    {accounts.map(account => (
+                      <div
+                        key={account.id}
+                        className="flex items-center justify-between text-sm text-gray-700 dark:text-gray-200 bg-gray-50 dark:bg-gray-700/50 px-3 py-2 rounded"
+                      >
+                        <div className="flex flex-col flex-1">
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium">{account.display_name}</span>
+                            {account.isOfficeManager && (
+                              <span className="text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 px-2 py-0.5 rounded">
+                                관리자
+                              </span>
+                            )}
+                          </div>
+                          {isAdmin && account.office_id && (
+                            <span className="text-xs text-gray-500 dark:text-gray-400">
+                              사무실 ID: {account.office_id}
                             </span>
                           )}
                         </div>
-                        {isAdmin && account.office_id && (
-                          <span className="text-xs text-gray-500 dark:text-gray-400">
-                            사무실 ID: {account.office_id}
-                          </span>
-                        )}
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-gray-500 dark:text-gray-400">@{account.username}</span>
+                          {account.id !== user?.id && (
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteAccount(account.id, account.display_name || account.username)}
+                              className="text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300 text-xs px-2 py-1 rounded hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+                              title="계정 삭제"
+                            >
+                              🗑️
+                            </button>
+                          )}
+                        </div>
                       </div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs text-gray-500 dark:text-gray-400">@{account.username}</span>
-                        {/* 자기 자신의 계정은 삭제 불가 */}
-                        {account.id !== user?.id && (
-                          <button
-                            onClick={() => handleDeleteAccount(account.id, account.display_name || account.username)}
-                            className="text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300 text-xs px-2 py-1 rounded hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
-                            title="계정 삭제"
-                          >
-                            🗑️
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  ))
+                    ))}
+                  </div>
                 )}
               </div>
             </div>

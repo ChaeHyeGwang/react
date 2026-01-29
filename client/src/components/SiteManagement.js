@@ -72,6 +72,11 @@ const SiteManagement = () => {
   const [editingStatusDate, setEditingStatusDate] = useState(''); // 승인유무 날짜 (MM.DD 형식)
   const savingCellRef = useRef(false); // 저장 중복 방지
   
+  // 이력 개별 편집 상태
+  const [editingHistoryIndex, setEditingHistoryIndex] = useState(null); // 편집 중인 이력 인덱스
+  const [editingHistoryDate, setEditingHistoryDate] = useState(''); // 편집 중인 이력 날짜
+  const [editingHistoryStatus, setEditingHistoryStatus] = useState(''); // 편집 중인 이력 상태
+  
   // 새 행 추가 상태
   const [newSiteRow, setNewSiteRow] = useState(null); // 새로 추가할 사이트 행
   const [newCommunityRow, setNewCommunityRow] = useState(null); // 새로 추가할 커뮤니티 행
@@ -3495,518 +3500,285 @@ const SiteManagement = () => {
                       // 편집 시작 시 editingStatusDate 초기화는 useEffect에서 처리하지 않고
                       // value에서 editingStatusDate || initialDate로 처리
                       
+                      // 유효한 상태 옵션
+                      const statusOptions = ['가입전', '대기', '승인', '장점검', '팅', '졸업'];
+                      
+                      // 편집 모드 완전 종료 함수
+                      const closeStatusEditor = () => {
+                        setEditingCell(null);
+                        setEditingValue('');
+                        setEditingStatusDate('');
+                        setEditingHistoryIndex(null);
+                        setEditingHistoryDate('');
+                        setEditingHistoryStatus('');
+                        setIsManualInputMode(false);
+                      };
+                      
                       return (
-                        <div className="space-y-1">
-                          {/* 전체 이력 표시 (삭제 가능) */}
+                        <div className="space-y-2 min-w-[280px]">
+                          {/* 헤더 */}
+                          <div className="flex items-center justify-between border-b border-gray-200 dark:border-gray-600 pb-2">
+                            <span className="font-bold text-sm text-gray-700 dark:text-gray-200">📋 승인유무 편집</span>
+                            <button
+                              type="button"
+                              onClick={closeStatusEditor}
+                              className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 text-lg font-bold"
+                              title="닫기"
+                            >
+                              ✕
+                            </button>
+                          </div>
+                          
+                          {/* 기존 이력 목록 */}
                           {statusHistory.length > 0 && (
-                            <div className="mb-2 p-2 bg-gray-50 rounded text-xs">
-                              <div className="font-bold mb-1 text-gray-600">📋 전체 이력 (삭제하려면 X 클릭):</div>
-                              <div className="flex flex-wrap gap-1">
-                                {statusHistory.map((historyItem, idx) => (
-                                  <span
+                            <div className="space-y-1">
+                              <div className="text-xs font-semibold text-gray-500 dark:text-gray-400">기존 이력:</div>
+                              {statusHistory.map((historyItem, idx) => {
+                                const dateMatch = historyItem.match(/^(\d{1,2}\.\d{1,2})\s*(.*)$/);
+                                const itemDate = dateMatch ? dateMatch[1] : '';
+                                const itemStatus = dateMatch ? dateMatch[2].trim() : historyItem.trim();
+                                const isEditingThis = editingHistoryIndex === idx;
+                                
+                                if (isEditingThis) {
+                                  return (
+                                    <div key={idx} className="flex items-center gap-1 bg-blue-50 dark:bg-blue-900/30 p-2 rounded border-2 border-blue-500">
+                                      <input
+                                        type="text"
+                                        value={editingHistoryDate}
+                                        onChange={(e) => setEditingHistoryDate(e.target.value)}
+                                        placeholder="MM.DD"
+                                        className="w-16 px-2 py-1 text-sm border border-blue-400 rounded dark:bg-gray-700 dark:text-white focus:ring-2 focus:ring-blue-500"
+                                        autoFocus
+                                      />
+                                      <select
+                                        value={statusOptions.includes(editingHistoryStatus) ? editingHistoryStatus : ''}
+                                        onChange={(e) => setEditingHistoryStatus(e.target.value)}
+                                        className="flex-1 px-2 py-1 text-sm border border-blue-400 rounded dark:bg-gray-700 dark:text-white"
+                                      >
+                                        <option value="">직접입력</option>
+                                        {statusOptions.map(opt => (
+                                          <option key={opt} value={opt}>{opt}</option>
+                                        ))}
+                                      </select>
+                                      {!statusOptions.includes(editingHistoryStatus) && (
+                                        <input
+                                          type="text"
+                                          value={editingHistoryStatus}
+                                          onChange={(e) => setEditingHistoryStatus(e.target.value)}
+                                          placeholder="상태"
+                                          className="w-20 px-2 py-1 text-sm border border-blue-400 rounded dark:bg-gray-700 dark:text-white"
+                                        />
+                                      )}
+                                      <button
+                                        type="button"
+                                        onClick={async (e) => {
+                                          e.stopPropagation();
+                                          const datePattern = /^(\d{1,2})\.(\d{1,2})$/;
+                                          if (editingHistoryDate && !datePattern.test(editingHistoryDate)) {
+                                            toast.error('날짜 형식: MM.DD (예: 01.23)');
+                                            return;
+                                          }
+                                          
+                                          const newHistoryItem = editingHistoryDate 
+                                            ? `${editingHistoryDate} ${editingHistoryStatus}`.trim()
+                                            : editingHistoryStatus.trim();
+                                          
+                                          const newHistory = [...statusHistory];
+                                          newHistory[idx] = newHistoryItem;
+                                          const newStatus = newHistory.join(' / ');
+                                          
+                                          try {
+                                            await axiosInstance.put(`/sites/${site.id}`, {
+                                              ...site,
+                                              status: newStatus
+                                            });
+                                            toast.success('수정 완료');
+                                            closeStatusEditor();
+                                            await loadSites(selectedIdentity.id);
+                                          } catch (error) {
+                                            toast.error('수정 실패');
+                                          }
+                                        }}
+                                        className="px-2 py-1 bg-green-500 hover:bg-green-600 text-white rounded text-sm font-bold"
+                                      >
+                                        ✓
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setEditingHistoryIndex(null);
+                                          setEditingHistoryDate('');
+                                          setEditingHistoryStatus('');
+                                        }}
+                                        className="px-2 py-1 bg-gray-400 hover:bg-gray-500 text-white rounded text-sm font-bold"
+                                      >
+                                        취소
+                                      </button>
+                                    </div>
+                                  );
+                                }
+                                
+                                return (
+                                  <div
                                     key={idx}
-                                    className="inline-flex items-center gap-1 bg-white px-2 py-1 rounded border border-gray-300"
+                                    className="flex items-center justify-between bg-white dark:bg-gray-600 px-3 py-2 rounded border border-gray-200 dark:border-gray-500 hover:border-blue-400 dark:hover:border-blue-400 cursor-pointer group transition-colors"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setEditingHistoryIndex(idx);
+                                      setEditingHistoryDate(itemDate);
+                                      setEditingHistoryStatus(itemStatus);
+                                    }}
+                                    title="클릭하여 편집"
                                   >
-                                    <span className="text-gray-700">{historyItem}</span>
+                                    <span className="text-sm font-medium text-gray-700 dark:text-gray-200">{historyItem}</span>
                                     <button
                                       type="button"
-                                      onMouseDown={(e) => {
-                                        e.stopPropagation();
-                                        e.preventDefault();
-                                      }}
+                                      onMouseDown={(e) => { e.stopPropagation(); e.preventDefault(); }}
                                       onClick={async (e) => {
                                         e.stopPropagation();
                                         e.preventDefault();
                                         
                                         const newHistory = statusHistory.filter((_, i) => i !== idx);
-                                        const newStatus = newHistory.join('/');
+                                        const newStatus = newHistory.join(' / ');
                                         
                                         try {
-                                          const response = await axiosInstance.put(`/sites/${site.id}`, {
+                                          await axiosInstance.put(`/sites/${site.id}`, {
                                             ...site,
                                             status: newStatus || ''
                                           });
-                                          toast.success('이력이 삭제되었습니다');
-                                          
-                                          // 편집 모드 종료
-                                          setEditingCell(null);
-                                          setEditingValue('');
-                                          setEditingStatusDate('');
-                                          
-                                          // 데이터 새로고침
+                                          toast.success('삭제 완료');
+                                          closeStatusEditor();
                                           await loadSites(selectedIdentity.id);
                                         } catch (error) {
-                                          console.error('[이력 삭제] 삭제 실패:', error);
-                                          toast.error(`삭제 실패: ${error.response?.data?.message || error.message}`);
+                                          toast.error('삭제 실패');
                                         }
                                       }}
-                                      className="text-red-500 hover:text-red-700 hover:bg-red-50 rounded px-1 font-bold cursor-pointer"
-                                      title="이력 삭제"
+                                      className="opacity-0 group-hover:opacity-100 text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/30 rounded p-1 transition-opacity"
+                                      title="삭제"
                                     >
-                                      ✕
+                                      🗑️
                                     </button>
-                                  </span>
-                                ))}
-                              </div>
+                                  </div>
+                                );
+                              })}
                             </div>
                           )}
                           
-                          {/* 날짜 입력 필드 */}
-                          <div className="flex items-center gap-2 mb-1">
-                            <label className="text-xs font-bold text-gray-600 dark:text-gray-300 whitespace-nowrap">날짜:</label>
-                            <input
-                              type="text"
-                              value={editingStatusDate}
-                              onChange={(e) => {
-                                let value = e.target.value;
-                                // 모든 문자 허용 (사용자가 자유롭게 입력할 수 있도록)
-                                // 빈 문자열도 허용 (사용자가 모든 것을 지울 수 있도록)
-                                // 나중에 onBlur에서 검증
-                                setEditingStatusDate(value);
-                                
-                                // editingValue도 업데이트 (날짜 부분만 변경)
-                                if (editingValue) {
-                                  const pureStatus = editingValue.replace(/^\d{1,2}\.\d{1,2}\s*/, '').trim();
-                                  // value가 비어있어도 그대로 사용 (onBlur에서 검증)
-                                  setEditingValue(value !== '' ? `${value} ${pureStatus}` : ` ${pureStatus}`);
-                                }
-                              }}
-                              onMouseDown={(e) => {
-                                e.stopPropagation();
-                              }}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                              }}
-                              onBlur={(e) => {
-                                // 날짜 형식 검증 (MM.DD 형식)
-                                let dateValue = editingStatusDate ? editingStatusDate.trim() : '';
-                                const datePattern = /^(\d{1,2})\.(\d{1,2})$/;
-                                
-                                // 빈 값이면 오늘 날짜로 설정
-                                if (!dateValue) {
-                                  dateValue = initialDate;
-                                  setEditingStatusDate(initialDate);
-                                }
-                                
-                                // 형식이 맞지 않으면 토스트 표시
-                                if (!datePattern.test(dateValue)) {
-                                  // 편집 모드 유지하고 토스트 표시
-                                  e.preventDefault();
-                                  e.stopPropagation();
-                                  toast.error('날짜 형식이 올바르지 않습니다. MM.DD 형식으로 입력해주세요. (예: 12.12, 01.13)');
-                                  // 포커스 다시 설정
-                                  setTimeout(() => {
-                                    e.target.focus();
-                                  }, 100);
-                                  return;
-                                }
-                                
-                                // 형식이 맞으면 editingValue 업데이트
-                                if (dateValue && editingValue) {
-                                  const pureStatus = editingValue.replace(/^\d{1,2}\.\d{1,2}\s*/, '').trim();
-                                  setEditingValue(`${dateValue} ${pureStatus}`);
-                                }
-                                
-                                // 다른 편집 가능한 필드로 포커스가 이동하는 경우는 허용
-                                const relatedTarget = e.relatedTarget;
-                                if (relatedTarget && (
-                                  relatedTarget.closest('.space-y-1') === e.target.closest('.space-y-1')
-                                )) {
-                                  // 같은 편집 영역 내의 다른 필드로 이동하는 경우는 허용
-                                  return;
-                                }
-                                // 외부로 포커스가 이동하는 경우에도 편집 모드 유지
-                                e.stopPropagation();
-                              }}
-                              placeholder="MM.DD"
-                              className="w-20 px-2 py-1 border border-blue-500 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm font-bold dark:bg-[#282C34] dark:text-white dark:border-blue-400"
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter' || e.key === 'Tab') {
-                                  e.preventDefault();
-                                  e.stopPropagation();
-                                  
-                                  // 날짜 형식 검증
-                                  const dateValue = editingStatusDate.trim();
-                                  const datePattern = /^(\d{1,2})\.(\d{1,2})$/;
-                                  
-                                  // 빈 값이거나 형식이 맞지 않으면 토스트 표시
-                                  if (!dateValue || !datePattern.test(dateValue)) {
-                                    toast.error('날짜 형식이 올바르지 않습니다. MM.DD 형식으로 입력해주세요. (예: 12.12, 01.13)');
-                                    return;
-                                  }
-                                  
-                                  // 형식이 맞으면 다음 필드로 포커스 이동
-                                  const selectElement = e.target.parentElement.nextElementSibling?.querySelector('select');
-                                  if (selectElement) {
-                                    selectElement.focus();
-                                  }
-                                } else if (e.key === 'Escape') {
-                                  // ESC 키는 편집 취소
-                                  cancelEditingCell();
-                                }
-                              }}
-                            />
-                          </div>
+                          {/* 구분선 */}
+                          {statusHistory.length > 0 && (
+                            <div className="border-t border-gray-200 dark:border-gray-600 pt-2"></div>
+                          )}
                           
-                          {!isManualInputMode ? (
-                            // 유효한 옵션이거나 기존 값이면 셀렉트박스
-                            <select
-                              value={optionsList.includes(currentDisplayValue) ? currentDisplayValue : ''}
-                              onChange={(e) => {
-                                const newValue = e.target.value;
-                                // 날짜 형식 검증
-                                const dateValue = editingStatusDate.trim();
-                                const datePattern = /^(\d{1,2})\.(\d{1,2})$/;
-                                const datePrefix = (editingStatusDate !== '' && datePattern.test(dateValue)) 
-                                  ? editingStatusDate.trim() 
-                                  : initialDate;
-                                setEditingValue(`${datePrefix} ${newValue}`);
-                              }}
-                              onBlur={async (e) => {
-                                // 날짜 입력 필드로 포커스가 이동하는 경우는 무시
-                                const relatedTarget = e.relatedTarget;
-                                if (relatedTarget && relatedTarget.type === 'text' && relatedTarget.placeholder === 'MM.DD') {
-                                  return;
-                                }
-                                
-                                // 삭제 버튼 클릭 중이면 무시
-                                if (isDeletingHistory) {
-                                  return;
-                                }
-                                
-                                // 마지막 상태 추출 (예: "7.1 승인/11.02 졸업" -> "11.02 졸업")
-                                const statusParts = site.status?.split('/') || [];
-                                const lastStatusPart = statusParts[statusParts.length - 1]?.trim() || '';
-                                const lastStatusValue = lastStatusPart.replace(/^\d{1,2}\.\d{1,2}\s*/, '').trim();
-                                
-                                // 수동입력 처리
-                                const lastStatusPure = lastStatusPart?.includes('수동입력')
-                                  ? lastStatusPart?.match(/^\d{1,2}\.\d{1,2}\s*수동입력\s+(.+)$/)?.[1] || lastStatusValue
-                                  : lastStatusValue;
-                                
-                                // 편집 중인 값 추출
-                                const editingStatusPure = editingValue?.replace(/^\d{1,2}\.\d{1,2}\s*/, '').trim();
-                                const editingStatusClean = editingStatusPure?.includes('수동입력')
-                                  ? editingStatusPure?.match(/^수동입력\s+(.+)$/)?.[1] || editingStatusPure
-                                  : editingStatusPure;
-                                
-                                // 사용자가 입력한 날짜 사용 (없으면 initialDate, 그것도 없으면 한국 시간 기준 오늘 날짜)
-                                const datePrefix = editingStatusDate !== '' ? editingStatusDate : (initialDate || (() => {
-                                  const now = new Date();
-                                  const kstDate = new Date(now.toLocaleString('en-US', {timeZone: 'Asia/Seoul'}));
-                                  const month = String(kstDate.getMonth() + 1).padStart(2, '0');
-                                  const day = String(kstDate.getDate()).padStart(2, '0');
-                                  return `${month}.${day}`;
-                                })());
-                                
-                                // 기존 날짜 추출
-                                const existingDateMatch = lastStatusPart.match(/^(\d{1,2}\.\d{1,2})/);
-                                const existingDate = existingDateMatch ? existingDateMatch[1] : '';
-                                
-                                // 상태값이 변경되었는지 또는 날짜가 변경되었는지 확인
-                                const statusChanged = editingStatusClean !== lastStatusPure;
-                                const dateChanged = datePrefix !== existingDate;
-                                const hasChanged = statusChanged || dateChanged;
-                                
-                                if (hasChanged) {
-                                  // 새 행인 경우와 기존 행인 경우 분리
-                                  if (site.isNew) {
-                                    // 새 행인 경우 saveEditingCell을 호출
-                                    setEditingValue(editingValue);
-                                    saveEditingCell();
-                                  } else {
-                                    // 기존 행인 경우 PUT으로 수정
-                                    // datePrefix는 위에서 이미 계산됨
-                                    
-                                    // 편집 중인 값에서 날짜 제거 후 순수 상태값 추출
-                                    let newStatusValue = editingValue.replace(/^\d{1,2}\.\d{1,2}\s*/, '').trim();
-                                    
-                                    // 수동입력 텍스트 제거 (이미 수동입력인 경우, DB에는 저장하지 않음)
-                                    const pureStatusValue = newStatusValue.replace(/^수동입력\s+/, '').trim();
-                                    
-                                    // 날짜가 포함된 새 상태값 생성 (수동입력 텍스트 없이 저장)
-                                    const newStatusWithDate = `${datePrefix} ${pureStatusValue}`;
-                                    
-                                    // 기존 상태가 있으면 슬래시로 구분하여 추가 (앞뒤 공백 포함)
-                                    let finalValue = newStatusWithDate;
-                                    if (site.status && site.status.trim()) {
-                                      // 기존 상태의 슬래시 앞뒤 공백 정규화 (슬래시 앞뒤에 공백 없으면 추가)
-                                      let normalizedStatus = site.status.trim();
-                                      normalizedStatus = normalizedStatus.replace(/\s*\/\s*/g, ' / ');
-                                      
-                                      // 기존 상태가 이미 새 상태값을 포함하고 있는지 확인
-                                      const statusParts = normalizedStatus.split('/').map(s => s.trim());
-                                      const isAlreadyExists = statusParts.some(part => {
-                                        const partWithoutDate = part.replace(/^\d{1,2}\.\d{1,2}\s*/, '').trim();
-                                        // 수동입력 텍스트 제거 (DB에는 저장되지 않지만 기존 데이터에 있을 수 있음)
-                                        const purePart = partWithoutDate.replace(/^수동입력\s+/, '').trim();
-                                        const pureNewStatus = pureStatusValue;
-                                        return purePart === pureNewStatus;
-                                      });
-                                      
-                                      // "가입전"에서 "대기"로 변경하는 경우 "가입전" 이력 자동 삭제
-                                      if (pureStatusValue === '대기') {
-                                        const filteredParts = statusParts.filter(part => {
-                                          const partWithoutDate = part.replace(/^\d{1,2}\.\d{1,2}\s*/, '').trim();
-                                          const purePart = partWithoutDate.replace(/^수동입력\s+/, '').trim();
-                                          return purePart !== '가입전';
-                                        });
-                                        
-                                        if (filteredParts.length > 0) {
-                                          // "가입전"을 제외한 기존 이력이 있으면 그 뒤에 "대기" 추가
-                                          normalizedStatus = filteredParts.join(' / ');
-                                          if (!isAlreadyExists) {
-                                            finalValue = `${normalizedStatus} / ${newStatusWithDate}`;
-                                          } else {
-                                            finalValue = normalizedStatus;
-                                          }
-                                        } else {
-                                          // "가입전"만 있었다면 "대기"만 저장
-                                          finalValue = newStatusWithDate;
-                                        }
-                                      } else if (!isAlreadyExists) {
-                                        finalValue = `${normalizedStatus} / ${newStatusWithDate}`;
-                                      } else {
-                                        // 이미 존재하면 기존 상태 유지 (정규화된 상태)
-                                        finalValue = normalizedStatus;
-                                      }
-                                    }
-                                  
-                                  try {
-                                    await axiosInstance.put(`/sites/${site.id}`, {
-                                      ...site,
-                                      status: finalValue
-                                    });
-                                    toast.success('수정되었습니다');
-                                    loadSites(selectedIdentity.id);
-                                  } catch (error) {
-                                    toast.error('수정 실패');
-                                    }
-                                  }
-                                }
-                                setEditingCell(null);
-                                setEditingValue('');
-                                setIsManualInputMode(false);
-                              }}
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter') {
-                                  e.preventDefault();
-                                  e.stopPropagation();
-                                  e.target.blur(); // onBlur 로직 실행 (기존 값 유지하면서 추가)
-                                } else if (e.key === 'Escape') {
-                                  cancelEditingCell();
-                                }
-                              }}
-                              autoFocus
-                              className="w-full px-2 py-1 border border-blue-500 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                            >
-                              <option value="선택하세요">선택하세요</option>
-                              {optionsList.map(opt => (
-                                <option key={opt} value={opt}>{opt}</option>
-                              ))}
-                            </select>
-                          ) : (
-                            // 없는 값이면 자유 입력 input
-                            <input
-                              type="text"
-                              value={pureStatus}
-                              onChange={(e) => {
-                                const newValue = e.target.value;
-                                
-                                // 날짜 형식 검증
-                                const dateValue = editingStatusDate.trim();
+                          {/* 새 상태 추가 영역 */}
+                          <div className="space-y-2">
+                            <div className="text-xs font-semibold text-gray-500 dark:text-gray-400">새 상태 추가:</div>
+                            <div className="flex items-center gap-2">
+                              <input
+                                type="text"
+                                value={editingStatusDate || initialDate}
+                                onChange={(e) => setEditingStatusDate(e.target.value)}
+                                placeholder="MM.DD"
+                                className="w-16 px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded dark:bg-gray-700 dark:text-white focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                              />
+                              <select
+                                value={editingValue?.replace(/^\d{1,2}\.\d{1,2}\s*/, '').trim() || ''}
+                                onChange={(e) => {
+                                  const datePrefix = editingStatusDate || initialDate;
+                                  setEditingValue(`${datePrefix} ${e.target.value}`);
+                                }}
+                                className="flex-1 px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded dark:bg-gray-700 dark:text-white focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                              >
+                                <option value="">상태 선택</option>
+                                {statusOptions.map(opt => (
+                                  <option key={opt} value={opt}>{opt}</option>
+                                ))}
+                              </select>
+                            </div>
+                            
+                            {/* 추가 버튼 */}
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                const datePrefix = editingStatusDate || initialDate;
                                 const datePattern = /^(\d{1,2})\.(\d{1,2})$/;
                                 
-                                // 사용자가 입력한 날짜 사용 (없으면 initialDate, 그것도 없으면 한국 시간 기준 오늘 날짜)
-                                const datePrefix = (editingStatusDate !== '' && datePattern.test(dateValue))
-                                  ? editingStatusDate.trim()
-                                  : (initialDate || (() => {
-                                      const now = new Date();
-                                      const kstDate = new Date(now.toLocaleString('en-US', {timeZone: 'Asia/Seoul'}));
-                                      const month = String(kstDate.getMonth() + 1).padStart(2, '0');
-                                      const day = String(kstDate.getDate()).padStart(2, '0');
-                                      return `${month}.${day}`;
-                                    })());
-                                // 날짜와 값만 저장 (수동입력 텍스트 없이)
-                                setEditingValue(`${datePrefix} ${newValue}`);
-                              }}
-                              onBlur={async (e) => {
-                                // 날짜 입력 필드로 포커스가 이동하는 경우는 무시
-                                const relatedTarget = e.relatedTarget;
-                                if (relatedTarget && relatedTarget.type === 'text' && relatedTarget.placeholder === 'MM.DD') {
+                                if (!datePattern.test(datePrefix)) {
+                                  toast.error('날짜 형식: MM.DD (예: 01.23)');
                                   return;
                                 }
                                 
-                                // 날짜 형식 검증
-                                const dateValue = editingStatusDate.trim();
-                                const datePattern = /^(\d{1,2})\.(\d{1,2})$/;
-                                
-                                // 빈 값이거나 형식이 맞지 않으면 토스트 표시
-                                if (!dateValue || !datePattern.test(dateValue)) {
-                                  // 편집 모드 유지하고 토스트 표시
-                                  toast.error('날짜 형식이 올바르지 않습니다. MM.DD 형식으로 입력해주세요. (예: 12.12, 01.13)');
-                                  // 포커스 다시 설정
-                                  setTimeout(() => {
-                                    e.target.focus();
-                                  }, 100);
+                                const newStatusValue = editingValue?.replace(/^\d{1,2}\.\d{1,2}\s*/, '').trim();
+                                if (!newStatusValue) {
+                                  toast.error('상태를 선택해주세요');
                                   return;
                                 }
                                 
-                                // 편집 중인 값에서 날짜 제거 후 순수 상태값 추출
-                                let newStatusValue = editingValue.replace(/^\d{1,2}\.\d{1,2}\s*/, '').trim();
+                                const newStatusWithDate = `${datePrefix} ${newStatusValue}`;
                                 
-                                // 수동입력 텍스트 제거 (이미 수동입력인 경우, DB에는 저장하지 않음)
-                                const pureStatusValue = newStatusValue.replace(/^수동입력\s+/, '').trim();
-                                
-                                // 사용자가 입력한 날짜 사용 (없으면 initialDate, 그것도 없으면 한국 시간 기준 오늘 날짜)
-                                const datePrefix = editingStatusDate !== '' && datePattern.test(editingStatusDate.trim())
-                                  ? editingStatusDate.trim()
-                                  : (initialDate || (() => {
-                                      const now = new Date();
-                                      const kstDate = new Date(now.toLocaleString('en-US', {timeZone: 'Asia/Seoul'}));
-                                      const month = String(kstDate.getMonth() + 1).padStart(2, '0');
-                                      const day = String(kstDate.getDate()).padStart(2, '0');
-                                      return `${month}.${day}`;
-                                    })());
-                                
-                                // 날짜가 포함된 새 상태값 생성 (수동입력 텍스트 없이 저장)
-                                const newStatusWithDate = `${datePrefix} ${pureStatusValue}`;
-                                
-                                // 기존 상태가 있으면 슬래시로 구분하여 추가 (앞뒤 공백 포함)
                                 let finalValue = newStatusWithDate;
                                 if (site.status && site.status.trim()) {
-                                  // 기존 상태의 슬래시 앞뒤 공백 정규화 (슬래시 앞뒤에 공백 없으면 추가)
-                                  let normalizedStatus = site.status.trim();
-                                  normalizedStatus = normalizedStatus.replace(/\s*\/\s*/g, ' / ');
-                                  
-                                  // 기존 상태가 이미 새 상태값을 포함하고 있는지 확인
+                                  let normalizedStatus = site.status.trim().replace(/\s*\/\s*/g, ' / ');
                                   const statusParts = normalizedStatus.split('/').map(s => s.trim());
+                                  
+                                  // 중복 체크
                                   const isAlreadyExists = statusParts.some(part => {
-                                    const partWithoutDate = part.replace(/^\d{1,2}\.\d{1,2}\s*/, '').trim();
-                                    // 수동입력 텍스트 제거 (DB에는 저장되지 않지만 기존 데이터에 있을 수 있음)
-                                    const purePart = partWithoutDate.replace(/^수동입력\s+/, '').trim();
-                                    return purePart === pureStatusValue;
+                                    const purePart = part.replace(/^\d{1,2}\.\d{1,2}\s*/, '').trim();
+                                    return purePart === newStatusValue;
                                   });
                                   
+                                  // "대기" 추가 시 "가입전" 자동 제거
+                                  if (newStatusValue === '대기') {
+                                    const filteredParts = statusParts.filter(part => {
+                                      const purePart = part.replace(/^\d{1,2}\.\d{1,2}\s*/, '').trim();
+                                      return purePart !== '가입전';
+                                    });
+                                    normalizedStatus = filteredParts.join(' / ');
+                                  }
+                                  
                                   if (!isAlreadyExists) {
-                                    finalValue = `${normalizedStatus} / ${newStatusWithDate}`;
+                                    finalValue = normalizedStatus ? `${normalizedStatus} / ${newStatusWithDate}` : newStatusWithDate;
                                   } else {
-                                    // 이미 존재하면 기존 상태 유지 (정규화된 상태)
-                                    finalValue = normalizedStatus;
+                                    toast.error('이미 존재하는 상태입니다');
+                                    return;
                                   }
                                 }
                                 
-                                if (finalValue !== site.status) {
-                                  try {
-                                    await axiosInstance.put(`/sites/${site.id}`, {
-                                      ...site,
-                                      status: finalValue
-                                    });
-                                    toast.success('수정되었습니다');
-                                    loadSites(selectedIdentity.id);
-                                  } catch (error) {
-                                    toast.error('수정 실패');
-                                  }
-                                }
-                                setEditingCell(null);
-                                setEditingValue('');
-                                setIsManualInputMode(false);
-                              }}
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter' || e.key === 'Escape') {
-                                  e.target.blur();
+                                try {
+                                  await axiosInstance.put(`/sites/${site.id}`, {
+                                    ...site,
+                                    status: finalValue
+                                  });
+                                  toast.success('상태 추가 완료');
+                                  closeStatusEditor();
+                                  await loadSites(selectedIdentity.id);
+                                } catch (error) {
+                                  toast.error('추가 실패');
                                 }
                               }}
-                              autoFocus
-                              placeholder="상태 입력"
-                              className="w-full px-2 py-1 border border-blue-500 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-[#282C34] dark:text-white dark:border-blue-400"
-                            />
-                          )}
+                              className="w-full px-3 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded font-medium text-sm transition-colors"
+                            >
+                              ➕ 상태 추가
+                            </button>
+                          </div>
                         </div>
                       );
                     }
                     
+                    // 비편집 모드: 클릭하면 편집 모드로 전환
                     return (
                       <div
-                        onDoubleClick={() => {
-                          setIsManualInputMode(false); // 더블클릭시 수동입력 모드 비활성화
-                          
-                          // 편집 시작 시 항상 오늘 날짜를 기본값으로 사용
+                        onClick={() => {
                           const todayDate = getTodayKSTDate();
                           setEditingStatusDate(todayDate);
-                          
-                          // site.status의 마지막 상태에서 순수 상태값만 추출
-                          if (site.status) {
-                            const parts = site.status.split('/').map(s => s.trim());
-                            const lastPart = parts[parts.length - 1];
-                            
-                            // 모든 날짜 제거한 순수 상태값 추출 (날짜가 여러 개 있을 수 있음)
-                            let pureStatus = lastPart.replace(/\d{1,2}\.\d{1,2}\s*/g, '').trim();
-                            
-                            // 수동입력 텍스트 제거 (DB에는 저장되지 않지만 기존 데이터에 있을 수 있음)
-                            pureStatus = pureStatus.replace(/^수동입력\s+/, '').trim();
-                            
-                            // 오늘 날짜와 순수 상태값으로 설정
-                            setEditingValue(`${todayDate} ${pureStatus}`);
-                          } else {
-                            setEditingValue(`${todayDate} 대기`);
-                          }
-                          
+                          setEditingValue('');
+                          setEditingHistoryIndex(null);
                           setEditingCell({ siteId: site.id, field: 'status' });
                         }}
-                          onContextMenu={(e) => {
-                            e.preventDefault(); // 기본 메뉴 방지
-                            // 우클릭하면 수동입력 모드로 전환
-                            
-                            // 편집 시작 시 항상 오늘 날짜를 기본값으로 사용
-                            const todayDate = getTodayKSTDate();
-                            setEditingStatusDate(todayDate);
-                            
-                            // site.status의 마지막 상태에서 순수 상태값만 추출
-                            if (site.status) {
-                              const parts = site.status.split('/').map(s => s.trim());
-                              const lastPart = parts[parts.length - 1];
-                              
-                              // 모든 날짜 제거
-                              let pureStatus = lastPart.replace(/\d{1,2}\.\d{1,2}\s*/g, '').trim();
-                              // 수동입력 텍스트 제거 (기존 데이터에 있을 수 있음)
-                              pureStatus = pureStatus.replace(/^수동입력\s+/, '').trim();
-                              
-                              // 오늘 날짜와 순수 상태값으로 설정
-                              setEditingValue(`${todayDate} ${pureStatus || ''}`);
-                            } else {
-                              setEditingValue(`${todayDate} `);
-                            }
-                            
-                            setEditingCell({ siteId: site.id, field: 'status' });
-                            setIsManualInputMode(true); // 수동입력 모드 활성화
-                          }}
-                        className="cursor-pointer hover:opacity-80 px-2 py-1 rounded text-center font-bold text-gray-900 dark:text-white"
-                        title="더블클릭하여 수정 / 우클릭하여 수동입력"
+                        className="cursor-pointer hover:bg-blue-50 dark:hover:bg-blue-900/20 px-2 py-1 rounded text-center font-bold text-gray-900 dark:text-white transition-colors"
+                        title="클릭하여 편집"
                       >
-                        <span className="px-2 py-1 rounded font-bold">
-                          {/* "수동입력" 제거하고 표시 */}
-                          {(() => {
-                            if (!site.status) return site.status;
-                            
-                            // 슬래시로 구분하여 각 부분 처리
-                            const parts = site.status.split('/');
-                            const processedParts = parts.map(part => {
-                              // "수동입력"이 포함된 경우 제거
-                              if (part.includes('수동입력')) {
-                                // "10.27 수동입력 하이" -> "10.27 하이"
-                                const match = part.match(/^(\d{1,2}\.\d{1,2})\s+수동입력\s+(.+)/);
-                                if (match) {
-                                  const [, date, text] = match;
-                                  return text ? `${date} ${text}` : date;
-                                }
-                              }
-                              return part;
-                            });
-                            
-                            return processedParts.join('/');
-                          })()}
-                        </span>
+                        {site.status || '-'}
                       </div>
                     );
                   };
@@ -4364,99 +4136,100 @@ const SiteManagement = () => {
                 </tr>
               ) : (
                 <>
-                {/* 새 커뮤니티 행 (추가 중일 때만 표시) */}
+                {/* 새 커뮤니티 행 (추가 중일 때만 표시) - 사이트 목록과 동일한 UI */}
                 {newCommunityRow && (
                   <tr className="bg-green-50 dark:bg-green-900/30 border-b border-gray-200 dark:border-gray-700">
-                    <td className="px-4 py-2 text-center">-</td>
-                    <td className="px-4 py-2">
+                    <td className="px-5 py-5 text-center border-r border-gray-100 dark:border-gray-800/30">
                       <input
                         type="text"
-                        value={newCommunityRow.domain}
-                        onChange={(e) => setNewCommunityRow({...newCommunityRow, domain: e.target.value})}
-                        className="w-full border rounded px-2 py-1 text-center dark:bg-gray-700 dark:border-gray-600 dark:text-white"
-                        placeholder="도메인"
+                        value={newCommunityRow.site_name || ''}
+                        onChange={(e) => setNewCommunityRow({...newCommunityRow, site_name: e.target.value})}
+                        className="w-full border border-gray-300 dark:border-gray-600 rounded-md px-2 py-1 text-center dark:bg-gray-700 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        placeholder="출석"
                         autoFocus
                       />
                     </td>
-                    <td className="px-4 py-2">
+                    <td className="px-5 py-5 text-center border-r border-gray-100 dark:border-gray-800/30">
                       <input
                         type="text"
-                        value={newCommunityRow.referral_code}
+                        value={newCommunityRow.domain || ''}
+                        onChange={(e) => setNewCommunityRow({...newCommunityRow, domain: e.target.value})}
+                        className="w-full border border-gray-300 dark:border-gray-600 rounded-md px-2 py-1 text-center dark:bg-gray-700 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        placeholder="도메인"
+                      />
+                    </td>
+                    <td className="px-5 py-5 text-center border-r border-gray-100 dark:border-gray-800/30">
+                      <input
+                        type="text"
+                        value={newCommunityRow.referral_code || ''}
                         onChange={(e) => setNewCommunityRow({...newCommunityRow, referral_code: e.target.value})}
-                        className="w-full border rounded px-2 py-1 text-center dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                        className="w-full border border-gray-300 dark:border-gray-600 rounded-md px-2 py-1 text-center dark:bg-gray-700 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                         placeholder="경로-코드"
                       />
                     </td>
-                    <td className="px-4 py-2 text-center">
+                    <td className="px-5 py-5 text-center border-r border-gray-100 dark:border-gray-800/30">
                       <button
                         onClick={() => setNewCommunityRow({...newCommunityRow, approval_call: !newCommunityRow.approval_call})}
-                        className={`inline-flex items-center justify-center w-8 h-8 rounded-full transition-all duration-200 ${
-                          newCommunityRow.approval_call
-                            ? 'bg-green-500 hover:bg-green-600'
-                            : 'bg-red-500 hover:bg-red-600'
-                        }`}
+                        className="cursor-pointer inline-flex items-center justify-center w-8 h-8 rounded-full transition-all duration-200 hover:scale-110"
+                        title="클릭하여 수정"
                       >
                         {newCommunityRow.approval_call ? (
-                          <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                          </svg>
+                          <span className="w-8 h-8 rounded-full bg-gradient-to-br from-green-400 to-emerald-500 flex items-center justify-center text-white font-bold text-sm shadow-md">✓</span>
                         ) : (
-                          <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                          </svg>
+                          <span className="w-8 h-8 rounded-full bg-gradient-to-br from-red-400 to-rose-500 flex items-center justify-center text-white font-bold text-sm shadow-md">✕</span>
                         )}
                       </button>
                     </td>
-                    <td className="px-4 py-2">
+                    <td className="px-5 py-5 text-center border-r border-gray-100 dark:border-gray-800/30">
                       <input
                         type="text"
-                        value={newCommunityRow.name}
+                        value={newCommunityRow.name || ''}
                         onChange={(e) => setNewCommunityRow({...newCommunityRow, name: e.target.value})}
-                        className="w-full border rounded px-2 py-1 text-center dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                        className="w-full border border-gray-300 dark:border-gray-600 rounded-md px-2 py-1 text-center dark:bg-gray-700 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                         placeholder="성함"
                       />
                     </td>
-                    <td className="px-4 py-2">
+                    <td className="px-5 py-5 text-center border-r border-gray-100 dark:border-gray-800/30">
                       <input
                         type="text"
-                        value={newCommunityRow.user_id}
+                        value={newCommunityRow.user_id || ''}
                         onChange={(e) => setNewCommunityRow({...newCommunityRow, user_id: e.target.value})}
-                        className="w-full border rounded px-2 py-1 text-center dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                        className="w-full border border-gray-300 dark:border-gray-600 rounded-md px-2 py-1 text-center dark:bg-gray-700 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                         placeholder="아이디"
                       />
                     </td>
-                    <td className="px-4 py-2">
+                    <td className="px-5 py-5 text-center border-r border-gray-100 dark:border-gray-800/30">
                       <input
                         type="text"
-                        value={newCommunityRow.password}
+                        value={newCommunityRow.password || ''}
                         onChange={(e) => setNewCommunityRow({...newCommunityRow, password: e.target.value})}
-                        className="w-full border rounded px-2 py-1 text-center dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                        className="w-full border border-gray-300 dark:border-gray-600 rounded-md px-2 py-1 text-center dark:bg-gray-700 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                         placeholder="비번"
                       />
                     </td>
-                    <td className="px-4 py-2">
+                    <td className="px-5 py-5 text-center border-r border-gray-100 dark:border-gray-800/30">
                       <input
                         type="text"
-                        value={newCommunityRow.exchange_password}
+                        value={newCommunityRow.exchange_password || ''}
                         onChange={(e) => setNewCommunityRow({...newCommunityRow, exchange_password: e.target.value})}
-                        className="w-full border rounded px-2 py-1 text-center dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                        className="w-full border border-gray-300 dark:border-gray-600 rounded-md px-2 py-1 text-center dark:bg-gray-700 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                         placeholder="환비"
                       />
                     </td>
-                    <td className="px-4 py-2">
+                    <td className="px-5 py-5 text-center border-r border-gray-100 dark:border-gray-800/30">
                       <input
                         type="text"
-                        value={newCommunityRow.nickname}
+                        value={newCommunityRow.nickname || ''}
                         onChange={(e) => setNewCommunityRow({...newCommunityRow, nickname: e.target.value})}
-                        className="w-full border rounded px-2 py-1 text-center dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                        className="w-full border border-gray-300 dark:border-gray-600 rounded-md px-2 py-1 text-center dark:bg-gray-700 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                         placeholder="닉네임"
                       />
                     </td>
-                    <td className="px-4 py-2">
+                    <td className="px-5 py-5 text-center border-r border-gray-100 dark:border-gray-800/30">
                       <select
-                        value={newCommunityRow.status}
+                        value={newCommunityRow.status || '가입전'}
                         onChange={(e) => setNewCommunityRow({...newCommunityRow, status: e.target.value})}
-                        className="w-full border rounded px-2 py-1 text-center dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                        className="w-full border border-gray-300 dark:border-gray-600 rounded-md px-2 py-1 text-center dark:bg-gray-700 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                       >
                         <option value="가입전">가입전</option>
                         <option value="대기">대기</option>
@@ -4466,16 +4239,25 @@ const SiteManagement = () => {
                         <option value="졸업">졸업</option>
                       </select>
                     </td>
-                    <td className="px-4 py-2" colSpan="2">
+                    <td className="px-5 py-5 text-center border-r border-gray-100 dark:border-gray-800/30">
+                      <input
+                        type="text"
+                        value={newCommunityRow.referral_path || ''}
+                        onChange={(e) => setNewCommunityRow({...newCommunityRow, referral_path: e.target.value})}
+                        className="w-full border border-gray-300 dark:border-gray-600 rounded-md px-2 py-1 text-center dark:bg-gray-700 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        placeholder="경로"
+                      />
+                    </td>
+                    <td className="px-5 py-5 text-center border-r border-gray-100 dark:border-gray-800/30">
                       <input
                         type="text"
                         value={newCommunityRow.notes || ''}
                         onChange={(e) => setNewCommunityRow({...newCommunityRow, notes: e.target.value})}
-                        className="w-full border rounded px-2 py-1 text-center dark:bg-gray-700 dark:border-gray-600 dark:text-white"
-                        placeholder="메모"
+                        className="w-full border border-gray-300 dark:border-gray-600 rounded-md px-2 py-1 text-center dark:bg-gray-700 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        placeholder="장"
                       />
                     </td>
-                    <td className="px-4 py-2 text-center">
+                    <td className="px-5 py-5 text-center whitespace-nowrap">
                       <div className="flex items-center justify-center gap-2">
                         <button
                           onClick={async () => {
@@ -4495,13 +4277,13 @@ const SiteManagement = () => {
                               toast.error('커뮤니티 추가에 실패했습니다');
                             }
                           }}
-                          className="bg-green-500 text-white px-3 py-1 rounded text-xs hover:bg-green-600 font-bold"
+                          className="bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700 font-bold text-sm"
                         >
                           저장
                         </button>
                         <button
                           onClick={() => setNewCommunityRow(null)}
-                          className="bg-gray-500 text-white px-3 py-1 rounded text-xs hover:bg-gray-600 font-bold"
+                          className="bg-gray-500 text-white px-4 py-2 rounded-md hover:bg-gray-600 font-bold text-sm"
                         >
                           취소
                         </button>
@@ -4662,45 +4444,137 @@ const SiteManagement = () => {
                                       className="w-full border rounded px-2 py-1 text-center dark:bg-gray-700 dark:border-gray-600 dark:text-white"
                                       autoFocus
                                     />
-                                    {/* 상태 이력 표시 */}
+                                    {/* 상태 이력 표시 (편집/삭제 가능) */}
                                     {Array.isArray(community.status_history) && community.status_history.length > 0 && (
-                                      <div className="absolute top-full left-0 right-0 mt-1 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded shadow-lg z-10 max-h-40 overflow-y-auto">
+                                      <div className="absolute top-full left-0 right-0 mt-1 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded shadow-lg z-10 max-h-48 overflow-y-auto">
                                         <div className="p-2 text-xs">
-                                          <div className="font-bold mb-1 text-gray-700 dark:text-white">📋 상태 이력:</div>
-                                          {community.status_history.slice().reverse().map((history, idx) => (
-                                            <div key={idx} className="flex items-center justify-between py-0.5 border-b border-gray-100 dark:border-gray-700 last:border-0 group">
-                                              <span className="text-gray-600 dark:text-white">
-                                                {history.date}: {history.status}
-                                              </span>
-                                              <button
-                                                onMouseDown={(e) => {
-                                                  e.preventDefault();
+                                          <div className="font-bold mb-1 text-gray-700 dark:text-white">📋 이력 (클릭하여 편집):</div>
+                                          {community.status_history.slice().reverse().map((history, idx) => {
+                                            const actualIdx = community.status_history.length - 1 - idx;
+                                            const isEditingThisHistory = editingHistoryIndex === `comm-${community.id}-${actualIdx}`;
+                                            
+                                            if (isEditingThisHistory) {
+                                              const communityStatusOptions = ['가입전', '대기', '승인', '장점검', '팅', '졸업'];
+                                              return (
+                                                <div key={idx} className="flex items-center gap-1 py-1 bg-blue-50 dark:bg-blue-900/30 px-1 rounded border border-blue-400 mb-1">
+                                                  <input
+                                                    type="text"
+                                                    value={editingHistoryDate}
+                                                    onChange={(e) => setEditingHistoryDate(e.target.value)}
+                                                    placeholder="MM.DD"
+                                                    className="w-14 px-1 py-0.5 text-xs border border-gray-300 dark:border-gray-600 rounded dark:bg-gray-700 dark:text-white"
+                                                  />
+                                                  <select
+                                                    value={communityStatusOptions.includes(editingHistoryStatus) ? editingHistoryStatus : ''}
+                                                    onChange={(e) => setEditingHistoryStatus(e.target.value)}
+                                                    className="px-1 py-0.5 text-xs border border-gray-300 dark:border-gray-600 rounded dark:bg-gray-700 dark:text-white"
+                                                  >
+                                                    <option value="">직접입력</option>
+                                                    {communityStatusOptions.map(opt => (
+                                                      <option key={opt} value={opt}>{opt}</option>
+                                                    ))}
+                                                  </select>
+                                                  {!communityStatusOptions.includes(editingHistoryStatus) && (
+                                                    <input
+                                                      type="text"
+                                                      value={editingHistoryStatus}
+                                                      onChange={(e) => setEditingHistoryStatus(e.target.value)}
+                                                      placeholder="상태"
+                                                      className="w-14 px-1 py-0.5 text-xs border border-gray-300 dark:border-gray-600 rounded dark:bg-gray-700 dark:text-white"
+                                                    />
+                                                  )}
+                                                  <button
+                                                    type="button"
+                                                    onClick={async (e) => {
+                                                      e.stopPropagation();
+                                                      const datePattern = /^(\d{1,2})\.(\d{1,2})$/;
+                                                      if (editingHistoryDate && !datePattern.test(editingHistoryDate)) {
+                                                        toast.error('날짜 형식: MM.DD');
+                                                        return;
+                                                      }
+                                                      
+                                                      const newHistory = [...community.status_history];
+                                                      newHistory[actualIdx] = {
+                                                        date: editingHistoryDate,
+                                                        status: editingHistoryStatus
+                                                      };
+                                                      
+                                                      try {
+                                                        await axiosInstance.put(`/communities/${community.id}`, {
+                                                          status_history: newHistory
+                                                        });
+                                                        toast.success('이력이 수정되었습니다');
+                                                        setEditingHistoryIndex(null);
+                                                        setEditingHistoryDate('');
+                                                        setEditingHistoryStatus('');
+                                                        await loadCommunities();
+                                                      } catch (error) {
+                                                        toast.error('수정 실패');
+                                                      }
+                                                    }}
+                                                    className="text-green-600 hover:text-green-800 px-1 font-bold"
+                                                  >
+                                                    ✓
+                                                  </button>
+                                                  <button
+                                                    type="button"
+                                                    onClick={(e) => {
+                                                      e.stopPropagation();
+                                                      setEditingHistoryIndex(null);
+                                                    }}
+                                                    className="text-gray-500 hover:text-gray-700 px-1 font-bold"
+                                                  >
+                                                    ✕
+                                                  </button>
+                                                </div>
+                                              );
+                                            }
+                                            
+                                            return (
+                                              <div 
+                                                key={idx} 
+                                                className="flex items-center justify-between py-0.5 border-b border-gray-100 dark:border-gray-700 last:border-0 group cursor-pointer hover:bg-blue-50 dark:hover:bg-blue-900/20 px-1 rounded"
+                                                onClick={(e) => {
                                                   e.stopPropagation();
-                                                  setIsDeletingHistory(true);
+                                                  setEditingHistoryIndex(`comm-${community.id}-${actualIdx}`);
+                                                  setEditingHistoryDate(history.date || '');
+                                                  setEditingHistoryStatus(history.status || '');
                                                 }}
-                                                onClick={async (e) => {
-                                                  e.stopPropagation();
-                                                  try {
-                                                    const newHistory = community.status_history.filter((_, i) => i !== community.status_history.length - 1 - idx);
-                                                    await axiosInstance.put(`/communities/${community.id}`, {
-                                                      status_history: newHistory
-                                                    });
-                                                    toast.success('이력이 삭제되었습니다');
-                                                    await loadCommunities();
-                                                  } catch (error) {
-                                                    console.error('[커뮤니티 이력 삭제] 삭제 실패:', error);
-                                                    toast.error('이력 삭제에 실패했습니다');
-                                                  } finally {
-                                                    setIsDeletingHistory(false);
-                                                  }
-                                                }}
-                                                className="opacity-0 group-hover:opacity-100 text-red-500 hover:text-red-700 ml-2 transition-opacity"
-                                                title="이력 삭제"
+                                                title="클릭하여 편집"
                                               >
-                                                ✕
-                                              </button>
-                                            </div>
-                                          ))}
+                                                <span className="text-gray-600 dark:text-white">
+                                                  {history.date}: {history.status}
+                                                </span>
+                                                <button
+                                                  onMouseDown={(e) => {
+                                                    e.preventDefault();
+                                                    e.stopPropagation();
+                                                    setIsDeletingHistory(true);
+                                                  }}
+                                                  onClick={async (e) => {
+                                                    e.stopPropagation();
+                                                    try {
+                                                      const newHistory = community.status_history.filter((_, i) => i !== actualIdx);
+                                                      await axiosInstance.put(`/communities/${community.id}`, {
+                                                        status_history: newHistory
+                                                      });
+                                                      toast.success('이력이 삭제되었습니다');
+                                                      await loadCommunities();
+                                                    } catch (error) {
+                                                      console.error('[커뮤니티 이력 삭제] 삭제 실패:', error);
+                                                      toast.error('이력 삭제에 실패했습니다');
+                                                    } finally {
+                                                      setIsDeletingHistory(false);
+                                                    }
+                                                  }}
+                                                  className="opacity-0 group-hover:opacity-100 text-red-500 hover:text-red-700 ml-2 transition-opacity"
+                                                  title="이력 삭제"
+                                                >
+                                                  ✕
+                                                </button>
+                                              </div>
+                                            );
+                                          })}
                                         </div>
                                       </div>
                                     )}
@@ -4775,7 +4649,7 @@ const SiteManagement = () => {
                                 ✏️
                               </button>
                               <button
-                                onClick={() => deleteCommunity(community.id)}
+                                onClick={() => deleteCommunity(community)}
                                 className="px-4 py-2 bg-gradient-to-r from-red-500 to-rose-600 hover:from-red-600 hover:to-rose-700 text-white rounded-lg font-medium text-sm shadow-md hover:shadow-lg transition-all duration-200 hover:scale-105 active:scale-95"
                               >
                                 🗑️
@@ -5490,114 +5364,117 @@ const SiteManagement = () => {
       {/* 커뮤니티 추가/수정 모달 */}
       {showCommunityModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white dark:bg-gray-800 rounded-lg p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
-            <h3 className="text-xl font-bold mb-4 text-gray-900 dark:text-white">
-              {editingCommunity ? '커뮤니티 수정' : '새 커뮤니티 추가'}
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow dark:shadow-gray-900/50 p-6 w-full max-w-3xl max-h-[90vh] overflow-y-auto">
+            <h3 className="text-xl font-bold mb-4">
+              {editingCommunity ? '🔧 커뮤니티 수정' : '➕ 새 커뮤니티 추가'}
             </h3>
             
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium mb-1 text-gray-700 dark:text-white">출석 *</label>
+                <label className="block text-sm font-bold text-gray-700 dark:text-white mb-1">출석 (사이트명) *</label>
                 <input
                   type="text"
                   value={communityForm.site_name}
                   onChange={(e) => setCommunityForm({ ...communityForm, site_name: e.target.value })}
-                  className="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded px-3 py-2"
+                  className="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-md px-3 py-2"
                   placeholder="출석"
+                  required
                 />
               </div>
               
               <div>
-                <label className="block text-sm font-medium mb-1 text-gray-700 dark:text-white">도메인</label>
+                <label className="block text-sm font-bold text-gray-700 dark:text-white mb-1">도메인</label>
                 <input
                   type="text"
                   value={communityForm.domain}
                   onChange={(e) => setCommunityForm({ ...communityForm, domain: e.target.value })}
-                  className="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded px-3 py-2"
-                  placeholder="도메인"
+                  className="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-md px-3 py-2"
+                  placeholder="example.com"
                 />
               </div>
               
               <div>
-                <label className="block text-sm font-medium mb-1 text-gray-700 dark:text-white">경로-코드</label>
+                <label className="block text-sm font-bold text-gray-700 dark:text-white mb-1">경로-코드</label>
                 <input
                   type="text"
                   value={communityForm.referral_path}
                   onChange={(e) => setCommunityForm({ ...communityForm, referral_path: e.target.value })}
-                  className="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded px-3 py-2"
+                  className="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-md px-3 py-2"
                   placeholder="경로-코드"
                 />
               </div>
               
               <div>
-                <label className="block text-sm font-medium mb-1 text-gray-700 dark:text-white">승전</label>
+                <label className="block text-sm font-bold text-gray-700 dark:text-white mb-1">승전 (승인전화)</label>
                 <select
                   value={communityForm.approval_call ? 'O' : 'X'}
                   onChange={(e) => setCommunityForm({ ...communityForm, approval_call: e.target.value === 'O' })}
-                  className="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded px-3 py-2"
+                  className="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-md px-3 py-2"
                 >
-                  <option value="X">X</option>
-                  <option value="O">O</option>
+                  <option value="X">X (필요없음)</option>
+                  <option value="O">O (필요함)</option>
                 </select>
               </div>
               
               <div>
-                <label className="block text-sm font-medium mb-1 text-gray-700 dark:text-white">성함</label>
+                <label className="block text-sm font-bold text-gray-700 dark:text-white mb-1">성함</label>
                 <input
                   type="text"
                   value={communityForm.identity_name}
                   onChange={(e) => setCommunityForm({ ...communityForm, identity_name: e.target.value })}
-                  className="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded px-3 py-2"
+                  className="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-md px-3 py-2"
                   placeholder="성함"
                 />
               </div>
               
               <div>
-                <label className="block text-sm font-medium mb-1 text-gray-700 dark:text-white">아이디</label>
+                <label className="block text-sm font-bold text-gray-700 dark:text-white mb-1">아이디 *</label>
                 <input
                   type="text"
                   value={communityForm.account_id}
                   onChange={(e) => setCommunityForm({ ...communityForm, account_id: e.target.value })}
-                  className="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded px-3 py-2"
+                  className="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-md px-3 py-2"
                   placeholder="아이디"
+                  required
                 />
               </div>
               
               <div>
-                <label className="block text-sm font-medium mb-1 text-gray-700 dark:text-white">비번</label>
+                <label className="block text-sm font-bold text-gray-700 dark:text-white mb-1">비번 *</label>
                 <input
                   type="text"
                   value={communityForm.password}
                   onChange={(e) => setCommunityForm({ ...communityForm, password: e.target.value })}
-                  className="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded px-3 py-2"
+                  className="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-md px-3 py-2"
                   placeholder="비번"
+                  required
                 />
               </div>
               
               <div>
-                <label className="block text-sm font-medium mb-1 text-gray-700 dark:text-white">환비</label>
+                <label className="block text-sm font-bold text-gray-700 dark:text-white mb-1">환비 (환전비밀번호)</label>
                 <input
                   type="text"
                   value={communityForm.exchange_password}
                   onChange={(e) => setCommunityForm({ ...communityForm, exchange_password: e.target.value })}
-                  className="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded px-3 py-2"
+                  className="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-md px-3 py-2"
                   placeholder="환비"
                 />
               </div>
               
               <div>
-                <label className="block text-sm font-medium mb-1 text-gray-700 dark:text-white">닉네임</label>
+                <label className="block text-sm font-bold text-gray-700 dark:text-white mb-1">닉네임</label>
                 <input
                   type="text"
                   value={communityForm.nickname}
                   onChange={(e) => setCommunityForm({ ...communityForm, nickname: e.target.value })}
-                  className="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded px-3 py-2"
+                  className="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-md px-3 py-2"
                   placeholder="닉네임"
                 />
               </div>
               
               <div>
-                <label className="block text-sm font-medium mb-1 text-gray-700 dark:text-white">승인유무 (상태)</label>
+                <label className="block text-sm font-bold text-gray-700 dark:text-white mb-1">승인유무 (상태)</label>
                 <select
                   value={communityForm.status}
                   onChange={(e) => setCommunityForm({ ...communityForm, status: e.target.value })}
@@ -5615,23 +5492,23 @@ const SiteManagement = () => {
               </div>
               
               <div>
-                <label className="block text-sm font-medium mb-1 text-gray-700 dark:text-white">경로</label>
+                <label className="block text-sm font-bold text-gray-700 dark:text-white mb-1">경로</label>
                 <input
                   type="text"
                   value={communityForm.referral_code}
                   onChange={(e) => setCommunityForm({ ...communityForm, referral_code: e.target.value })}
-                  className="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded px-3 py-2"
+                  className="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-md px-3 py-2"
                   placeholder="경로"
                 />
-            </div>
+              </div>
               
               <div>
-                <label className="block text-sm font-medium mb-1 text-gray-700 dark:text-white">장</label>
+                <label className="block text-sm font-bold text-gray-700 dark:text-white mb-1">장</label>
                 <input
                   type="text"
                   value={communityForm.notes}
                   onChange={(e) => setCommunityForm({ ...communityForm, notes: e.target.value })}
-                  className="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded px-3 py-2"
+                  className="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-md px-3 py-2"
                   placeholder="장"
                 />
               </div>
@@ -5643,15 +5520,15 @@ const SiteManagement = () => {
                   setShowCommunityModal(false);
                   setEditingCommunity(null);
                 }}
-                className="px-4 py-2 border border-gray-300 dark:border-gray-700 dark:bg-gray-700 dark:text-white rounded hover:bg-gray-50 dark:hover:bg-gray-600"
+                className="px-6 py-2 border border-gray-300 dark:border-gray-700 rounded-md hover:bg-gray-50 dark:hover:bg-gray-700 font-medium dark:bg-[#282C34] dark:text-white"
               >
                 취소
               </button>
               <button
                 onClick={saveCommunity}
-                className="px-4 py-2 bg-blue-600 dark:bg-blue-700 text-white rounded hover:bg-blue-700 dark:hover:bg-blue-600"
+                className="px-6 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 font-bold"
               >
-                {editingCommunity ? '수정' : '추가'}
+                💾 저장
               </button>
             </div>
           </div>

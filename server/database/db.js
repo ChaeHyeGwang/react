@@ -33,6 +33,7 @@ class DatabaseManager {
           this.optimizeDatabase()
             .then(() => this.addTelegramColumnsToOffices())
             .then(() => this.addNicknameColumn())
+            .then(() => this.addAccountsDisplayOrderColumn())
             .then(() => this.ensureIndexes())
             .then(resolve)
             .catch(reject);
@@ -315,6 +316,35 @@ class DatabaseManager {
             console.log('✅ site_accounts display_order 컬럼 추가 완료');
             resolve();
           });
+        });
+      });
+    });
+  }
+
+  // accounts 테이블에 display_order 컬럼 추가
+  async addAccountsDisplayOrderColumn() {
+    return new Promise((resolve, reject) => {
+      this.db.all("PRAGMA table_info(accounts)", (err, columns) => {
+        if (err) {
+          return reject(err);
+        }
+        
+        const hasDisplayOrder = columns.some(col => col.name === 'display_order');
+        
+        if (hasDisplayOrder) {
+          return resolve();
+        }
+        
+        console.log('📝 accounts 테이블에 display_order 컬럼 추가 중...');
+        
+        this.db.run('ALTER TABLE accounts ADD COLUMN display_order INTEGER DEFAULT 0', (err) => {
+          if (err && !err.message.includes('duplicate column')) {
+            console.error('❌ accounts display_order 컬럼 추가 실패:', err.message);
+            return reject(err);
+          }
+          
+          console.log('✅ accounts display_order 컬럼 추가 완료');
+          resolve();
         });
       });
     });

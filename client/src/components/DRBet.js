@@ -3005,7 +3005,7 @@ function DRBet() {
         await axiosInstance.put(`/drbet/${updatedRecord.id}`, updatedRecord);
       }
       
-      // 사이트 상태에 "승인" 추가
+      // 사이트 상태 업데이트: 기존 승인 유지 또는 새로 추가
       const now = new Date();
       const month = String(now.getMonth() + 1).padStart(2, '0');
       const day = String(now.getDate()).padStart(2, '0');
@@ -3016,18 +3016,24 @@ function DRBet() {
       const currentSite = siteResponse.data.site;
       const currentStatus = currentSite.status || '';
       
-      // 승인 추가 (중복 방지)
-      // 상태에서 순수 상태값 추출하여 승인 여부 확인
-      const statusParts = currentStatus.split('/').map(s => s.trim());
-      const hasApproval = statusParts.some(part => {
+      // 상태를 파싱하여 승인 상태만 추출
+      const statusParts = currentStatus.split('/').map(s => s.trim()).filter(s => s);
+      
+      // 승인 상태만 필터링 (장점검, 수동입력 등 제외)
+      const approvalParts = statusParts.filter(part => {
         const pureStatus = part.replace(/^\d{1,2}\.\d{1,2}\s*/, '').trim();
         return pureStatus === '승인';
       });
       
-      let newStatus = `${datePrefix} 승인`;
-      if (currentStatus && !hasApproval) {
-        // 기존 상태가 있으면 슬래시로 구분하여 추가
-        newStatus = `${currentStatus} / ${newStatus}`;
+      let newStatus;
+      if (approvalParts.length > 0) {
+        // 기존에 승인이 있으면: 장점검/수동입력 제거하고 승인만 남김
+        newStatus = approvalParts.join(' / ');
+        log('[드롭] 기존 승인 유지, 장점검/수동입력 제거:', { before: currentStatus, after: newStatus });
+      } else {
+        // 기존에 승인이 없으면: 오늘 날짜로 승인 추가
+        newStatus = `${datePrefix} 승인`;
+        log('[드롭] 새로운 승인 추가:', { before: currentStatus, after: newStatus });
       }
       
       // 사이트 상태 업데이트
@@ -9848,7 +9854,7 @@ function DRBet() {
       </div>
       )}
 
-      {/* 승인된 사이트 중 미등록 사이트 목록 */}
+      {/* 승인된 사이트 중 미등록 사이트 목록 - 유저별 그룹화 */}
       {!isFutureDate && unregisteredApprovedSites.length > 0 && (
         <div className="mt-6 bg-gradient-to-br from-orange-50 to-red-50 dark:from-orange-900/30 dark:to-red-900/30 border-2 border-orange-200 dark:border-orange-800 rounded-xl p-5 shadow-lg">
           <h3 className="font-bold text-xl text-orange-900 dark:text-orange-200 mb-3">
@@ -9859,43 +9865,70 @@ function DRBet() {
               <div
                 ref={provided.innerRef}
                 {...provided.droppableProps}
-                className="flex flex-wrap gap-2"
+                className="space-y-3"
               >
-                {unregisteredSitesWithMemo.map((site, index) => (
-                  <Draggable
-                    key={`unregistered-site-${index}`}
-                    draggableId={`unregistered-site-${index}`}
-                    index={index}
-                  >
-                    {(provided, snapshot) => (
-                      <div
-                        ref={provided.innerRef}
-                        {...provided.draggableProps}
-                        {...provided.dragHandleProps}
-                        onContextMenu={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          handleUnregisteredSiteContextMenu(e, site);
-                        }}
-                        className={`px-3 py-2 bg-white dark:bg-gray-800 border-2 border-orange-300 dark:border-orange-700 rounded-xl cursor-move hover:bg-orange-100 dark:hover:bg-orange-900/30 transition-all duration-200 shadow-sm hover:shadow-md ${
-                          snapshot.isDragging ? 'opacity-50 shadow-xl ring-2 ring-orange-400' : ''
-                        }`}
-                      >
-                        <div className="text-sm font-semibold text-gray-900 dark:text-white">
-                          {site.identityName} - {site.siteName}
-                        </div>
-                        <div className="text-xs text-gray-600 dark:text-gray-400 mt-1">
-                          {site.status}
-                        </div>
-                        {site.notes && (
-                          <div className="text-sm font-medium text-gray-700 dark:text-gray-300 mt-2 px-2 py-1 bg-gray-50 dark:bg-gray-700/50 rounded">
-                            {site.notes}
-                          </div>
-                        )}
+                {/* 유저별로 그룹화하여 표시 */}
+                {(() => {
+                  // 유저별로 그룹화
+                  const groupedByUser = unregisteredSitesWithMemo.reduce((acc, site, index) => {
+                    const userName = site.identityName;
+                    if (!acc[userName]) {
+                      acc[userName] = [];
+                    }
+                    acc[userName].push({ ...site, originalIndex: index });
+                    return acc;
+                  }, {});
+                  
+                  return Object.entries(groupedByUser).map(([userName, sites]) => (
+                    <div key={userName} className="bg-white/60 dark:bg-gray-800/60 rounded-lg p-3">
+                      <div className="flex items-center gap-2 mb-2">
+                        <span className="text-sm font-bold text-orange-800 dark:text-orange-300 bg-orange-100 dark:bg-orange-900/50 px-2 py-1 rounded">
+                          👤 {userName}
+                        </span>
+                        <span className="text-xs text-orange-600 dark:text-orange-400">
+                          ({sites.length}개)
+                        </span>
                       </div>
-                    )}
-                  </Draggable>
-                ))}
+                      <div className="flex flex-wrap gap-2">
+                        {sites.map((site) => (
+                          <Draggable
+                            key={`unregistered-site-${site.originalIndex}`}
+                            draggableId={`unregistered-site-${site.originalIndex}`}
+                            index={site.originalIndex}
+                          >
+                            {(provided, snapshot) => (
+                              <div
+                                ref={provided.innerRef}
+                                {...provided.draggableProps}
+                                {...provided.dragHandleProps}
+                                onContextMenu={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  handleUnregisteredSiteContextMenu(e, site);
+                                }}
+                                className={`px-3 py-2 bg-white dark:bg-gray-800 border-2 border-orange-300 dark:border-orange-700 rounded-xl cursor-move hover:bg-orange-100 dark:hover:bg-orange-900/30 transition-all duration-200 shadow-sm hover:shadow-md ${
+                                  snapshot.isDragging ? 'opacity-50 shadow-xl ring-2 ring-orange-400' : ''
+                                }`}
+                              >
+                                <div className="text-sm font-semibold text-gray-900 dark:text-white">
+                                  {site.siteName}
+                                </div>
+                                <div className="text-xs text-gray-600 dark:text-gray-400 mt-1">
+                                  {site.status}
+                                </div>
+                                {site.notes && (
+                                  <div className="text-sm font-medium text-gray-700 dark:text-gray-300 mt-2 px-2 py-1 bg-gray-50 dark:bg-gray-700/50 rounded">
+                                    {site.notes}
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </Draggable>
+                        ))}
+                      </div>
+                    </div>
+                  ));
+                })()}
                 {provided.placeholder}
               </div>
             )}
@@ -9906,60 +9939,87 @@ function DRBet() {
         </div>
       )}
 
-      {/* 장점검/수동입력 사이트 목록 */}
+      {/* 장점검/수동입력 사이트 목록 - 유저별 그룹화 */}
       {!isFutureDate && pendingSites.length > 0 && (
         <div className="mt-6 bg-gradient-to-br from-yellow-50 to-amber-50 dark:from-yellow-900/30 dark:to-amber-900/30 border-2 border-yellow-200 dark:border-yellow-800 rounded-xl p-5 shadow-lg">
-          <h3 className="font-bold text-xl text-yellow-900 dark:text-yellow-200 mb-3">⚠️ 장점검/수동입력 사이트 목록</h3>
+          <h3 className="font-bold text-xl text-yellow-900 dark:text-yellow-200 mb-3">⚠️ 장점검/수동입력 사이트 목록 ({pendingSites.length}개)</h3>
           <Droppable droppableId="pending-sites-list" direction="horizontal">
-              {(provided) => (
-                <div
-                  ref={provided.innerRef}
-                  {...provided.droppableProps}
-                  className="flex flex-wrap gap-2"
-                >
-                  {pendingSites.map((site, index) => (
-                    <Draggable
-                      key={`pending-site-${index}`}
-                      draggableId={`pending-site-${index}`}
-                      index={index}
-                    >
-                      {(provided, snapshot) => (
-                        <div
-                          ref={provided.innerRef}
-                          {...provided.draggableProps}
-                          {...provided.dragHandleProps}
-                          onContextMenu={(e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            handlePendingSiteContextMenu(e, site);
-                          }}
-                          className={`px-3 py-2 bg-white dark:bg-gray-800 border-2 border-yellow-300 dark:border-yellow-700 rounded-xl cursor-move hover:bg-yellow-100 dark:hover:bg-yellow-900/30 transition-all duration-200 shadow-sm hover:shadow-md ${
-                            snapshot.isDragging ? 'opacity-50 shadow-xl ring-2 ring-yellow-400' : ''
-                          }`}
-                        >
-                          <div className="text-sm font-semibold text-gray-900 dark:text-white">
-                            {site.identityName} - {site.siteName}
-                          </div>
-                          <div className="text-xs text-gray-600 dark:text-gray-400 mt-1">
-                            {site.status}
-                          </div>
-                          {site.notes && (
-                            <div className="text-sm font-medium text-gray-700 dark:text-gray-300 mt-2 px-2 py-1 bg-gray-50 dark:bg-gray-700/50 rounded">
-                              {site.notes}
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </Draggable>
-                  ))}
-                  {provided.placeholder}
-                </div>
-              )}
-            </Droppable>
-            <p className="text-xs text-yellow-800 dark:text-yellow-300 mt-2">
-              💡 위 목록의 사이트를 드래그하여 테이블의 사이트 컬럼으로 옮기면 자동으로 입력되고 승인 상태로 변경됩니다. 우클릭으로 사이트 수정이 가능합니다.
-            </p>
-          </div>
+            {(provided) => (
+              <div
+                ref={provided.innerRef}
+                {...provided.droppableProps}
+                className="space-y-3"
+              >
+                {/* 유저별로 그룹화하여 표시 */}
+                {(() => {
+                  // 유저별로 그룹화
+                  const groupedByUser = pendingSites.reduce((acc, site, index) => {
+                    const userName = site.identityName;
+                    if (!acc[userName]) {
+                      acc[userName] = [];
+                    }
+                    acc[userName].push({ ...site, originalIndex: index });
+                    return acc;
+                  }, {});
+                  
+                  return Object.entries(groupedByUser).map(([userName, sites]) => (
+                    <div key={userName} className="bg-white/60 dark:bg-gray-800/60 rounded-lg p-3">
+                      <div className="flex items-center gap-2 mb-2">
+                        <span className="text-sm font-bold text-yellow-800 dark:text-yellow-300 bg-yellow-100 dark:bg-yellow-900/50 px-2 py-1 rounded">
+                          👤 {userName}
+                        </span>
+                        <span className="text-xs text-yellow-600 dark:text-yellow-400">
+                          ({sites.length}개)
+                        </span>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        {sites.map((site) => (
+                          <Draggable
+                            key={`pending-site-${site.originalIndex}`}
+                            draggableId={`pending-site-${site.originalIndex}`}
+                            index={site.originalIndex}
+                          >
+                            {(provided, snapshot) => (
+                              <div
+                                ref={provided.innerRef}
+                                {...provided.draggableProps}
+                                {...provided.dragHandleProps}
+                                onContextMenu={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  handlePendingSiteContextMenu(e, site);
+                                }}
+                                className={`px-3 py-2 bg-white dark:bg-gray-800 border-2 border-yellow-300 dark:border-yellow-700 rounded-xl cursor-move hover:bg-yellow-100 dark:hover:bg-yellow-900/30 transition-all duration-200 shadow-sm hover:shadow-md ${
+                                  snapshot.isDragging ? 'opacity-50 shadow-xl ring-2 ring-yellow-400' : ''
+                                }`}
+                              >
+                                <div className="text-sm font-semibold text-gray-900 dark:text-white">
+                                  {site.siteName}
+                                </div>
+                                <div className="text-xs text-gray-600 dark:text-gray-400 mt-1">
+                                  {site.status}
+                                </div>
+                                {site.notes && (
+                                  <div className="text-sm font-medium text-gray-700 dark:text-gray-300 mt-2 px-2 py-1 bg-gray-50 dark:bg-gray-700/50 rounded">
+                                    {site.notes}
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </Draggable>
+                        ))}
+                      </div>
+                    </div>
+                  ));
+                })()}
+                {provided.placeholder}
+              </div>
+            )}
+          </Droppable>
+          <p className="text-xs text-yellow-800 dark:text-yellow-300 mt-2">
+            💡 위 목록의 사이트를 드래그하여 테이블의 사이트 컬럼으로 옮기면 자동으로 입력되고 승인 상태로 변경됩니다. 우클릭으로 사이트 수정이 가능합니다.
+          </p>
+        </div>
       )}
 
 
