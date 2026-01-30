@@ -3682,10 +3682,22 @@ const SiteManagement = () => {
                                 className="w-16 px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded dark:bg-gray-700 dark:text-white focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
                               />
                               <select
-                                value={editingValue?.replace(/^\d{1,2}\.\d{1,2}\s*/, '').trim() || ''}
+                                value={(() => {
+                                  const currentValue = editingValue?.replace(/^\d{1,2}\.\d{1,2}\s*/, '').trim() || '';
+                                  // 표준 상태값이 아니면 '수동입력'으로 표시
+                                  if (currentValue && !statusOptions.includes(currentValue)) {
+                                    return '수동입력';
+                                  }
+                                  return currentValue;
+                                })()}
                                 onChange={(e) => {
                                   const datePrefix = editingStatusDate || initialDate;
-                                  setEditingValue(`${datePrefix} ${e.target.value}`);
+                                  if (e.target.value === '수동입력') {
+                                    // 수동입력 선택 시 빈 값으로 설정 (사용자가 직접 입력)
+                                    setEditingValue(`${datePrefix} `);
+                                  } else {
+                                    setEditingValue(`${datePrefix} ${e.target.value}`);
+                                  }
                                 }}
                                 className="flex-1 px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded dark:bg-gray-700 dark:text-white focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
                               >
@@ -3693,8 +3705,36 @@ const SiteManagement = () => {
                                 {statusOptions.map(opt => (
                                   <option key={opt} value={opt}>{opt}</option>
                                 ))}
+                                <option value="수동입력">✏️ 수동입력</option>
                               </select>
                             </div>
+                            
+                            {/* 수동입력 필드 */}
+                            {(() => {
+                              const currentValue = editingValue?.replace(/^\d{1,2}\.\d{1,2}\s*/, '').trim() || '';
+                              const isManualInput = currentValue === '' || (currentValue && !statusOptions.includes(currentValue));
+                              const selectedDropdown = (() => {
+                                if (currentValue && !statusOptions.includes(currentValue)) return '수동입력';
+                                return currentValue;
+                              })();
+                              
+                              if (selectedDropdown === '수동입력' || isManualInput) {
+                                return (
+                                  <input
+                                    type="text"
+                                    value={currentValue}
+                                    onChange={(e) => {
+                                      const datePrefix = editingStatusDate || initialDate;
+                                      setEditingValue(`${datePrefix} ${e.target.value}`);
+                                    }}
+                                    placeholder="상태를 직접 입력 (예: 강아지, 고구마)"
+                                    className="w-full px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded dark:bg-gray-700 dark:text-white focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                                    autoFocus
+                                  />
+                                );
+                              }
+                              return null;
+                            })()}
                             
                             {/* 추가 버튼 */}
                             <button
