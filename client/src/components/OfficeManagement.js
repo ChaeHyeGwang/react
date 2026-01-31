@@ -29,6 +29,8 @@ const OfficeManagement = () => {
   const [telegramFormState, setTelegramFormState] = useState({ telegram_bot_token: '', telegram_chat_id: '' });
   const [telegramSaving, setTelegramSaving] = useState(false);
   const [selectedTelegramOfficeId, setSelectedTelegramOfficeId] = useState(null);
+  const [showBotTokenGuide, setShowBotTokenGuide] = useState(false);
+  const [showChatIdGuide, setShowChatIdGuide] = useState(false);
 
   const loadOffices = async () => {
     setLoading(true);
@@ -207,6 +209,8 @@ const OfficeManagement = () => {
     setTelegramModalOpen(false);
     setSelectedTelegramOfficeId(null);
     setTelegramFormState({ telegram_bot_token: '', telegram_chat_id: '' });
+    setShowBotTokenGuide(false);
+    setShowChatIdGuide(false);
   };
   
   // 텔레그램 설정 저장
@@ -508,17 +512,27 @@ const OfficeManagement = () => {
       
       {/* 텔레그램 설정 모달 */}
       {telegramModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center">
+        <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto py-4">
           <div className="absolute inset-0 bg-black bg-opacity-40" onClick={closeTelegramModal} />
-          <div className="relative bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-md mx-4 p-6 z-50">
+          <div className="relative bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-lg mx-4 p-6 z-50 max-h-[90vh] overflow-y-auto">
             <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-4">
               📱 텔레그램 설정
             </h2>
-            <form onSubmit={handleTelegramSubmit} className="space-y-4">
+            <form onSubmit={handleTelegramSubmit} className="space-y-5">
+              {/* 봇 토큰 섹션 */}
               <div>
-                <label className="block text-sm font-bold text-gray-700 dark:text-gray-200 mb-1">
-                  텔레그램 봇 토큰 *
-                </label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-sm font-bold text-gray-700 dark:text-gray-200">
+                    텔레그램 봇 토큰 *
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setShowBotTokenGuide(!showBotTokenGuide)}
+                    className="text-xs text-purple-600 dark:text-purple-400 hover:text-purple-700 dark:hover:text-purple-300 flex items-center gap-1"
+                  >
+                    {showBotTokenGuide ? '▲ 가이드 접기' : '❓ 발급 방법 보기'}
+                  </button>
+                </div>
                 <input
                   type="text"
                   value={telegramFormState.telegram_bot_token}
@@ -527,26 +541,147 @@ const OfficeManagement = () => {
                   placeholder="예: 123456789:ABCdefGHIjklMNOpqrsTUVwxyz"
                   required
                 />
-                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                  @BotFather에서 발급받은 봇 토큰을 입력하세요.
-                </p>
+                
+                {/* 봇 토큰 가이드 */}
+                {showBotTokenGuide && (
+                  <div className="mt-3 p-4 bg-gradient-to-br from-purple-50 to-blue-50 dark:from-purple-900/20 dark:to-blue-900/20 rounded-lg border border-purple-200 dark:border-purple-700">
+                    <h4 className="font-bold text-purple-800 dark:text-purple-300 mb-3 flex items-center gap-2">
+                      🤖 봇 토큰 발급 방법
+                    </h4>
+                    <ol className="space-y-3 text-sm">
+                      <li className="flex gap-3">
+                        <span className="flex-shrink-0 w-6 h-6 rounded-full bg-purple-600 text-white flex items-center justify-center text-xs font-bold">1</span>
+                        <div>
+                          <p className="text-gray-700 dark:text-gray-300">텔레그램에서 <a href="https://t.me/BotFather" target="_blank" rel="noopener noreferrer" className="font-bold text-blue-600 dark:text-blue-400 hover:underline">@BotFather</a>를 검색하여 대화를 시작하세요.</p>
+                        </div>
+                      </li>
+                      <li className="flex gap-3">
+                        <span className="flex-shrink-0 w-6 h-6 rounded-full bg-purple-600 text-white flex items-center justify-center text-xs font-bold">2</span>
+                        <div>
+                          <p className="text-gray-700 dark:text-gray-300 mb-1">다음 명령어를 입력하세요:</p>
+                          <code className="block bg-gray-800 text-green-400 px-3 py-1.5 rounded text-xs font-mono">/newbot</code>
+                        </div>
+                      </li>
+                      <li className="flex gap-3">
+                        <span className="flex-shrink-0 w-6 h-6 rounded-full bg-purple-600 text-white flex items-center justify-center text-xs font-bold">3</span>
+                        <div>
+                          <p className="text-gray-700 dark:text-gray-300">봇 이름과 사용자명을 설정하면 토큰이 발급됩니다.</p>
+                          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">예: <code className="bg-gray-200 dark:bg-gray-700 px-1 rounded">7123456789:AAH...</code> 형식</p>
+                        </div>
+                      </li>
+                      <li className="flex gap-3">
+                        <span className="flex-shrink-0 w-6 h-6 rounded-full bg-purple-600 text-white flex items-center justify-center text-xs font-bold">4</span>
+                        <div>
+                          <p className="text-gray-700 dark:text-gray-300 mb-1">생성된 봇을 검색하여 대화를 시작하고 다음을 입력하세요:</p>
+                          <code className="block bg-gray-800 text-green-400 px-3 py-1.5 rounded text-xs font-mono">/start</code>
+                          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">⚡ 이 단계를 해야 봇이 메시지를 보낼 수 있습니다!</p>
+                        </div>
+                      </li>
+                      <li className="flex gap-3">
+                        <span className="flex-shrink-0 w-6 h-6 rounded-full bg-purple-600 text-white flex items-center justify-center text-xs font-bold">5</span>
+                        <div>
+                          <p className="text-gray-700 dark:text-gray-300">발급된 토큰을 복사하여 위 입력란에 붙여넣으세요.</p>
+                        </div>
+                      </li>
+                    </ol>
+                    <div className="mt-3 p-2 bg-yellow-100 dark:bg-yellow-900/30 rounded border border-yellow-300 dark:border-yellow-700">
+                      <p className="text-xs text-yellow-800 dark:text-yellow-300">
+                        ⚠️ <strong>중요:</strong> 토큰은 비밀번호와 같습니다. 절대 타인에게 공유하지 마세요!
+                      </p>
+                    </div>
+                  </div>
+                )}
               </div>
+              
+              {/* 채팅 ID 섹션 */}
               <div>
-                <label className="block text-sm font-bold text-gray-700 dark:text-gray-200 mb-1">
-                  텔레그램 채팅 ID *
-                </label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-sm font-bold text-gray-700 dark:text-gray-200">
+                    텔레그램 채팅 ID *
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setShowChatIdGuide(!showChatIdGuide)}
+                    className="text-xs text-purple-600 dark:text-purple-400 hover:text-purple-700 dark:hover:text-purple-300 flex items-center gap-1"
+                  >
+                    {showChatIdGuide ? '▲ 가이드 접기' : '❓ 확인 방법 보기'}
+                  </button>
+                </div>
                 <input
                   type="text"
                   value={telegramFormState.telegram_chat_id}
                   onChange={(e) => setTelegramFormState(prev => ({ ...prev, telegram_chat_id: e.target.value }))}
                   className="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-purple-500"
-                  placeholder="예: -1001234567890"
+                  placeholder="예: -1001234567890 또는 123456789"
                   required
                 />
-                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                  메시지를 받을 텔레그램 채팅방 ID를 입력하세요.
-                </p>
+                
+                {/* 채팅 ID 가이드 */}
+                {showChatIdGuide && (
+                  <div className="mt-3 p-4 bg-gradient-to-br from-blue-50 to-cyan-50 dark:from-blue-900/20 dark:to-cyan-900/20 rounded-lg border border-blue-200 dark:border-blue-700">
+                    <h4 className="font-bold text-blue-800 dark:text-blue-300 mb-3 flex items-center gap-2">
+                      💬 채팅 ID 확인 방법
+                    </h4>
+                    
+                    {/* 방법 1: 개인 채팅 */}
+                    <div className="mb-4">
+                      <p className="font-semibold text-gray-700 dark:text-gray-300 mb-2 flex items-center gap-2">
+                        <span className="px-2 py-0.5 bg-blue-600 text-white text-xs rounded">방법 1</span>
+                        개인 채팅 ID (나에게 직접 알림)
+                      </p>
+                      <ol className="space-y-2 text-sm ml-1">
+                        <li className="flex gap-3">
+                          <span className="flex-shrink-0 w-5 h-5 rounded-full bg-blue-500 text-white flex items-center justify-center text-xs">1</span>
+                          <p className="text-gray-700 dark:text-gray-300">
+                            <a href="https://t.me/userinfobot" target="_blank" rel="noopener noreferrer" className="font-bold text-blue-600 dark:text-blue-400 hover:underline">@userinfobot</a>에게 아무 메시지를 보내세요.
+                          </p>
+                        </li>
+                        <li className="flex gap-3">
+                          <span className="flex-shrink-0 w-5 h-5 rounded-full bg-blue-500 text-white flex items-center justify-center text-xs">2</span>
+                          <p className="text-gray-700 dark:text-gray-300">응답으로 받은 <strong>Id</strong> 숫자를 복사하세요.</p>
+                        </li>
+                      </ol>
+                    </div>
+                    
+                    {/* 방법 2: 그룹 채팅 */}
+                    <div className="pt-3 border-t border-blue-200 dark:border-blue-700">
+                      <p className="font-semibold text-gray-700 dark:text-gray-300 mb-2 flex items-center gap-2">
+                        <span className="px-2 py-0.5 bg-cyan-600 text-white text-xs rounded">방법 2</span>
+                        그룹 채팅 ID (팀 공유용)
+                      </p>
+                      <ol className="space-y-2 text-sm ml-1">
+                        <li className="flex gap-3">
+                          <span className="flex-shrink-0 w-5 h-5 rounded-full bg-cyan-500 text-white flex items-center justify-center text-xs">1</span>
+                          <p className="text-gray-700 dark:text-gray-300">위에서 만든 봇을 그룹에 초대하세요.</p>
+                        </li>
+                        <li className="flex gap-3">
+                          <span className="flex-shrink-0 w-5 h-5 rounded-full bg-cyan-500 text-white flex items-center justify-center text-xs">2</span>
+                          <p className="text-gray-700 dark:text-gray-300">
+                            <a href="https://t.me/RawDataBot" target="_blank" rel="noopener noreferrer" className="font-bold text-blue-600 dark:text-blue-400 hover:underline">@RawDataBot</a>을 그룹에 초대하세요.
+                          </p>
+                        </li>
+                        <li className="flex gap-3">
+                          <span className="flex-shrink-0 w-5 h-5 rounded-full bg-cyan-500 text-white flex items-center justify-center text-xs">3</span>
+                          <p className="text-gray-700 dark:text-gray-300">
+                            표시된 JSON에서 <code className="bg-gray-200 dark:bg-gray-700 px-1 rounded">"id": -100...</code>를 복사하세요.
+                          </p>
+                        </li>
+                        <li className="flex gap-3">
+                          <span className="flex-shrink-0 w-5 h-5 rounded-full bg-cyan-500 text-white flex items-center justify-center text-xs">4</span>
+                          <p className="text-gray-700 dark:text-gray-300">RawDataBot을 그룹에서 제거해도 됩니다.</p>
+                        </li>
+                      </ol>
+                    </div>
+                    
+                    <div className="mt-3 p-2 bg-green-100 dark:bg-green-900/30 rounded border border-green-300 dark:border-green-700">
+                      <p className="text-xs text-green-800 dark:text-green-300">
+                        💡 <strong>팁:</strong> 그룹 ID는 <code className="bg-gray-200 dark:bg-gray-700 px-1 rounded">-100</code>으로 시작합니다. 개인 ID는 숫자만 있습니다.
+                      </p>
+                    </div>
+                  </div>
+                )}
               </div>
+              
               <div className="flex justify-end gap-2 pt-2">
                 <button
                   type="button"

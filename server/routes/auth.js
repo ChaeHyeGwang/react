@@ -378,6 +378,51 @@ router.delete('/accounts/:id', auth, async (req, res) => {
   }
 });
 
+// 계정 순서 변경 - 슈퍼관리자 또는 사무실 관리자
+// 주의: 이 라우트는 /accounts/:id 보다 먼저 정의되어야 함
+router.put('/accounts/reorder', auth, async (req, res) => {
+  try {
+    const { accountOrders } = req.body;
+    
+    console.log('계정 순서 변경 요청 받음:', JSON.stringify(req.body, null, 2));
+    
+    if (!Array.isArray(accountOrders) || accountOrders.length === 0) {
+      console.log('순서 정보 오류: accountOrders =', accountOrders, 'req.body =', req.body);
+      return res.status(400).json({ error: '순서 정보가 필요합니다.' });
+    }
+
+    // 권한 체크
+    if (req.user.accountType !== 'super_admin' && !req.user.isOfficeManager) {
+      return res.status(403).json({ error: '계정 순서를 변경할 권한이 없습니다.' });
+    }
+
+    // 각 계정의 순서 업데이트
+    for (const item of accountOrders) {
+      const { id, display_order } = item;
+      
+      if (!id || display_order === undefined) continue;
+
+      // 사무실 관리자인 경우 자신의 사무실 계정만 변경 가능
+      if (req.user.isOfficeManager && req.user.officeId && req.user.accountType !== 'super_admin') {
+        const account = await db.get('SELECT office_id FROM accounts WHERE id = ?', [id]);
+        if (!account || account.office_id !== req.user.officeId) {
+          continue; // 권한 없는 계정은 건너뜀
+        }
+      }
+
+      await db.run(
+        'UPDATE accounts SET display_order = ? WHERE id = ?',
+        [display_order, id]
+      );
+    }
+
+    res.json({ success: true, message: '계정 순서가 변경되었습니다.' });
+  } catch (error) {
+    console.error('계정 순서 변경 오류:', error);
+    res.status(500).json({ error: '계정 순서 변경 중 오류가 발생했습니다.' });
+  }
+});
+
 // 계정 수정 (이름 변경) - 슈퍼관리자 또는 사무실 관리자
 router.put('/accounts/:id', auth, async (req, res) => {
   try {
@@ -437,47 +482,6 @@ router.put('/accounts/:id', auth, async (req, res) => {
   } catch (error) {
     console.error('계정 수정 오류:', error);
     res.status(500).json({ error: '계정 수정 중 오류가 발생했습니다.' });
-  }
-});
-
-// 계정 순서 변경 - 슈퍼관리자 또는 사무실 관리자
-router.put('/accounts/reorder', auth, async (req, res) => {
-  try {
-    const { accountOrders } = req.body;
-    
-    if (!Array.isArray(accountOrders) || accountOrders.length === 0) {
-      return res.status(400).json({ error: '순서 정보가 필요합니다.' });
-    }
-
-    // 권한 체크
-    if (req.user.accountType !== 'super_admin' && !req.user.isOfficeManager) {
-      return res.status(403).json({ error: '계정 순서를 변경할 권한이 없습니다.' });
-    }
-
-    // 각 계정의 순서 업데이트
-    for (const item of accountOrders) {
-      const { id, display_order } = item;
-      
-      if (!id || display_order === undefined) continue;
-
-      // 사무실 관리자인 경우 자신의 사무실 계정만 변경 가능
-      if (req.user.isOfficeManager && req.user.officeId && req.user.accountType !== 'super_admin') {
-        const account = await db.get('SELECT office_id FROM accounts WHERE id = ?', [id]);
-        if (!account || account.office_id !== req.user.officeId) {
-          continue; // 권한 없는 계정은 건너뜀
-        }
-      }
-
-      await db.run(
-        'UPDATE accounts SET display_order = ? WHERE id = ?',
-        [display_order, id]
-      );
-    }
-
-    res.json({ success: true, message: '계정 순서가 변경되었습니다.' });
-  } catch (error) {
-    console.error('계정 순서 변경 오류:', error);
-    res.status(500).json({ error: '계정 순서 변경 중 오류가 발생했습니다.' });
   }
 });
 

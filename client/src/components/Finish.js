@@ -608,13 +608,21 @@ function Finish({ isStartMode = false }) {
               const trimmedPart = part.trim();
               if (!trimmedPart) continue;
               
-              const match = trimmedPart.match(/^(칩실수|칩팅|배거)(.+?)(\d+)(먹|못먹)/);
-              if (match) {
+              // 패턴 1: 사이트명 + (칩실수|칩팅|배거) + 숫자 + (먹|못먹)
+              // 예: "로로벳칩실수5먹", "의리벳배거15못먹"
+              const match1 = trimmedPart.match(/^(.+?)(칩실수|칩팅|배거)(\d+)(먹|못먹)/);
+              
+              // 패턴 2: (칩실수|칩팅|배거) + 사이트명 + 숫자 + (먹|못먹) (기존 패턴)
+              // 예: "칩실수로로벳5먹"
+              const match2 = trimmedPart.match(/^(칩실수|칩팅|배거)(.+?)(\d+)(먹|못먹)/);
+              
+              if (match1 || match2) {
                 // 중복 체크 - 같은 내용이 이미 있으면 추가하지 않음
                 if (!notesSet.has(trimmedPart)) {
                   notesSet.add(trimmedPart);
+                  const site = match1 ? match1[1] : match2[2];
                   notesList.push({
-                    site: match[2],
+                    site: site,
                     content: trimmedPart
                   });
                 }

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import axiosInstance from '../api/axios';
 import toast from 'react-hot-toast';
 import { 
@@ -191,12 +191,21 @@ const Dashboard = () => {
   };
 
   const siteDetails = summary.siteDetails || [];
-  const filteredSiteDetails = siteDetails.filter(detail => {
-    if (siteDetailFilter === 'approved') return detail.includedInApproved;
-    if (siteDetailFilter === 'excluded') return !detail.includedInTotal;
-    if (siteDetailFilter === 'included') return detail.includedInTotal;
-    return true;
-  });
+  
+  // useMemo로 필터링 최적화 및 정확성 보장
+  const filteredSiteDetails = useMemo(() => {
+    console.log('[Dashboard] 필터링 적용:', siteDetailFilter, '전체:', siteDetails.length);
+    
+    const result = siteDetails.filter(detail => {
+      if (siteDetailFilter === 'approved') return detail.includedInApproved === true;
+      if (siteDetailFilter === 'excluded') return detail.includedInTotal === false;
+      if (siteDetailFilter === 'included') return detail.includedInTotal === true;
+      return true; // 'all'
+    });
+    
+    console.log('[Dashboard] 필터링 결과:', result.length, '개');
+    return result;
+  }, [siteDetails, siteDetailFilter]);
 
   if (loading) {
     return (
@@ -325,19 +334,26 @@ const Dashboard = () => {
                 <span className="text-sm font-normal text-gray-600 dark:text-gray-300 ml-1">/ {summary.totalSites}</span>
               </p>
             </div>
-            <div className="bg-orange-100 p-3 rounded-full">
-              <svg className="w-8 h-8 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <div className="bg-orange-100 dark:bg-orange-900/30 p-3 rounded-full">
+              <svg className="w-8 h-8 text-orange-600 dark:text-orange-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9" />
               </svg>
             </div>
           </div>
-          <div className="mt-4">
-            <div className="w-full bg-gray-200 rounded-full h-2">
+          <div className="mt-3 text-xs text-gray-500 dark:text-gray-400 space-y-1">
+            <p>• <span className="font-semibold text-orange-600 dark:text-orange-400">{summary.activeSites}</span> = 마지막 상태가 "승인"인 사이트</p>
+            <p>• <span className="font-semibold text-gray-700 dark:text-gray-300">{summary.totalSites}</span> = 활성 사이트 (졸업/팅/가입전/대기 제외)</p>
+          </div>
+          <div className="mt-3">
+            <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
               <div
                 className="bg-orange-500 h-2 rounded-full transition-all"
                 style={{ width: `${summary.totalSites > 0 ? (summary.activeSites / summary.totalSites) * 100 : 0}%` }}
               ></div>
             </div>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 text-right">
+              승인율 {summary.totalSites > 0 ? Math.round((summary.activeSites / summary.totalSites) * 100) : 0}%
+            </p>
           </div>
         </div>
       </div>
@@ -363,22 +379,32 @@ const Dashboard = () => {
               <div className="flex flex-wrap gap-2">
                 {[
                   { key: 'all', label: `전체 (${siteDetails.length})` },
-                  { key: 'approved', label: `승인 포함 (${siteDetails.filter(d => d.includedInApproved).length})` },
-                  { key: 'included', label: `전체 집계 포함 (${siteDetails.filter(d => d.includedInTotal).length})` },
-                  { key: 'excluded', label: `집계 제외 (${siteDetails.filter(d => !d.includedInTotal).length})` }
+                  { key: 'approved', label: `승인 포함 (${siteDetails.filter(d => d.includedInApproved === true).length})` },
+                  { key: 'included', label: `전체 집계 포함 (${siteDetails.filter(d => d.includedInTotal === true).length})` },
+                  { key: 'excluded', label: `집계 제외 (${siteDetails.filter(d => d.includedInTotal === false).length})` }
                 ].map(filter => (
                   <button
                     key={filter.key}
-                    onClick={() => setSiteDetailFilter(filter.key)}
-                    className={`px-3 py-1 rounded-full text-xs font-semibold ${
+                    onClick={() => {
+                      console.log('[Dashboard] 필터 버튼 클릭:', filter.key);
+                      setSiteDetailFilter(filter.key);
+                    }}
+                    className={`px-3 py-1 rounded-full text-xs font-semibold transition-colors ${
                       siteDetailFilter === filter.key
                         ? 'bg-blue-600 text-white'
-                        : 'bg-gray-200 dark:bg-gray-700 dark:text-white text-gray-700'
+                        : 'bg-gray-200 dark:bg-gray-700 dark:text-white text-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600'
                     }`}
                   >
                     {filter.label}
                   </button>
                 ))}
+              </div>
+              
+              {/* 현재 필터 상태 표시 */}
+              <div className="text-sm text-gray-600 dark:text-gray-400">
+                📋 현재 필터: <span className="font-semibold text-purple-600 dark:text-purple-400">{siteDetailFilter}</span> | 
+                표시: <span className="font-semibold text-blue-600 dark:text-blue-400">{filteredSiteDetails.length}개</span> / 
+                전체: {siteDetails.length}개
               </div>
 
               <div className="overflow-x-auto max-h-96">
@@ -400,8 +426,16 @@ const Dashboard = () => {
                         </td>
                       </tr>
                     ) : (
-                      filteredSiteDetails.map(detail => (
-                        <tr key={`${detail.siteName}-${detail.lastStatus}`} className="text-sm dark:text-white">
+                      filteredSiteDetails
+                        .filter(detail => {
+                          // 렌더링 시점에서 한번 더 필터 적용 (안전장치)
+                          if (siteDetailFilter === 'approved') return detail.includedInApproved === true;
+                          if (siteDetailFilter === 'excluded') return detail.includedInTotal === false;
+                          if (siteDetailFilter === 'included') return detail.includedInTotal === true;
+                          return true;
+                        })
+                        .map((detail, idx) => (
+                        <tr key={`${detail.siteName}-${detail.lastStatus}-${idx}`} className="text-sm dark:text-white">
                           <td className="border border-gray-300 dark:border-gray-600 px-3 py-2 font-semibold">{detail.siteName}</td>
                           <td className="border border-gray-300 dark:border-gray-600 px-3 py-2">
                             <Badge color={detail.lastStatus.includes('승인') ? 'green' : 'gray'}>{detail.lastStatus}</Badge>
@@ -410,7 +444,13 @@ const Dashboard = () => {
                             {detail.includedInTotal ? <Badge color="blue">포함</Badge> : <Badge color="gray">제외</Badge>}
                           </td>
                           <td className="border border-gray-300 dark:border-gray-600 px-3 py-2 text-center">
-                            {detail.includedInApproved ? <Badge color="green">승인</Badge> : <Badge color="gray">-</Badge>}
+                            {detail.includedInApproved === true ? (
+                              <Badge color="green">승인</Badge>
+                            ) : (
+                              <span className="text-gray-400">
+                                - <span className="text-xs">({String(detail.includedInApproved)})</span>
+                              </span>
+                            )}
                           </td>
                           <td className="border border-gray-300 dark:border-gray-600 px-3 py-2 text-sm text-gray-600 dark:text-gray-300">
                             {detail.exclusionReason || '-'}

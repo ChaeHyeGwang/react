@@ -217,6 +217,12 @@ const Layout = () => {
 
     if (sourceIndex === destIndex) return;
 
+    // accounts가 비어있으면 처리하지 않음
+    if (!accounts || accounts.length === 0) {
+      console.warn('계정 목록이 비어있습니다.');
+      return;
+    }
+
     const reorderedAccounts = Array.from(accounts);
     const [removed] = reorderedAccounts.splice(sourceIndex, 1);
     reorderedAccounts.splice(destIndex, 0, removed);
@@ -226,14 +232,24 @@ const Layout = () => {
 
     // 서버에 순서 저장
     try {
-      const accountOrders = reorderedAccounts.map((acc, index) => ({
-        id: acc.id,
-        display_order: index
-      }));
+      const accountOrders = reorderedAccounts
+        .filter(acc => acc && acc.id) // id가 있는 항목만 포함
+        .map((acc, index) => ({
+          id: acc.id,
+          display_order: index
+        }));
 
+      // 빈 배열이면 서버에 요청하지 않음
+      if (accountOrders.length === 0) {
+        console.warn('유효한 계정이 없습니다.');
+        return;
+      }
+
+      console.log('순서 변경 요청:', accountOrders);
       await axiosInstance.put('/auth/accounts/reorder', { accountOrders });
       toast.success('순서가 변경되었습니다.');
     } catch (error) {
+      console.error('순서 변경 실패:', error.response?.data || error.message);
       toast.error('순서 변경에 실패했습니다.');
       // 실패 시 원래 순서로 복원
       fetchedAccountsOnce.current = false;
