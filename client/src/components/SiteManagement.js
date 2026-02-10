@@ -6,6 +6,7 @@ import { getIdentitiesCached, invalidateIdentitiesCache } from '../api/identitie
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import SiteNotesModal from './SiteNotesModal';
 import { useAuth } from '../contexts/AuthContext';
+import { useRealtimeSync } from '../hooks/useRealtimeSync';
 
 // Debounce 유틸리티 함수
 const useDebounce = (value, delay) => {
@@ -507,6 +508,18 @@ const SiteManagement = () => {
       }
     }
   };
+
+  // 실시간 동기화: 다른 사용자가 사이트/명의를 변경하면 자동 새로고침
+  useRealtimeSync('sites', {
+    onDataChanged: useCallback(() => {
+      loadIdentities();
+      if (selectedIdentity) {
+        loadSites(selectedIdentity === 'all' ? 'all' : selectedIdentity);
+      }
+    // eslint-disable-next-line
+    }, [selectedIdentity]),
+    events: ['sites:changed', 'identities:changed'],
+  });
 
   // 명의 목록 로드
   const loadIdentities = async () => {

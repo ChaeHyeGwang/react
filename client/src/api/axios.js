@@ -50,6 +50,11 @@ axiosInstance.interceptors.request.use(
     if (selectedAccountId) {
       config.headers['X-Selected-Account-Id'] = selectedAccountId;
     }
+
+    // Socket.IO 소켓 ID 추가 (실시간 동기화에서 자기 자신 제외용)
+    if (window.__socketId) {
+      config.headers['X-Socket-Id'] = window.__socketId;
+    }
     
     return config;
   },

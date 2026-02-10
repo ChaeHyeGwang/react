@@ -4,6 +4,7 @@ const jwt = require('jsonwebtoken');
 const { body, validationResult } = require('express-validator');
 const db = require('../database/db');
 const { auth } = require('../middleware/auth');
+const { logAudit } = require('../utils/auditLog');
 
 const router = express.Router();
 
@@ -280,6 +281,16 @@ router.post('/accounts', auth, async (req, res) => {
       return res.status(500).json({ error: '계정 생성 후 조회에 실패했습니다.' });
     }
 
+    // 감사 로그 기록
+    await logAudit(req, {
+      action: 'CREATE',
+      tableName: 'accounts',
+      recordId: newAccountId,
+      oldData: null,
+      newData: newAccount,
+      description: `계정 생성 (${username.trim()}, ${displayName})`
+    });
+
     res.status(201).json({
       success: true,
       account: {
@@ -367,6 +378,16 @@ router.delete('/accounts/:id', auth, async (req, res) => {
     await db.run('DELETE FROM accounts WHERE id = ?', [accountIdToDelete]);
 
     await logAccess(req.user.accountId, 'ACCOUNT_DELETE', `계정 삭제: ${accountToDelete.username} (${accountToDelete.display_name})`, req);
+
+    // 감사 로그 기록
+    await logAudit(req, {
+      action: 'DELETE',
+      tableName: 'accounts',
+      recordId: accountIdToDelete,
+      oldData: accountToDelete,
+      newData: null,
+      description: `계정 삭제 (${accountToDelete.username}, ${accountToDelete.display_name})`
+    });
 
     res.json({ 
       success: true, 
@@ -471,6 +492,16 @@ router.put('/accounts/:id', auth, async (req, res) => {
     );
 
     await logAccess(req.user.accountId, 'ACCOUNT_UPDATE', `계정 수정: ${accountToUpdate.display_name} → ${display_name.trim()}`, req);
+
+    // 감사 로그 기록
+    await logAudit(req, {
+      action: 'UPDATE',
+      tableName: 'accounts',
+      recordId: accountIdToUpdate,
+      oldData: accountToUpdate,
+      newData: updatedAccount,
+      description: `계정 수정 (${accountToUpdate.display_name} → ${display_name.trim()})`
+    });
 
     res.json({ 
       success: true, 

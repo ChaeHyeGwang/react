@@ -7,6 +7,8 @@ const { getAccountOfficeId, getSiteNoteData } = require('../services/siteNotesSe
 const { getKSTDateTimeString } = require('../utils/time');
 // attendanceLog 함수들은 autoAttendance.js에서 사용
 const { handleNewRecord, handleUpdateRecord, handleDeleteRecord } = require('../services/autoAttendance');
+const { logAudit } = require('../utils/auditLog');
+const { emitDataChange } = require('../socket');
 
 // 🎯 자동 출석 처리는 autoAttendance.js 모듈에서 담당합니다.
 
@@ -334,11 +336,29 @@ router.post('/', auth, async (req, res) => {
       [recordId]
     );
 
+    // 감사 로그 기록
+    await logAudit(req, {
+      action: 'CREATE',
+      tableName: 'drbet_records',
+      recordId: recordId,
+      oldData: null,
+      newData: newRecord,
+      description: `DR벳 기록 생성 (날짜: ${record_date})`
+    });
+
     // 응답에 출석일 정보 추가
     res.status(201).json({
       ...newRecord,
       _attendanceDays: attendanceDaysMap
     });
+
+    // 실시간 동기화: 같은 계정의 다른 사용자에게 알림
+    emitDataChange('drbet:changed', {
+      action: 'create',
+      date: record_date,
+      accountId: req.user.filterAccountId,
+      user: req.user.displayName || req.user.username
+    }, { room: `page:drbet`, excludeSocket: req.socketId });
   } catch (error) {
     console.error('DR벳 기록 생성 실패:', error);
     res.status(500).json({ message: 'DR벳 기록 생성 실패', error: error.message });
@@ -597,11 +617,30 @@ router.put('/:id', auth, async (req, res) => {
       [id, existingRecord.account_id]
     );
 
+    // 감사 로그 기록
+    await logAudit(req, {
+      action: 'UPDATE',
+      tableName: 'drbet_records',
+      recordId: id,
+      oldData: existingRecord,
+      newData: updatedRecord,
+      description: `DR벳 기록 수정 (날짜: ${record_date || existingRecord.record_date})`
+    });
+
     // 응답에 출석일 정보 추가
     res.json({
       ...updatedRecord,
       _attendanceDays: attendanceDaysMap // { "명의||사이트": 출석일 }
     });
+
+    // 실시간 동기화
+    emitDataChange('drbet:changed', {
+      action: 'update',
+      recordId: id,
+      date: record_date || existingRecord.record_date,
+      accountId: req.user.filterAccountId,
+      user: req.user.displayName || req.user.username
+    }, { room: `page:drbet`, excludeSocket: req.socketId });
   } catch (error) {
     console.error('DR벳 기록 수정 실패:', error);
     res.status(500).json({ message: 'DR벳 기록 수정 실패', error: error.message });
@@ -630,7 +669,26 @@ router.delete('/:id', auth, async (req, res) => {
     await db.run(`DELETE FROM drbet_records WHERE id = ? AND account_id = ?`, [id, accountId]);
     await invalidateSummaryForDate(accountId, existingRecord.record_date);
     
+    // 감사 로그 기록
+    await logAudit(req, {
+      action: 'DELETE',
+      tableName: 'drbet_records',
+      recordId: id,
+      oldData: existingRecord,
+      newData: null,
+      description: `DR벳 기록 삭제 (날짜: ${existingRecord.record_date})`
+    });
+
     res.json({ message: 'DR벳 기록이 삭제되었습니다' });
+
+    // 실시간 동기화
+    emitDataChange('drbet:changed', {
+      action: 'delete',
+      recordId: id,
+      date: existingRecord.record_date,
+      accountId: req.user.filterAccountId,
+      user: req.user.displayName || req.user.username
+    }, { room: `page:drbet`, excludeSocket: req.socketId });
   } catch (error) {
     console.error('DR벳 기록 삭제 실패:', error);
     res.status(500).json({ message: 'DR벳 기록 삭제 실패' });

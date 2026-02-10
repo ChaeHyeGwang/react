@@ -5,6 +5,8 @@ const db = require('../database/db');
 const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
 const { getKSTDateTimeString } = require('../utils/time');
+const { logAudit } = require('../utils/auditLog');
+const { emitDataChange } = require('../socket');
 
 // 디버그 모드 (프로덕션에서는 false)
 const DEBUG = process.env.NODE_ENV !== 'production';
@@ -454,32 +456,20 @@ router.put('/summary', auth, async (req, res) => {
         const summaryFields = ['date', 'account_id', 'yesterday_balance', 'coin_wallet', 'manual_withdrawals', 'start_amount_total', 'updated_at'];
         const summaryValues = [targetDate, filterAccountId, normalizedYesterday, normalizedCoinWallet, manual_withdrawals || null, start_amount_total !== undefined && start_amount_total !== null ? start_amount_total : 0, nowKST];
         
-        let sql = '';
-        if (hasCashOnHandInSummary) {
-          // cash_on_hand 컬럼이 있으면 제외
-          sql = `
+        // COALESCE를 사용하여 null로 전달된 필드는 기존 값을 유지
+        // - manual_withdrawals: 수동 취침 저장 시에만 명시적 값 전달, 다른 저장에서는 null → 기존 값 유지
+        // - coin_wallet: 코인지갑 저장 시에만 명시적 값 전달, 다른 저장에서는 null → 기존 값 유지
+        // 이렇게 하면 동시 저장 시 레이스 컨디션으로 인한 데이터 덮어쓰기 방지
+        const sql = `
             INSERT INTO ${summaryTable} (date, account_id, yesterday_balance, coin_wallet, manual_withdrawals, start_amount_total, updated_at)
             VALUES (?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(date, account_id) DO UPDATE SET
               yesterday_balance = excluded.yesterday_balance,
-              coin_wallet = excluded.coin_wallet,
-              manual_withdrawals = excluded.manual_withdrawals,
-              start_amount_total = excluded.start_amount_total,
+              coin_wallet = COALESCE(excluded.coin_wallet, ${summaryTable}.coin_wallet),
+              manual_withdrawals = COALESCE(excluded.manual_withdrawals, ${summaryTable}.manual_withdrawals),
+              start_amount_total = COALESCE(excluded.start_amount_total, ${summaryTable}.start_amount_total),
               updated_at = excluded.updated_at
           `;
-        } else {
-          // cash_on_hand 컬럼이 없으면 그대로 저장
-          sql = `
-            INSERT INTO ${summaryTable} (date, account_id, yesterday_balance, coin_wallet, manual_withdrawals, start_amount_total, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(date, account_id) DO UPDATE SET
-              yesterday_balance = excluded.yesterday_balance,
-              coin_wallet = excluded.coin_wallet,
-              manual_withdrawals = excluded.manual_withdrawals,
-              start_amount_total = excluded.start_amount_total,
-              updated_at = excluded.updated_at
-          `;
-        }
         
         log('📝 SQL 파라미터:', summaryValues);
         log('💰 시제 업데이트 예정:', { normalizedCash, filterAccountId });
@@ -499,35 +489,79 @@ router.put('/summary', auth, async (req, res) => {
           }
         };
         
-        dbLegacy.run(sql, summaryValues, async function(runErr) {
-          if (runErr) {
-            console.error('❌ SQL 실행 오류:', runErr);
-            return res.status(500).json({ error: runErr.message });
+        // 기존 데이터 조회 (변경 비교용)
+        dbLegacy.get(
+          `SELECT * FROM ${summaryTable} WHERE date = ? AND account_id = ?`,
+          [targetDate, filterAccountId],
+          (getErr, oldRecord) => {
+            dbLegacy.run(sql, summaryValues, async function(runErr) {
+              if (runErr) {
+                console.error('❌ SQL 실행 오류:', runErr);
+                return res.status(500).json({ error: runErr.message });
+              }
+              
+              log('✅ SQL 실행 성공, lastID:', this.lastID);
+              log(`💾 [${mode} 모드] 저장된 manual_withdrawals:`, manual_withdrawals);
+              log(`💾 [${mode} 모드] 저장된 테이블:`, summaryTable);
+              
+              try {
+                await updateAccountCash();
+              } catch (accountErr) {
+                console.warn('계정 시제 업데이트 경고:', accountErr.message);
+              }
+              
+              const responseData = {
+                message: '요약이 수정되었습니다.',
+                date: targetDate,
+                cash_on_hand: normalizedCash,
+                yesterday_balance: normalizedYesterday,
+                coin_wallet: normalizedCoinWallet,
+                manual_withdrawals: manual_withdrawals || null,
+                start_amount_total: start_amount_total !== undefined && start_amount_total !== null ? start_amount_total : 0
+              };
+
+              // 실제 변경이 있을 때만 감사 로그 기록
+              // null로 전송된 필드(COALESCE로 기존값 유지)는 비교에서 제외
+              const hasRealChange = !oldRecord || 
+                (cash_on_hand !== undefined && cash_on_hand !== null && Number(oldRecord.cash_on_hand || 0) !== normalizedCash) ||
+                (yesterday_balance !== undefined && yesterday_balance !== null && Number(oldRecord.yesterday_balance || 0) !== normalizedYesterday) ||
+                (coin_wallet !== undefined && coin_wallet !== null && Number(oldRecord.coin_wallet || 0) !== normalizedCoinWallet) ||
+                (manual_withdrawals !== undefined && manual_withdrawals !== null && oldRecord.manual_withdrawals !== manual_withdrawals) ||
+                (start_amount_total !== undefined && start_amount_total !== null && Number(oldRecord.start_amount_total || 0) !== Number(start_amount_total));
+
+              if (hasRealChange) {
+                // 변경된 필드만 설명에 포함
+                const changedFields = [];
+                if (cash_on_hand !== undefined && cash_on_hand !== null && (!oldRecord || Number(oldRecord.cash_on_hand || 0) !== normalizedCash)) changedFields.push('시제');
+                if (yesterday_balance !== undefined && yesterday_balance !== null && (!oldRecord || Number(oldRecord.yesterday_balance || 0) !== normalizedYesterday)) changedFields.push('전잔');
+                if (coin_wallet !== undefined && coin_wallet !== null && (!oldRecord || Number(oldRecord.coin_wallet || 0) !== normalizedCoinWallet)) changedFields.push('코인');
+                if (manual_withdrawals !== undefined && manual_withdrawals !== null && (!oldRecord || oldRecord.manual_withdrawals !== manual_withdrawals)) changedFields.push('수동환전');
+                if (start_amount_total !== undefined && start_amount_total !== null && (!oldRecord || Number(oldRecord.start_amount_total || 0) !== Number(start_amount_total))) changedFields.push('시작금액');
+
+                logAudit(req, {
+                  action: oldRecord ? 'UPDATE' : 'CREATE',
+                  tableName: summaryTable,
+                  recordId: `${targetDate}-${filterAccountId}`,
+                  oldData: oldRecord || null,
+                  newData: responseData,
+                  description: `${mode === 'start' ? '시작' : '마무리'} 요약 수정 (${targetDate}, ${changedFields.join('/')})`
+                });
+              }
+
+              log(`📤 [${mode} 모드] 응답 전송:`, responseData);
+              res.json(responseData);
+
+              // 실시간 동기화
+              emitDataChange('finish:changed', {
+                action: 'update',
+                date: targetDate,
+                mode,
+                accountId: filterAccountId,
+                user: req.user.displayName || req.user.username
+              }, { room: `page:${mode === 'start' ? 'start' : 'finish'}`, excludeSocket: req.socketId });
+            });
           }
-          
-          log('✅ SQL 실행 성공, lastID:', this.lastID);
-          log(`💾 [${mode} 모드] 저장된 manual_withdrawals:`, manual_withdrawals);
-          log(`💾 [${mode} 모드] 저장된 테이블:`, summaryTable);
-          
-          try {
-            await updateAccountCash();
-          } catch (accountErr) {
-            console.warn('계정 시제 업데이트 경고:', accountErr.message);
-          }
-          
-          const responseData = {
-            message: '요약이 수정되었습니다.',
-            date: targetDate,
-            cash_on_hand: normalizedCash,
-            yesterday_balance: normalizedYesterday,
-            coin_wallet: normalizedCoinWallet,
-            manual_withdrawals: manual_withdrawals || null,
-            start_amount_total: start_amount_total !== undefined && start_amount_total !== null ? start_amount_total : 0
-          };
-          
-          log(`📤 [${mode} 모드] 응답 전송:`, responseData);
-          res.json(responseData);
-        });
+        );
       });
     }
   });
@@ -567,6 +601,15 @@ router.put('/:identityName', auth, async (req, res) => {
           identity_name: identityName,
           date: targetDate
         });
+
+        // 실시간 동기화
+        emitDataChange('finish:changed', {
+          action: 'update',
+          date: targetDate,
+          mode: dataMode,
+          accountId: filterAccountId,
+          user: req.user.displayName || req.user.username
+        }, { room: `page:${dataMode === 'start' ? 'start' : 'finish'}`, excludeSocket: req.socketId });
       });
       return;
     }
@@ -590,18 +633,47 @@ router.put('/:identityName', auth, async (req, res) => {
         updated_at = excluded.updated_at
     `;
     
-    dbLegacy.run(sql, [targetDate, identityName, filterAccountId, remaining_amount, timestamp], function(err) {
-      if (err) {
-        console.error('명의 잔액 수정 실패:', err);
-        return res.status(500).json({ error: err.message });
+    // 기존 데이터 조회 (변경 비교용)
+    dbLegacy.get(
+      `SELECT * FROM ${dataTable} WHERE date = ? AND identity_name = ? AND account_id = ?`,
+      [targetDate, identityName, filterAccountId],
+      (getErr, oldRecord) => {
+        dbLegacy.run(sql, [targetDate, identityName, filterAccountId, remaining_amount, timestamp], function(err) {
+          if (err) {
+            console.error('명의 잔액 수정 실패:', err);
+            return res.status(500).json({ error: err.message });
+          }
+
+          // 실제 변경이 있을 때만 감사 로그
+          const oldAmount = oldRecord ? Number(oldRecord.remaining_amount || 0) : null;
+          if (oldAmount === null || oldAmount !== Number(remaining_amount)) {
+            logAudit(req, {
+              action: oldRecord ? 'UPDATE' : 'CREATE',
+              tableName: dataTable,
+              recordId: `${targetDate}-${identityName}-${filterAccountId}`,
+              oldData: oldRecord || null,
+              newData: { date: targetDate, identity_name: identityName, remaining_amount },
+              description: `명의 잔액 수정 (${identityName}, ${targetDate})`
+            });
+          }
+
+          res.json({
+            message: '명의 잔액이 수정되었습니다.',
+            identity_name: identityName,
+            date: targetDate
+          });
+
+          // 실시간 동기화
+          emitDataChange('finish:changed', {
+            action: 'update',
+            date: targetDate,
+            mode: dataMode,
+            accountId: filterAccountId,
+            user: req.user.displayName || req.user.username
+          }, { room: `page:${dataMode === 'start' ? 'start' : 'finish'}`, excludeSocket: req.socketId });
+        });
       }
-      
-      res.json({
-        message: '명의 잔액이 수정되었습니다.',
-        identity_name: identityName,
-        date: targetDate
-      });
-    });
+    );
   } catch (error) {
     console.error('명의 잔액 수정 실패:', error);
     res.status(500).json({ error: error.message });

@@ -3,6 +3,7 @@ const router = express.Router();
 const { auth, requireSuperAdmin } = require('../middleware/auth');
 const db = require('../database/db');
 const { getKSTDateTimeString } = require('../utils/time');
+const { logAudit } = require('../utils/auditLog');
 
 // 사무실 목록 조회 (슈퍼관리자: 전체, 사무실 관리자: 자신의 사무실만)
 router.get('/', auth, async (req, res) => {
@@ -61,7 +62,7 @@ router.get('/:id', auth, async (req, res) => {
 // 사무실 생성 (슈퍼관리자만)
 router.post('/', auth, requireSuperAdmin, async (req, res) => {
   try {
-    const { name, manager_account_id, status, description, address, phone, notes, telegram_bot_token, telegram_chat_id } = req.body;
+    const { name, manager_account_id, status, description, notes, telegram_bot_token, telegram_chat_id, telegram_id } = req.body;
     
     if (!name) {
       return res.status(400).json({ success: false, message: '사무실명은 필수입니다' });
@@ -79,13 +80,23 @@ router.post('/', auth, requireSuperAdmin, async (req, res) => {
     }
     
     const result = await db.run(
-      `INSERT INTO offices (name, manager_account_id, status, description, address, phone, notes, telegram_bot_token, telegram_chat_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [name, manager_account_id || null, status || 'active', description || '', address || '', phone || '', notes || '', String(telegram_bot_token || '').trim(), String(telegram_chat_id || '').trim()]
+      `INSERT INTO offices (name, manager_account_id, status, description, notes, telegram_bot_token, telegram_chat_id, telegram_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [name, manager_account_id || null, status || 'active', description || '', notes || '', String(telegram_bot_token || '').trim(), String(telegram_chat_id || '').trim(), String(telegram_id || '').trim()]
     );
     
     const newOffice = await db.get('SELECT * FROM offices WHERE id = ?', [result.lastID]);
     
+    // 감사 로그 기록
+    await logAudit(req, {
+      action: 'CREATE',
+      tableName: 'offices',
+      recordId: result.lastID,
+      oldData: null,
+      newData: newOffice,
+      description: `사무실 생성 (${name})`
+    });
+
     res.status(201).json({ success: true, office: newOffice });
   } catch (error) {
     console.error('사무실 생성 실패:', error);
@@ -97,7 +108,7 @@ router.post('/', auth, requireSuperAdmin, async (req, res) => {
 router.put('/:id', auth, requireSuperAdmin, async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, manager_account_id, status, description, address, phone, notes, telegram_bot_token, telegram_chat_id } = req.body;
+    const { name, manager_account_id, status, description, notes, telegram_bot_token, telegram_chat_id, telegram_id } = req.body;
     
     const existingOffice = await db.get('SELECT * FROM offices WHERE id = ?', [id]);
     if (!existingOffice) {
@@ -124,13 +135,23 @@ router.put('/:id', auth, requireSuperAdmin, async (req, res) => {
     await db.run(
       `UPDATE offices 
        SET name = ?, manager_account_id = ?, status = ?, description = ?, 
-           address = ?, phone = ?, notes = ?, telegram_bot_token = ?, telegram_chat_id = ?, updated_at = ?
+           notes = ?, telegram_bot_token = ?, telegram_chat_id = ?, telegram_id = ?, updated_at = ?
        WHERE id = ?`,
-      [name, manager_account_id || null, status || 'active', description || '', address || '', phone || '', notes || '', String(telegram_bot_token || '').trim(), String(telegram_chat_id || '').trim(), timestamp, id]
+      [name, manager_account_id || null, status || 'active', description || '', notes || '', String(telegram_bot_token || '').trim(), String(telegram_chat_id || '').trim(), String(telegram_id || '').trim(), timestamp, id]
     );
     
     const updatedOffice = await db.get('SELECT * FROM offices WHERE id = ?', [id]);
     
+    // 감사 로그 기록
+    await logAudit(req, {
+      action: 'UPDATE',
+      tableName: 'offices',
+      recordId: id,
+      oldData: existingOffice,
+      newData: updatedOffice,
+      description: `사무실 수정 (${name})`
+    });
+
     res.json({ success: true, office: updatedOffice });
   } catch (error) {
     console.error('사무실 수정 실패:', error);
@@ -258,6 +279,16 @@ router.delete('/:id', auth, requireSuperAdmin, async (req, res) => {
     
     await db.run('DELETE FROM offices WHERE id = ?', [id]);
     
+    // 감사 로그 기록
+    await logAudit(req, {
+      action: 'DELETE',
+      tableName: 'offices',
+      recordId: id,
+      oldData: office,
+      newData: null,
+      description: `사무실 삭제 (${office.name})`
+    });
+
     res.json({ success: true, message: '사무실이 삭제되었습니다' });
   } catch (error) {
     console.error('사무실 삭제 실패:', error);

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import { useSocket } from '../contexts/SocketContext';
 import axiosInstance from '../api/axios';
 import { getIdentitiesCached } from '../api/identitiesCache';
 import toast from 'react-hot-toast';
@@ -8,6 +9,7 @@ import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 
 const Layout = () => {
   const { user, logout, selectedAccountId, setSelectedAccountId, isAdmin, isOfficeManager } = useAuth();
+  const { connected: socketConnected } = useSocket();
   const navigate = useNavigate();
   const [identities, setIdentities] = useState([]);
   const [showIdentityMenu, setShowIdentityMenu] = useState(false);
@@ -279,7 +281,9 @@ const Layout = () => {
     // 사무실 관리 메뉴 (슈퍼관리자 또는 사무실 관리자)
     ...(isAdmin || isOfficeManager ? [
       { to: '/offices', label: '사무실 관리', icon: '🏢', alwaysShow: true }
-    ] : [])
+    ] : []),
+    // 변경 이력 메뉴 (모든 로그인 사용자)
+    { to: '/audit-logs', label: '변경 이력', icon: '📝', alwaysShow: true }
   ];
 
   return (
@@ -442,6 +446,10 @@ const Layout = () => {
                     관리자
                   </span>
                 )}
+                <span 
+                  className={`ml-2 inline-block w-2 h-2 rounded-full ${socketConnected ? 'bg-green-500' : 'bg-red-500'}`}
+                  title={socketConnected ? '실시간 동기화 연결됨' : '실시간 동기화 연결 끊김'}
+                ></span>
               </span>
               <button
                 onClick={handleLogout}

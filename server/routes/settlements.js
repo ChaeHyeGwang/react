@@ -5,6 +5,8 @@ const db = require('../database/db');
 const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
 const { getKSTDateTimeString } = require('../utils/time');
+const { logAudit } = require('../utils/auditLog');
+const { emitDataChange } = require('../socket');
 
 // 기존 sqlite3 연결도 유지 (settlements 테이블용)
 // 환경변수 DB_PATH 사용 (프로덕션: management_system_prod.db)
@@ -280,10 +282,30 @@ router.put('/:id', auth, (req, res) => {
     
     // 기존 레코드가 있었던 경우
     console.log(`정산 기록 수정 성공: 월=${targetYearMonth}, 일=${day_number}, 변경된 행=${this.changes}`);
+    
+    // 감사 로그 기록
+    logAudit(req, {
+      action: 'UPDATE',
+      tableName: 'settlements',
+      recordId: id,
+      oldData: null,
+      newData: { year_month: targetYearMonth, day_number, ka_amount, seup, site_content, user_data: userDataStr },
+      description: `정산 기록 수정 (${targetYearMonth} ${day_number}일)`
+    });
+
     res.json({
       changes: this.changes,
       message: `${targetYearMonth}월 ${day_number}일 정산 기록이 수정되었습니다.`
     });
+
+    // 실시간 동기화
+    emitDataChange('settlements:changed', {
+      action: 'update',
+      yearMonth: targetYearMonth,
+      dayNumber: day_number,
+      accountId: filterAccountId,
+      user: req.user.displayName || req.user.username
+    }, { room: 'page:settlements', excludeSocket: req.socketId });
   });
 });
 
@@ -337,10 +359,30 @@ router.put('/day/:dayNumber', auth, (req, res) => {
     }
     
     console.log(`특정 일자 정산 기록 수정 성공: 월=${currentYearMonth}, 일=${dayNumber}, 변경된 행=${this.changes}`);
+    
+    // 감사 로그 기록
+    logAudit(req, {
+      action: 'UPDATE',
+      tableName: 'settlements',
+      recordId: `${currentYearMonth}-${dayNumber}`,
+      oldData: null,
+      newData: { year_month: currentYearMonth, day_number: dayNumber, ka_amount, seup, site_content, user_data: userDataStr },
+      description: `정산 기록 수정 (${currentYearMonth} ${dayNumber}일)`
+    });
+
     res.json({
       changes: this.changes,
       message: `${currentYearMonth}월 ${dayNumber}일 정산 기록이 수정되었습니다.`
     });
+
+    // 실시간 동기화
+    emitDataChange('settlements:changed', {
+      action: 'update',
+      yearMonth: currentYearMonth,
+      dayNumber,
+      accountId: filterAccountId,
+      user: req.user.displayName || req.user.username
+    }, { room: 'page:settlements', excludeSocket: req.socketId });
   });
 });
 

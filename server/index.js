@@ -1,10 +1,12 @@
 const express = require('express');
+const http = require('http');
 const cors = require('cors');
 const helmet = require('helmet');
 const morgan = require('morgan');
 const rateLimit = require('express-rate-limit');
 const path = require('path');
 require('dotenv').config();
+const { initSocket } = require('./socket');
 
 const authRoutes = require('./routes/auth');
 const userRoutes = require('./routes/users');
@@ -22,12 +24,18 @@ const officeRoutes = require('./routes/offices');
 const calendarRoutes = require('./routes/calendar');
 const attendanceRoutes = require('./routes/attendance');
 const communityNotesRoutes = require('./routes/communityNotes');
+const auditLogRoutes = require('./routes/auditLogs');
 const { startScheduler } = require('./tools/backup-scheduler');
+const { cleanupOldAuditLogs } = require('./utils/auditLog');
 const apiLogger = require('./middleware/apiLogger');
 const routeNamer = require('./middleware/routeNamer');
 
 const app = express();
+const server = http.createServer(app);
 const PORT = process.env.PORT || 5000;
+
+// Socket.IO 초기화
+const io = initSocket(server);
 
 // Trust proxy 설정 (rate limiter를 위해)
 app.set('trust proxy', 1);
@@ -82,6 +90,12 @@ if (process.env.NODE_ENV === 'production') {
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
+// Socket.IO: 요청 헤더에서 소켓 ID 추출하여 req에 저장 (자기 자신에게 이벤트 전송 방지)
+app.use((req, res, next) => {
+  req.socketId = req.headers['x-socket-id'] || null;
+  next();
+});
+
 // 라우트 한글 이름 태깅 → API 로그
 app.use(routeNamer);
 app.use(apiLogger);
@@ -106,6 +120,7 @@ app.use('/api/offices', tag('OFFICES'), officeRoutes);
 app.use('/api/calendar', tag('CALENDAR'), calendarRoutes);
 app.use('/api/attendance', tag('ATTENDANCE'), attendanceRoutes);
 app.use('/api/community-notes', tag('COMMUNITY_NOTES'), communityNotesRoutes);
+app.use('/api/audit-logs', tag('AUDIT_LOGS'), auditLogRoutes);
 
 // 기본 라우트
 app.get('/api/health', (req, res) => {
@@ -153,7 +168,7 @@ if (fs.existsSync(clientBuildPath)) {
 
 // 비동기 서버 시작
 (async () => {
-  app.listen(PORT, '0.0.0.0', async () => {
+  server.listen(PORT, '0.0.0.0', async () => {
     console.log(`🚀 출석 관리 시스템 API 서버가 포트 ${PORT}에서 실행 중입니다.`);
     console.log(`📊 Health Check: http://localhost:${PORT}/api/health`);
     console.log(`🌐 네트워크 접속: http://[로컬IP]:${PORT}/api/health`);
@@ -163,6 +178,14 @@ if (fs.existsSync(clientBuildPath)) {
       startScheduler({ time: '0 3 * * *', retentionDays: 14 });
     } catch (e) {
       console.error('백업 스케줄러 시작 실패:', e);
+    }
+
+    // 감사 로그 자동 정리 (90일 이상 오래된 로그 삭제)
+    try {
+      await cleanupOldAuditLogs();
+      console.log('📋 감사 로그 정리 완료');
+    } catch (e) {
+      console.error('감사 로그 정리 실패:', e);
     }
   });
 })();

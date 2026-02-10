@@ -1,22 +1,19 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import axiosInstance from '../api/axios';
 import { useAuth } from '../contexts/AuthContext';
 import toast from 'react-hot-toast';
 
 const EMPTY_OFFICE = {
   name: '',
-  manager_account_id: '',
   status: 'active',
   description: '',
-  address: '',
-  phone: '',
+  telegram_id: '',
   notes: ''
 };
 
 const OfficeManagement = () => {
   const { isAdmin, isOfficeManager, user } = useAuth();
   const [offices, setOffices] = useState([]);
-  const [accounts, setAccounts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
   const [modalMode, setModalMode] = useState('create');
@@ -49,18 +46,6 @@ const OfficeManagement = () => {
     }
   };
 
-  const loadAccounts = async () => {
-    try {
-      const response = await axiosInstance.get('/auth/accounts');
-      if (response.data?.success) {
-        setAccounts(response.data.accounts || []);
-      }
-    } catch (error) {
-      console.error('계정 목록 로드 실패:', error);
-      toast.error('계정 목록을 불러오지 못했습니다.');
-    }
-  };
-
   useEffect(() => {
     if (!isAdmin && !isOfficeManager) return;
     
@@ -84,9 +69,7 @@ const OfficeManagement = () => {
       };
       loadMyOffice();
     } else if (isAdmin) {
-      // 슈퍼관리자는 모든 사무실 로드
       loadOffices();
-      loadAccounts();
     }
   }, [isAdmin, isOfficeManager, user?.officeId]);
 
@@ -96,11 +79,9 @@ const OfficeManagement = () => {
       setSelectedOfficeId(office.id);
       setFormState({
         name: office.name || '',
-        manager_account_id: office.manager_account_id || '',
         status: office.status || 'active',
         description: office.description || '',
-        address: office.address || '',
-        phone: office.phone || '',
+        telegram_id: office.telegram_id || '',
         notes: office.notes || '',
         telegram_bot_token: office.telegram_bot_token || '',
         telegram_chat_id: office.telegram_chat_id || ''
@@ -124,10 +105,7 @@ const OfficeManagement = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setSaving(true);
-    const payload = {
-      ...formState,
-      manager_account_id: formState.manager_account_id || null
-    };
+    const payload = { ...formState };
 
     try {
       if (modalMode === 'create') {
@@ -175,16 +153,6 @@ const OfficeManagement = () => {
     }
   };
 
-  const managerOptions = useMemo(() => {
-    return [
-      { id: '', display_name: '관리자 지정 안함' },
-      ...accounts.map(acc => ({
-        id: acc.id,
-        display_name: `${acc.display_name} (@${acc.username})`
-      }))
-    ];
-  }, [accounts]);
-  
   // 텔레그램 설정 모달 열기
   const openTelegramModal = async (office) => {
     setSelectedTelegramOfficeId(office.id);
@@ -262,7 +230,7 @@ const OfficeManagement = () => {
         <div>
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white">🏢 사무실 관리</h1>
           <p className="text-gray-600 dark:text-gray-300 mt-1">
-            {isAdmin ? '사무실 추가, 관리자 지정, 상세 정보를 관리할 수 있습니다.' : '텔레그램 설정을 관리할 수 있습니다.'}
+            {isAdmin ? '사무실 추가 및 상세 정보를 관리할 수 있습니다.' : '텔레그램 설정을 관리할 수 있습니다.'}
           </p>
         </div>
         {isAdmin && (
@@ -281,10 +249,8 @@ const OfficeManagement = () => {
             <thead className="bg-gray-50 dark:bg-gray-700/50">
               <tr>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 dark:text-gray-300 uppercase tracking-wider">이름</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 dark:text-gray-300 uppercase tracking-wider">관리자</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 dark:text-gray-300 uppercase tracking-wider">상태</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 dark:text-gray-300 uppercase tracking-wider">주소</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 dark:text-gray-300 uppercase tracking-wider">연락처</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 dark:text-gray-300 uppercase tracking-wider">텔레그램 아이디</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 dark:text-gray-300 uppercase tracking-wider">비고</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 dark:text-gray-300 uppercase tracking-wider">텔레그램</th>
                 <th className="px-4 py-3 text-right text-xs font-semibold text-gray-500 dark:text-gray-300 uppercase tracking-wider">작업</th>
@@ -293,13 +259,13 @@ const OfficeManagement = () => {
             <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700 text-sm">
               {loading ? (
                 <tr>
-                  <td colSpan="8" className="px-4 py-6 text-center text-gray-500 dark:text-gray-300">
+                  <td colSpan="6" className="px-4 py-6 text-center text-gray-500 dark:text-gray-300">
                     로딩 중...
                   </td>
                 </tr>
               ) : offices.length === 0 ? (
                 <tr>
-                  <td colSpan="8" className="px-4 py-6 text-center text-gray-500 dark:text-gray-300">
+                  <td colSpan="6" className="px-4 py-6 text-center text-gray-500 dark:text-gray-300">
                     등록된 사무실이 없습니다. 새 사무실을 추가해 주세요.
                   </td>
                 </tr>
@@ -307,14 +273,6 @@ const OfficeManagement = () => {
                 offices.map(office => (
                   <tr key={office.id}>
                     <td className="px-4 py-3 text-gray-900 dark:text-white font-semibold">{office.name}</td>
-                    <td className="px-4 py-3 text-gray-700 dark:text-gray-200">
-                      {office.manager_account_id
-                        ? (() => {
-                            const manager = accounts.find(acc => acc.id === office.manager_account_id);
-                            return manager ? `${manager.display_name} (@${manager.username})` : '―';
-                          })()
-                        : '―'}
-                    </td>
                     <td className="px-4 py-3">
                       <span
                         className={`px-2 py-1 rounded-full text-xs font-semibold ${
@@ -326,8 +284,7 @@ const OfficeManagement = () => {
                         {office.status === 'active' ? '활성' : '비활성'}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-gray-600 dark:text-gray-300">{office.address || '―'}</td>
-                    <td className="px-4 py-3 text-gray-600 dark:text-gray-300">{office.phone || '―'}</td>
+                    <td className="px-4 py-3 text-gray-600 dark:text-gray-300">{office.telegram_id || '―'}</td>
                     <td className="px-4 py-3 text-gray-600 dark:text-gray-300">{office.notes || '―'}</td>
                     <td className="px-4 py-3">
                       <span
@@ -393,57 +350,26 @@ const OfficeManagement = () => {
                   required
                 />
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-bold text-gray-700 dark:text-gray-200 mb-1">사무실 관리자</label>
-                  <select
-                    value={formState.manager_account_id || ''}
-                    onChange={(e) => handleInputChange('manager_account_id', e.target.value)}
-                    className="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  >
-                    {managerOptions.map(option => (
-                      <option key={option.id || 'none'} value={option.id}>
-                        {option.display_name}
-                      </option>
-                    ))}
-                  </select>
-                  <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                    선택된 계정은 자동으로 사무실 관리자 권한이 부여됩니다.
-                  </p>
-                </div>
-                <div>
-                  <label className="block text-sm font-bold text-gray-700 dark:text-gray-200 mb-1">상태</label>
-                  <select
-                    value={formState.status}
-                    onChange={(e) => handleInputChange('status', e.target.value)}
-                    className="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  >
-                    <option value="active">활성</option>
-                    <option value="inactive">비활성</option>
-                  </select>
-                </div>
+              <div>
+                <label className="block text-sm font-bold text-gray-700 dark:text-gray-200 mb-1">상태</label>
+                <select
+                  value={formState.status}
+                  onChange={(e) => handleInputChange('status', e.target.value)}
+                  className="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="active">활성</option>
+                  <option value="inactive">비활성</option>
+                </select>
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-bold text-gray-700 dark:text-gray-200 mb-1">주소</label>
-                  <input
-                    type="text"
-                    value={formState.address}
-                    onChange={(e) => handleInputChange('address', e.target.value)}
-                    className="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    placeholder="예: 서울시 강남구 ..."
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-bold text-gray-700 dark:text-gray-200 mb-1">연락처</label>
-                  <input
-                    type="text"
-                    value={formState.phone}
-                    onChange={(e) => handleInputChange('phone', e.target.value)}
-                    className="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    placeholder="예: 02-123-4567"
-                  />
-                </div>
+              <div>
+                <label className="block text-sm font-bold text-gray-700 dark:text-gray-200 mb-1">텔레그램 아이디</label>
+                <input
+                  type="text"
+                  value={formState.telegram_id}
+                  onChange={(e) => handleInputChange('telegram_id', e.target.value)}
+                  className="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="예: @myTelegramId"
+                />
               </div>
               <div>
                 <label className="block text-sm font-bold text-gray-700 dark:text-gray-200 mb-1">설명</label>

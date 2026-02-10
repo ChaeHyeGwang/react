@@ -6,6 +6,8 @@ const {
   upsertSiteAttendance,
   deleteSiteAttendanceBySiteAccount
 } = require('../utils/siteAttendance');
+const { logAudit } = require('../utils/auditLog');
+const { emitDataChange } = require('../socket');
 
 // 디버그 모드 (프로덕션에서는 false)
 const DEBUG = process.env.NODE_ENV !== 'production';
@@ -667,7 +669,26 @@ router.post('/', auth, async (req, res) => {
       });
     }
     
+    // 감사 로그 기록
+    const newSite = await db.get('SELECT * FROM site_accounts WHERE id = ?', [newSiteId]);
+    await logAudit(req, {
+      action: 'CREATE',
+      tableName: 'site_accounts',
+      recordId: newSiteId,
+      oldData: null,
+      newData: newSite,
+      description: `사이트 추가 (${site_name})`
+    });
+
     res.json({ success: true, siteId: newSiteId, message: '사이트가 추가되었습니다' });
+
+    // 실시간 동기화
+    emitDataChange('sites:changed', {
+      action: 'create',
+      siteId: newSiteId,
+      accountId: req.user.filterAccountId,
+      user: req.user.displayName || req.user.username
+    }, { room: 'page:sites', excludeSocket: req.socketId });
   } catch (error) {
     console.error('사이트 추가 실패:', error);
     res.status(500).json({ success: false, message: '사이트 추가 실패' });
@@ -679,9 +700,9 @@ router.put('/:id', auth, async (req, res) => {
   try {
     const { id } = req.params;
     
-    // 현재 상태 이력 가져오기 (identity_id도 함께)
+    // 현재 사이트 전체 데이터 가져오기
     const currentSite = await db.get(
-      'SELECT status_history, status, identity_id FROM site_accounts WHERE id = ?', 
+      'SELECT * FROM site_accounts WHERE id = ?', 
       [id]
     );
     
@@ -866,7 +887,26 @@ router.put('/:id', auth, async (req, res) => {
       }
     }
     
+    // 감사 로그 기록
+    const updatedSite = await db.get('SELECT * FROM site_accounts WHERE id = ?', [id]);
+    await logAudit(req, {
+      action: 'UPDATE',
+      tableName: 'site_accounts',
+      recordId: id,
+      oldData: currentSite,
+      newData: updatedSite,
+      description: `사이트 수정 (${site_name})`
+    });
+
     res.json({ success: true, message: '사이트가 수정되었습니다' });
+
+    // 실시간 동기화
+    emitDataChange('sites:changed', {
+      action: 'update',
+      siteId: id,
+      accountId: req.user.filterAccountId,
+      user: req.user.displayName || req.user.username
+    }, { room: 'page:sites', excludeSocket: req.socketId });
   } catch (error) {
     console.error('사이트 수정 실패:', error);
     res.status(500).json({ success: false, message: '사이트 수정 실패' });
@@ -878,9 +918,9 @@ router.delete('/:id', auth, async (req, res) => {
   try {
     const { id } = req.params;
     
-    // 해당 사이트가 현재 사용자의 것인지 확인
+    // 해당 사이트 전체 데이터 조회
     const site = await db.get(
-      'SELECT identity_id FROM site_accounts WHERE id = ?',
+      'SELECT * FROM site_accounts WHERE id = ?',
       [id]
     );
     if (!site) {
@@ -931,7 +971,25 @@ router.delete('/:id', auth, async (req, res) => {
     // 사이트 삭제
     await db.run('DELETE FROM site_accounts WHERE id = ?', [id]);
     
+    // 감사 로그 기록
+    await logAudit(req, {
+      action: 'DELETE',
+      tableName: 'site_accounts',
+      recordId: id,
+      oldData: site,
+      newData: null,
+      description: `사이트 삭제 (${site.site_name || ''})`
+    });
+
     res.json({ success: true, message: '사이트가 삭제되었습니다' });
+
+    // 실시간 동기화
+    emitDataChange('sites:changed', {
+      action: 'delete',
+      siteId: id,
+      accountId: req.user.filterAccountId,
+      user: req.user.displayName || req.user.username
+    }, { room: 'page:sites', excludeSocket: req.socketId });
   } catch (error) {
     console.error('사이트 삭제 실패:', error);
     res.status(500).json({ success: false, message: '사이트 삭제 실패' });

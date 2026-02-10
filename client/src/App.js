@@ -2,6 +2,7 @@ import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { SocketProvider } from './contexts/SocketContext';
 import Login from './components/Login';
 import Dashboard from './components/Dashboard';
 import SiteManagement from './components/SiteManagement';
@@ -12,6 +13,7 @@ import Start from './components/Start';
 import BackupManagement from './components/BackupManagement';
 import SiteInfoView from './components/SiteInfoView';
 import OfficeManagement from './components/OfficeManagement';
+import AuditLog from './components/AuditLog';
 import Layout from './components/Layout';
 import './App.css';
 
@@ -113,6 +115,7 @@ const PublicRoute = ({ children }) => {
 function App() {
   return (
     <AuthProvider>
+      <SocketProvider>
         <Router>
           <LastRouteTracker />
           <div className="App">
@@ -200,6 +203,14 @@ function App() {
                   } 
                 />
                 <Route 
+                  path="audit-logs" 
+                  element={
+                    <ProtectedRoute>
+                      <AuditLog />
+                    </ProtectedRoute>
+                  } 
+                />
+                <Route 
                   path="site-info" 
                   element={
                     <ProtectedRouteWithAccount path="/site-info">
@@ -238,6 +249,7 @@ function App() {
             />
           </div>
         </Router>
+      </SocketProvider>
       </AuthProvider>
   );
 }

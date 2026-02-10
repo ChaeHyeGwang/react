@@ -2,6 +2,8 @@ const express = require('express');
 const router = express.Router();
 const { auth } = require('../middleware/auth');
 const db = require('../database/db');
+const { logAudit } = require('../utils/auditLog');
+const { emitDataChange } = require('../socket');
 
 // 한국 시간 기준 ISO 문자열 반환
 function getKSTISOString(date = null) {
@@ -390,7 +392,24 @@ router.post('/', auth, async (req, res) => {
       [filterAccountId, name, birth_date, zodiac, bankAccountsJson, phoneNumbersJson, nickname, nicknamesJson, status, notes]
     );
     
-    res.json({ success: true, identityId: result.lastID, message: '명의가 추가되었습니다' });
+    const newIdentityId = result.id ?? result.lastID;
+    const newIdentity = await db.get('SELECT * FROM identities WHERE id = ?', [newIdentityId]);
+    await logAudit(req, {
+      action: 'CREATE',
+      tableName: 'identities',
+      recordId: newIdentityId,
+      oldData: null,
+      newData: newIdentity,
+      description: `명의 추가 (${name})`
+    });
+
+    res.json({ success: true, identityId: newIdentityId, message: '명의가 추가되었습니다' });
+
+    emitDataChange('identities:changed', {
+      action: 'create',
+      accountId: req.user.filterAccountId,
+      user: req.user.displayName || req.user.username
+    }, { excludeSocket: req.socketId });
   } catch (error) {
     console.error('명의 추가 실패:', error);
     res.status(500).json({ success: false, message: '명의 추가 실패' });
@@ -406,7 +425,7 @@ router.put('/:id', auth, async (req, res) => {
     const { id } = req.params;
     
     // 해당 명의가 현재 사용자의 것인지 확인
-    const identity = await db.get('SELECT account_id FROM identities WHERE id = ?', [id]);
+    const identity = await db.get('SELECT * FROM identities WHERE id = ?', [id]);
     if (!identity || identity.account_id !== filterAccountId) {
       return res.status(403).json({ 
         success: false, 
@@ -447,7 +466,24 @@ router.put('/:id', auth, async (req, res) => {
       );
     }
     
+    // 감사 로그 기록
+    const updatedIdentity = await db.get('SELECT * FROM identities WHERE id = ?', [id]);
+    await logAudit(req, {
+      action: 'UPDATE',
+      tableName: 'identities',
+      recordId: id,
+      oldData: identity,
+      newData: updatedIdentity,
+      description: `명의 수정 (${name})`
+    });
+
     res.json({ success: true, message: '명의가 수정되었습니다' });
+
+    emitDataChange('identities:changed', {
+      action: 'update',
+      accountId: req.user.filterAccountId,
+      user: req.user.displayName || req.user.username
+    }, { excludeSocket: req.socketId });
   } catch (error) {
     console.error('명의 수정 실패:', error);
     res.status(500).json({ success: false, message: '명의 수정 실패' });
@@ -463,7 +499,7 @@ router.delete('/:id', auth, async (req, res) => {
     const { id } = req.params;
     
     // 해당 명의가 현재 사용자의 것인지 확인 및 명의 정보 가져오기
-    const identity = await db.get('SELECT account_id, name FROM identities WHERE id = ?', [id]);
+    const identity = await db.get('SELECT * FROM identities WHERE id = ?', [id]);
     if (!identity || identity.account_id !== filterAccountId) {
       return res.status(403).json({ 
         success: false, 
@@ -480,7 +516,23 @@ router.delete('/:id', auth, async (req, res) => {
     // 명의 삭제
     await db.run('DELETE FROM identities WHERE id = ?', [id]);
     
+    // 감사 로그 기록
+    await logAudit(req, {
+      action: 'DELETE',
+      tableName: 'identities',
+      recordId: id,
+      oldData: identity,
+      newData: null,
+      description: `명의 삭제 (${identity.name})`
+    });
+
     res.json({ success: true, message: '명의가 삭제되었습니다' });
+
+    emitDataChange('identities:changed', {
+      action: 'delete',
+      accountId: req.user.filterAccountId,
+      user: req.user.displayName || req.user.username
+    }, { excludeSocket: req.socketId });
   } catch (error) {
     console.error('명의 삭제 실패:', error);
     res.status(500).json({ success: false, message: '명의 삭제 실패' });

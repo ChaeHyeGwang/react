@@ -1,8 +1,9 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import axiosInstance from '../api/axios';
 import toast from 'react-hot-toast';
 import { getIdentitiesCached } from '../api/identitiesCache';
 import { calculateMarginSum } from '../utils/marginCalculations';
+import { useRealtimeSync } from '../hooks/useRealtimeSync';
 
 // 한국 시간 기준 날짜 문자열 반환 (YYYY-MM-DD)
 function getKSTDateString(date = null) {
@@ -37,6 +38,8 @@ function Finish({ isStartMode = false }) {
   const lastSavedManualWithdrawalsRef = useRef(null); // 마지막으로 저장된 manualWithdrawals 추적
   const saveQueueRef = useRef([]); // 저장 대기열
   const isSavingRef = useRef(false); // 저장 중 플래그 (ref로 관리)
+  const isBlurringRef = useRef(false); // 셀 blur 중복 방지용
+  const isWithdrawalSavingRef = useRef(false); // 수동환전 저장 중복 방지용
 
   // 저장 대기열 처리 함수
   const processSaveQueue = async () => {
@@ -82,6 +85,9 @@ function Finish({ isStartMode = false }) {
     if (!editingWithdrawalCell) {
       return;
     }
+    // ref로 중복 호출 방지 (Enter → blur 연속 발생 시)
+    if (isWithdrawalSavingRef.current) return;
+    isWithdrawalSavingRef.current = true;
     
     const { id, field } = editingWithdrawalCell;
     const currentEditingValue = editingValue; // 현재 편집 값 캡처
@@ -157,6 +163,7 @@ function Finish({ isStartMode = false }) {
     
     saveQueueRef.current.push(saveTask);
     processSaveQueue();
+    isWithdrawalSavingRef.current = false;
   };
   
   // 취침 데이터 편집 시작
@@ -225,21 +232,14 @@ function Finish({ isStartMode = false }) {
 
   const saveStartAmountTotal = async (value) => {
     try {
-      // 시작 금액만 저장하고 manual_withdrawals와 coin_wallet은 서버에서 기존 값 유지
-      // 서버에서 기존 summary를 조회하여 기존 값들을 유지
-      const existingSummary = await axiosInstance.get('/finish/summary', {
-        params: { date: selectedDate, mode: 'start' }
-      });
-      
-      // 기존 coin_wallet 값 유지 (현재 상태값 대신 서버 값 사용)
-      const existingCoinWallet = existingSummary.data.coin_wallet ?? coinWallet;
-      
+      // 시작 금액만 저장 - manual_withdrawals와 coin_wallet은 null로 전송하여
+      // 서버의 COALESCE가 기존 값을 유지하도록 함 (레이스 컨디션 방지)
       await axiosInstance.put('/finish/summary', {
         date: selectedDate,
         cash_on_hand: cashOnHand,
         yesterday_balance: yesterdayBalance,
-        coin_wallet: existingCoinWallet,  // 서버의 기존 값 유지
-        manual_withdrawals: existingSummary.data.manual_withdrawals || null,
+        coin_wallet: null,              // 서버에서 기존 값 유지 (COALESCE)
+        manual_withdrawals: null,       // 서버에서 기존 값 유지 (COALESCE)
         start_amount_total: value,
         mode: 'start'
       }, {
@@ -434,6 +434,16 @@ function Finish({ isStartMode = false }) {
     }
   };
 
+  // 실시간 동기화: 다른 사용자가 시작/마무리 데이터를 변경하면 자동 새로고침
+  const pageName = isStartMode ? 'start' : 'finish';
+  useRealtimeSync(pageName, {
+    onDataChanged: useCallback(() => {
+      loadData();
+    // eslint-disable-next-line
+    }, [selectedDate]),
+    events: ['finish:changed'],
+  });
+
   const formatCurrency = (amount) => {
     if (!amount && amount !== 0) return '0';
     return amount.toLocaleString('ko-KR');
@@ -452,6 +462,9 @@ function Finish({ isStartMode = false }) {
 
   const handleCellBlur = async () => {
     if (!editingCell) return;
+    // ref로 중복 호출 방지 (Enter → blur 연속 발생 시)
+    if (isBlurringRef.current) return;
+    isBlurringRef.current = true;
 
     const value = parseFloat(editingValue) || 0;
 
@@ -473,18 +486,15 @@ function Finish({ isStartMode = false }) {
         await handleSummaryUpdate('cash', value);
         setCashOnHand(value);
       } else if (editingCell.type === 'coin') {
-        // coin_wallet만 저장하고 manual_withdrawals는 서버에서 기존 값 유지
-        const existingSummary = await axiosInstance.get('/finish/summary', {
-          params: { date: selectedDate, mode: dataMode }
-        });
-        
+        // coin_wallet만 저장 - manual_withdrawals는 null로 전송하여
+        // 서버의 COALESCE가 기존 값을 유지하도록 함 (레이스 컨디션 방지)
         await axiosInstance.put('/finish/summary', {
           date: selectedDate,
           cash_on_hand: cashOnHand,
           yesterday_balance: yesterdayBalance,
           coin_wallet: value,
-          manual_withdrawals: existingSummary.data.manual_withdrawals || null,
-          start_amount_total: startAmountTotal,
+          manual_withdrawals: null,       // 서버에서 기존 값 유지 (COALESCE)
+          start_amount_total: null,       // 서버에서 기존 값 유지 (COALESCE)
           mode: dataMode
         });
         setCoinWallet(value);
@@ -496,22 +506,20 @@ function Finish({ isStartMode = false }) {
 
     setEditingCell(null);
     setEditingValue('');
+    isBlurringRef.current = false;
   };
 
   const handleSummaryUpdate = async (field, value) => {
     try {
-      // cash_on_hand나 yesterday_balance만 저장하고 manual_withdrawals는 서버에서 기존 값 유지
-      const existingSummary = await axiosInstance.get('/finish/summary', {
-        params: { date: selectedDate, mode: dataMode }
-      });
-      
+      // cash_on_hand나 yesterday_balance만 저장 - manual_withdrawals, coin_wallet 등은
+      // null로 전송하여 서버의 COALESCE가 기존 값을 유지하도록 함 (레이스 컨디션 방지)
       const updateData = {
         date: selectedDate,
         cash_on_hand: field === 'cash' ? value : cashOnHand,
         yesterday_balance: field === 'yesterday' ? value : yesterdayBalance,
-        coin_wallet: coinWallet,
-        manual_withdrawals: existingSummary.data.manual_withdrawals || null,
-        start_amount_total: startAmountTotal,
+        coin_wallet: null,              // 서버에서 기존 값 유지 (COALESCE)
+        manual_withdrawals: null,       // 서버에서 기존 값 유지 (COALESCE)
+        start_amount_total: null,       // 서버에서 기존 값 유지 (COALESCE)
         mode: dataMode
       };
       
@@ -531,7 +539,9 @@ function Finish({ isStartMode = false }) {
 
   const handleKeyPress = (e) => {
     if (e.key === 'Enter') {
-      handleCellBlur();
+      // blur 이벤트보다 먼저 처리하기 위해 input에서 포커스 제거
+      // onBlur(=handleCellBlur)가 자동으로 호출되므로 여기서 직접 호출하지 않음
+      e.target.blur();
     } else if (e.key === 'Escape') {
       setEditingCell(null);
       setEditingValue('');
@@ -541,7 +551,8 @@ function Finish({ isStartMode = false }) {
   // 취침 데이터 편집 키보드 처리
   const handleWithdrawalKeyDown = (e) => {
     if (e.key === 'Enter') {
-      saveManualWithdrawals();
+      // blur 이벤트가 자동으로 saveManualWithdrawals를 호출하므로 여기서 직접 호출하지 않음
+      e.target.blur();
     } else if (e.key === 'Escape') {
       setEditingWithdrawalCell(null);
       setEditingValue('');
@@ -1153,13 +1164,7 @@ function Finish({ isStartMode = false }) {
                 type="number"
                 value={editingValue}
                 onChange={(e) => setEditingValue(e.target.value)}
-                onBlur={() => {
-                  const value = parseFloat(editingValue) || 0;
-                  setCashOnHand(value);
-                  handleSummaryUpdate('cash', value);
-                  setEditingCell(null);
-                  setEditingValue('');
-                }}
+                onBlur={handleCellBlur}
                 onKeyDown={handleKeyPress}
                 onFocus={(e) => {
                   if (e.target.value === '0') {
@@ -1245,13 +1250,7 @@ function Finish({ isStartMode = false }) {
                       type="number"
                       value={editingValue}
                       onChange={(e) => setEditingValue(e.target.value)}
-                      onBlur={() => {
-                        const value = parseFloat(editingValue) || 0;
-                        setCashOnHand(value);
-                        handleSummaryUpdate('cash', value);
-                        setEditingCell(null);
-                        setEditingValue('');
-                      }}
+                      onBlur={handleCellBlur}
                       onKeyDown={handleKeyPress}
                       onFocus={(e) => {
                         if (e.target.value === '0') {

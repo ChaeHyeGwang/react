@@ -425,20 +425,26 @@ async function handleUpdateRecord(accountId, oldRecord, newRecord, newRecordDate
       const oldCharge = parseCharge(oldChargeRaw);
       const newCharge = parseCharge(newChargeRaw);
       
+      // 명의/사이트가 변경되었는지 확인
+      const siteChanged = oldSite && oldIdentity && (oldSite !== newSite || oldIdentity !== newIdentity);
+      
       // 새 데이터가 있을 때만 처리
       if (newSite && newIdentity && newDate) {
-        // 충전금액이 변경된 경우만 출석 로그 추가/삭제
-        // (레코드가 처음 생성될 때는 oldRecord가 null이므로 oldCharge가 0이 됨)
-        if (oldCharge !== newCharge) {
+        // 출석 로그 추가/삭제가 필요한 경우:
+        // 1) 충전금액이 변경된 경우
+        // 2) 명의/사이트가 변경된 경우 (같은 금액이라도 새 명의/사이트에 로그 생성 필요)
+        // 3) 날짜가 변경된 경우 (같은 금액이라도 새 날짜에 로그 생성 필요)
+        const needsLogUpdate = oldCharge !== newCharge || siteChanged || dateChanged;
+        
+        if (needsLogUpdate) {
           await processLogOnly(accountId, newSite, newIdentity, newChargeRaw, newDate);
-          log(`   [출석] ${newIdentity}/${newSite}: 충전금액 변경 (${oldCharge} → ${newCharge}), 출석 로그 ${newCharge > 0 ? '추가' : '삭제'}`);
+          log(`   [출석] ${newIdentity}/${newSite}: 출석 로그 처리 (금액변경: ${oldCharge !== newCharge}, 사이트변경: ${!!siteChanged}, 날짜변경: ${!!dateChanged}), 출석 로그 ${newCharge > 0 ? '추가' : '삭제'}`);
         }
         // 충전금액이 변경되지 않았어도 출석일은 재계산해야 함 (다른 날짜의 출석 로그가 변경되었을 수 있음)
         sitesToCalculate.push({ siteName: newSite, identityName: newIdentity, chargeRaw: newChargeRaw, date: newDate });
       }
       
       // 명의/사이트가 변경된 경우 기존 데이터도 처리 (로그 제거) - 같은 날짜 내에서
-      const siteChanged = oldSite && oldIdentity && (oldSite !== newSite || oldIdentity !== newIdentity);
       if (siteChanged && !dateChanged && newDate) {
         await processLogOnly(accountId, oldSite, oldIdentity, '', newDate);
         sitesToCalculate.push({ siteName: oldSite, identityName: oldIdentity, chargeRaw: '', date: newDate });

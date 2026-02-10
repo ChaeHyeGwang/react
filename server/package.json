@@ -22,9 +22,15 @@
     "multer": "^1.4.5-lts.1",
     "node-cron": "^3.0.3",
     "node-telegram-bot-api": "^0.66.0",
+    "socket.io": "^4.8.3",
     "sqlite3": "^5.1.7"
   },
-  "keywords": ["attendance", "management", "nodejs", "express"],
+  "keywords": [
+    "attendance",
+    "management",
+    "nodejs",
+    "express"
+  ],
   "author": "",
   "license": "ISC"
 }

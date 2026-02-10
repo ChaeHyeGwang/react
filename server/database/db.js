@@ -34,6 +34,7 @@ class DatabaseManager {
             .then(() => this.addTelegramColumnsToOffices())
             .then(() => this.addNicknameColumn())
             .then(() => this.addAccountsDisplayOrderColumn())
+            .then(() => this.ensureAuditLogsTable())
             .then(() => this.ensureIndexes())
             .then(resolve)
             .catch(reject);
@@ -913,8 +914,6 @@ class DatabaseManager {
         manager_account_id INTEGER,
         status TEXT DEFAULT 'active',
         description TEXT DEFAULT '',
-        address TEXT DEFAULT '',
-        phone TEXT DEFAULT '',
         notes TEXT DEFAULT '',
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -1229,6 +1228,22 @@ class DatabaseManager {
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         UNIQUE(account_id, site_name, identity_name, attendance_date),
         FOREIGN KEY (account_id) REFERENCES accounts (id)
+      )`,
+
+      // 감사(audit) 로그 테이블
+      `CREATE TABLE IF NOT EXISTS audit_logs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        account_id INTEGER,
+        username TEXT,
+        display_name TEXT,
+        action TEXT NOT NULL,
+        table_name TEXT NOT NULL,
+        record_id TEXT,
+        old_data TEXT,
+        new_data TEXT,
+        description TEXT,
+        ip_address TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
       )`
     ];
 
@@ -1402,8 +1417,9 @@ class DatabaseManager {
         
         const hasBotToken = columns.some(col => col.name === 'telegram_bot_token');
         const hasChatId = columns.some(col => col.name === 'telegram_chat_id');
+        const hasTelegramId = columns.some(col => col.name === 'telegram_id');
         
-        if (hasBotToken && hasChatId) {
+        if (hasBotToken && hasChatId && hasTelegramId) {
           console.log('✅ 텔레그램 컬럼이 이미 존재합니다');
           return resolve();
         }
@@ -1416,6 +1432,9 @@ class DatabaseManager {
         }
         if (!hasChatId) {
           alterStatements.push('ALTER TABLE offices ADD COLUMN telegram_chat_id TEXT DEFAULT ""');
+        }
+        if (!hasTelegramId) {
+          alterStatements.push('ALTER TABLE offices ADD COLUMN telegram_id TEXT DEFAULT ""');
         }
         
         if (alterStatements.length === 0) {
@@ -1449,6 +1468,33 @@ class DatabaseManager {
     });
   }
 
+  // audit_logs 테이블 존재 보장 (기존 DB 마이그레이션용)
+  ensureAuditLogsTable() {
+    return new Promise((resolve, reject) => {
+      this.db.run(`CREATE TABLE IF NOT EXISTS audit_logs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        account_id INTEGER,
+        username TEXT,
+        display_name TEXT,
+        action TEXT NOT NULL,
+        table_name TEXT NOT NULL,
+        record_id TEXT,
+        old_data TEXT,
+        new_data TEXT,
+        description TEXT,
+        ip_address TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )`, (err) => {
+        if (err) {
+          console.error('❌ audit_logs 테이블 생성 실패:', err.message);
+          return reject(err);
+        }
+        console.log('✅ audit_logs 테이블 확인 완료');
+        resolve();
+      });
+    });
+  }
+
   // 자주 조회되는 컬럼에 인덱스 추가
   ensureIndexes() {
     const indexStatements = [
@@ -1478,7 +1524,11 @@ class DatabaseManager {
       'CREATE INDEX IF NOT EXISTS idx_attendance_log_lookup ON site_attendance_log(account_id, site_name, identity_name, attendance_date)',
       'CREATE INDEX IF NOT EXISTS idx_attendance_log_date ON site_attendance_log(attendance_date)',
       // summary
-      'CREATE INDEX IF NOT EXISTS idx_summary_account_date ON drbet_daily_summary(account_id, summary_date)'
+      'CREATE INDEX IF NOT EXISTS idx_summary_account_date ON drbet_daily_summary(account_id, summary_date)',
+      // audit_logs
+      'CREATE INDEX IF NOT EXISTS idx_audit_logs_table_date ON audit_logs(table_name, created_at)',
+      'CREATE INDEX IF NOT EXISTS idx_audit_logs_account_date ON audit_logs(account_id, created_at)',
+      'CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON audit_logs(created_at)'
     ];
 
     return new Promise((resolve) => {

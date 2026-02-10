@@ -1,6 +1,7 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import axiosInstance from '../api/axios';
 import toast from 'react-hot-toast';
+import { useRealtimeSync } from '../hooks/useRealtimeSync';
  
 function SettlementManagement() {
   const [records, setRecords] = useState([]);
@@ -133,6 +134,15 @@ function SettlementManagement() {
       toast.error(`정산 기록 로드 실패: ${error.response?.data?.error || error.message}`);
     }
   };
+
+  // 실시간 동기화: 다른 사용자가 정산 데이터를 변경하면 자동 새로고침
+  useRealtimeSync('settlements', {
+    onDataChanged: useCallback(() => {
+      loadRecords();
+    // eslint-disable-next-line
+    }, [selectedYearMonth]),
+    events: ['settlements:changed'],
+  });
 
   const formatCurrency = (amount) => {
     if (!amount && amount !== 0) return '0';

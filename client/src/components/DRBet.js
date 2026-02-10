@@ -6,6 +6,7 @@ import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import SiteNotesModal from './SiteNotesModal';
 import { useAuth } from '../contexts/AuthContext';
 import { getAttendanceStats } from '../utils/attendanceUtils';
+import { useRealtimeSync } from '../hooks/useRealtimeSync';
 
 // 디버그 로그 비활성화
 const DEBUG = false;
@@ -601,6 +602,27 @@ function DRBet() {
       toast.error('DR벳 기록을 불러오는데 실패했습니다');
     }
   }, [selectedDate]); // selectedDate는 의존성에 포함 (필요시 사용)
+
+  // 실시간 동기화: 다른 사용자가 DR벳 데이터를 변경하면 자동 새로고침
+  const { connected: socketConnected, notifyEditStart, notifyEditEnd, getEditorFor } = useRealtimeSync('drbet', {
+    onDataChanged: useCallback(() => {
+      loadRecords(true);
+    }, [loadRecords]),
+    events: ['drbet:changed'],
+  });
+
+  // 편집 중 상태를 소켓으로 전파
+  useEffect(() => {
+    if (editingCell) {
+      notifyEditStart('cell', editingCell.recordId || editingCell.id || 'general');
+    }
+    return () => {
+      if (editingCell) {
+        notifyEditEnd('cell', editingCell.recordId || editingCell.id || 'general');
+      }
+    };
+  // eslint-disable-next-line
+  }, [editingCell]);
 
   const fetchDailySummary = useCallback(async () => {
     if (!selectedDate) {
