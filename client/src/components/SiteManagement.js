@@ -514,10 +514,10 @@ const SiteManagement = () => {
     onDataChanged: useCallback(() => {
       loadIdentities();
       if (selectedIdentity) {
-        loadSites(selectedIdentity === 'all' ? 'all' : selectedIdentity);
+        loadSites(selectedIdentity.id === 'all' ? 'all' : selectedIdentity.id);
       }
     // eslint-disable-next-line
-    }, [selectedIdentity]),
+    }, [selectedIdentity?.id]),
     events: ['sites:changed', 'identities:changed'],
   });
 

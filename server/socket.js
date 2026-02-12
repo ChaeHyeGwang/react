@@ -65,6 +65,18 @@ function initSocket(httpServer) {
       socket.join(`office:${user.officeId}`);
     }
 
+    // --- 계정 room 참여/이탈 (데이터 변경 알림용) ---
+    socket.on('join:account', (room) => {
+      // room 형식: "account:123"
+      socket.join(room);
+      console.log(`[Socket] ${user.displayName || user.username} → ${room} 참여`);
+    });
+
+    socket.on('leave:account', (room) => {
+      socket.leave(room);
+      console.log(`[Socket] ${user.displayName || user.username} → ${room} 이탈`);
+    });
+
     // --- 페이지 참여/이탈 ---
     socket.on('join:page', (page) => {
       socket.join(`page:${page}`);

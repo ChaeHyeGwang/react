@@ -15,6 +15,8 @@ export const useSocket = () => {
       editors: [],
       joinPage: () => {},
       leavePage: () => {},
+      joinAccount: () => {},
+      leaveAccount: () => {},
       startEditing: () => {},
       endEditing: () => {},
       onDataChange: () => () => {},
@@ -38,12 +40,13 @@ function getSocketUrl() {
 }
 
 export const SocketProvider = ({ children }) => {
-  const { user } = useAuth();
+  const { user, selectedAccountId } = useAuth();
   const socketRef = useRef(null);
   const [connected, setConnected] = useState(false);
   const [editors, setEditors] = useState([]); // 현재 페이지의 편집자 목록
   const listenersRef = useRef(new Map()); // eventType -> Set<callback>
   const currentPageRef = useRef(null);
+  const currentAccountRoomRef = useRef(null); // 현재 참여 중인 account room
 
   // 소켓 연결
   useEffect(() => {
@@ -77,6 +80,11 @@ export const SocketProvider = ({ children }) => {
       // 현재 페이지에 재입장
       if (currentPageRef.current) {
         socket.emit('join:page', currentPageRef.current);
+      }
+
+      // 현재 account room에 재입장
+      if (currentAccountRoomRef.current) {
+        socket.emit('join:account', currentAccountRoomRef.current);
       }
     });
 
@@ -136,6 +144,34 @@ export const SocketProvider = ({ children }) => {
     };
   }, [user]);
 
+  // selectedAccountId 변경 시 account room 자동 전환
+  useEffect(() => {
+    const socket = socketRef.current;
+    if (!socket?.connected || !user) return;
+
+    // 현재 보고 있는 계정 ID 결정: 관리자가 선택한 계정 or 본인 계정
+    const viewingAccountId = selectedAccountId || user.id;
+
+    const prevRoom = currentAccountRoomRef.current;
+    const newRoom = viewingAccountId ? `account:${viewingAccountId}` : null;
+
+    // 같은 room이면 무시
+    if (prevRoom === newRoom) return;
+
+    // 이전 room 나가기
+    if (prevRoom) {
+      socket.emit('leave:account', prevRoom);
+    }
+
+    // 새 room 참여
+    if (newRoom) {
+      socket.emit('join:account', newRoom);
+      currentAccountRoomRef.current = newRoom;
+    } else {
+      currentAccountRoomRef.current = null;
+    }
+  }, [selectedAccountId, user, connected]);
+
   // 페이지 참여
   const joinPage = useCallback((page) => {
     currentPageRef.current = page;
@@ -153,6 +189,28 @@ export const SocketProvider = ({ children }) => {
     if (socketRef.current?.connected) {
       socketRef.current.emit('leave:page', page);
     }
+  }, []);
+
+  // account room 참여 (수동)
+  const joinAccount = useCallback((accountId) => {
+    const room = `account:${accountId}`;
+    const prevRoom = currentAccountRoomRef.current;
+    if (prevRoom === room) return;
+    if (prevRoom && socketRef.current?.connected) {
+      socketRef.current.emit('leave:account', prevRoom);
+    }
+    currentAccountRoomRef.current = room;
+    if (socketRef.current?.connected) {
+      socketRef.current.emit('join:account', room);
+    }
+  }, []);
+
+  // account room 이탈 (수동)
+  const leaveAccount = useCallback(() => {
+    if (currentAccountRoomRef.current && socketRef.current?.connected) {
+      socketRef.current.emit('leave:account', currentAccountRoomRef.current);
+    }
+    currentAccountRoomRef.current = null;
   }, []);
 
   // 편집 시작 알림
@@ -207,6 +265,8 @@ export const SocketProvider = ({ children }) => {
     editors,
     joinPage,
     leavePage,
+    joinAccount,
+    leaveAccount,
     startEditing,
     endEditing,
     onDataChange,

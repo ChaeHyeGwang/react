@@ -298,14 +298,14 @@ router.put('/:id', auth, (req, res) => {
       message: `${targetYearMonth}월 ${day_number}일 정산 기록이 수정되었습니다.`
     });
 
-    // 실시간 동기화
+    // 실시간 동기화 (같은 계정을 보고 있는 사용자에게만 알림)
     emitDataChange('settlements:changed', {
       action: 'update',
       yearMonth: targetYearMonth,
       dayNumber: day_number,
       accountId: filterAccountId,
       user: req.user.displayName || req.user.username
-    }, { room: 'page:settlements', excludeSocket: req.socketId });
+    }, { room: `account:${filterAccountId}`, excludeSocket: req.socketId });
   });
 });
 
@@ -375,14 +375,14 @@ router.put('/day/:dayNumber', auth, (req, res) => {
       message: `${currentYearMonth}월 ${dayNumber}일 정산 기록이 수정되었습니다.`
     });
 
-    // 실시간 동기화
+    // 실시간 동기화 (같은 계정을 보고 있는 사용자에게만 알림)
     emitDataChange('settlements:changed', {
       action: 'update',
       yearMonth: currentYearMonth,
       dayNumber,
       accountId: filterAccountId,
       user: req.user.displayName || req.user.username
-    }, { room: 'page:settlements', excludeSocket: req.socketId });
+    }, { room: `account:${filterAccountId}`, excludeSocket: req.socketId });
   });
 });
 

@@ -436,7 +436,8 @@ router.put('/summary', auth, async (req, res) => {
 
       const normalizedCash = normalizeNumber(cash_on_hand);
       const normalizedYesterday = normalizeNumber(yesterday_balance);
-      const normalizedCoinWallet = normalizeNumber(coin_wallet);
+      // coin_wallet이 null이면 COALESCE로 기존 값 유지해야 하므로 null 유지
+      const normalizedCoinWallet = (coin_wallet === null || coin_wallet === undefined) ? null : normalizeNumber(coin_wallet);
 
       const nowKST = getKSTDateTimeString();
       
@@ -454,7 +455,7 @@ router.put('/summary', auth, async (req, res) => {
         
         // summary 테이블에 cash_on_hand 컬럼이 있으면 제외하고 저장
         const summaryFields = ['date', 'account_id', 'yesterday_balance', 'coin_wallet', 'manual_withdrawals', 'start_amount_total', 'updated_at'];
-        const summaryValues = [targetDate, filterAccountId, normalizedYesterday, normalizedCoinWallet, manual_withdrawals || null, start_amount_total !== undefined && start_amount_total !== null ? start_amount_total : 0, nowKST];
+        const summaryValues = [targetDate, filterAccountId, normalizedYesterday, normalizedCoinWallet, manual_withdrawals || null, (start_amount_total === null || start_amount_total === undefined) ? null : start_amount_total, nowKST];
         
         // COALESCE를 사용하여 null로 전달된 필드는 기존 값을 유지
         // - manual_withdrawals: 수동 취침 저장 시에만 명시적 값 전달, 다른 저장에서는 null → 기존 값 유지
@@ -551,14 +552,14 @@ router.put('/summary', auth, async (req, res) => {
               log(`📤 [${mode} 모드] 응답 전송:`, responseData);
               res.json(responseData);
 
-              // 실시간 동기화
+              // 실시간 동기화 (같은 계정을 보고 있는 사용자에게만 알림)
               emitDataChange('finish:changed', {
                 action: 'update',
                 date: targetDate,
                 mode,
                 accountId: filterAccountId,
                 user: req.user.displayName || req.user.username
-              }, { room: `page:${mode === 'start' ? 'start' : 'finish'}`, excludeSocket: req.socketId });
+              }, { room: `account:${filterAccountId}`, excludeSocket: req.socketId });
             });
           }
         );
@@ -602,14 +603,14 @@ router.put('/:identityName', auth, async (req, res) => {
           date: targetDate
         });
 
-        // 실시간 동기화
+        // 실시간 동기화 (같은 계정을 보고 있는 사용자에게만 알림)
         emitDataChange('finish:changed', {
           action: 'update',
           date: targetDate,
           mode: dataMode,
           accountId: filterAccountId,
           user: req.user.displayName || req.user.username
-        }, { room: `page:${dataMode === 'start' ? 'start' : 'finish'}`, excludeSocket: req.socketId });
+        }, { room: `account:${filterAccountId}`, excludeSocket: req.socketId });
       });
       return;
     }
@@ -663,14 +664,14 @@ router.put('/:identityName', auth, async (req, res) => {
             date: targetDate
           });
 
-          // 실시간 동기화
+          // 실시간 동기화 (같은 계정을 보고 있는 사용자에게만 알림)
           emitDataChange('finish:changed', {
             action: 'update',
             date: targetDate,
             mode: dataMode,
             accountId: filterAccountId,
             user: req.user.displayName || req.user.username
-          }, { room: `page:${dataMode === 'start' ? 'start' : 'finish'}`, excludeSocket: req.socketId });
+          }, { room: `account:${filterAccountId}`, excludeSocket: req.socketId });
         });
       }
     );

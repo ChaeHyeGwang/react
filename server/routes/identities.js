@@ -409,7 +409,7 @@ router.post('/', auth, async (req, res) => {
       action: 'create',
       accountId: req.user.filterAccountId,
       user: req.user.displayName || req.user.username
-    }, { excludeSocket: req.socketId });
+    }, { room: `account:${req.user.filterAccountId || req.user.accountId}`, excludeSocket: req.socketId });
   } catch (error) {
     console.error('명의 추가 실패:', error);
     res.status(500).json({ success: false, message: '명의 추가 실패' });
@@ -483,7 +483,7 @@ router.put('/:id', auth, async (req, res) => {
       action: 'update',
       accountId: req.user.filterAccountId,
       user: req.user.displayName || req.user.username
-    }, { excludeSocket: req.socketId });
+    }, { room: `account:${req.user.filterAccountId || req.user.accountId}`, excludeSocket: req.socketId });
   } catch (error) {
     console.error('명의 수정 실패:', error);
     res.status(500).json({ success: false, message: '명의 수정 실패' });
@@ -532,7 +532,7 @@ router.delete('/:id', auth, async (req, res) => {
       action: 'delete',
       accountId: req.user.filterAccountId,
       user: req.user.displayName || req.user.username
-    }, { excludeSocket: req.socketId });
+    }, { room: `account:${req.user.filterAccountId || req.user.accountId}`, excludeSocket: req.socketId });
   } catch (error) {
     console.error('명의 삭제 실패:', error);
     res.status(500).json({ success: false, message: '명의 삭제 실패' });

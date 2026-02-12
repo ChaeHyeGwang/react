@@ -352,13 +352,13 @@ router.post('/', auth, async (req, res) => {
       _attendanceDays: attendanceDaysMap
     });
 
-    // 실시간 동기화: 같은 계정의 다른 사용자에게 알림
+    // 실시간 동기화: 같은 계정을 보고 있는 사용자에게만 알림
     emitDataChange('drbet:changed', {
       action: 'create',
       date: record_date,
       accountId: req.user.filterAccountId,
       user: req.user.displayName || req.user.username
-    }, { room: `page:drbet`, excludeSocket: req.socketId });
+    }, { room: `account:${req.user.filterAccountId || req.user.accountId}`, excludeSocket: req.socketId });
   } catch (error) {
     console.error('DR벳 기록 생성 실패:', error);
     res.status(500).json({ message: 'DR벳 기록 생성 실패', error: error.message });
@@ -633,14 +633,14 @@ router.put('/:id', auth, async (req, res) => {
       _attendanceDays: attendanceDaysMap // { "명의||사이트": 출석일 }
     });
 
-    // 실시간 동기화
+    // 실시간 동기화 (같은 계정을 보고 있는 사용자에게만 알림)
     emitDataChange('drbet:changed', {
       action: 'update',
       recordId: id,
       date: record_date || existingRecord.record_date,
       accountId: req.user.filterAccountId,
       user: req.user.displayName || req.user.username
-    }, { room: `page:drbet`, excludeSocket: req.socketId });
+    }, { room: `account:${req.user.filterAccountId || req.user.accountId}`, excludeSocket: req.socketId });
   } catch (error) {
     console.error('DR벳 기록 수정 실패:', error);
     res.status(500).json({ message: 'DR벳 기록 수정 실패', error: error.message });
@@ -681,14 +681,14 @@ router.delete('/:id', auth, async (req, res) => {
 
     res.json({ message: 'DR벳 기록이 삭제되었습니다' });
 
-    // 실시간 동기화
+    // 실시간 동기화 (같은 계정을 보고 있는 사용자에게만 알림)
     emitDataChange('drbet:changed', {
       action: 'delete',
       recordId: id,
       date: existingRecord.record_date,
       accountId: req.user.filterAccountId,
       user: req.user.displayName || req.user.username
-    }, { room: `page:drbet`, excludeSocket: req.socketId });
+    }, { room: `account:${req.user.filterAccountId || req.user.accountId}`, excludeSocket: req.socketId });
   } catch (error) {
     console.error('DR벳 기록 삭제 실패:', error);
     res.status(500).json({ message: 'DR벳 기록 삭제 실패' });

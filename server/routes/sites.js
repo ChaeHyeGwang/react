@@ -682,13 +682,13 @@ router.post('/', auth, async (req, res) => {
 
     res.json({ success: true, siteId: newSiteId, message: '사이트가 추가되었습니다' });
 
-    // 실시간 동기화
+    // 실시간 동기화 (같은 계정을 보고 있는 사용자에게만 알림)
     emitDataChange('sites:changed', {
       action: 'create',
       siteId: newSiteId,
       accountId: req.user.filterAccountId,
       user: req.user.displayName || req.user.username
-    }, { room: 'page:sites', excludeSocket: req.socketId });
+    }, { room: `account:${req.user.filterAccountId || req.user.accountId}`, excludeSocket: req.socketId });
   } catch (error) {
     console.error('사이트 추가 실패:', error);
     res.status(500).json({ success: false, message: '사이트 추가 실패' });
@@ -900,13 +900,13 @@ router.put('/:id', auth, async (req, res) => {
 
     res.json({ success: true, message: '사이트가 수정되었습니다' });
 
-    // 실시간 동기화
+    // 실시간 동기화 (같은 계정을 보고 있는 사용자에게만 알림)
     emitDataChange('sites:changed', {
       action: 'update',
       siteId: id,
       accountId: req.user.filterAccountId,
       user: req.user.displayName || req.user.username
-    }, { room: 'page:sites', excludeSocket: req.socketId });
+    }, { room: `account:${req.user.filterAccountId || req.user.accountId}`, excludeSocket: req.socketId });
   } catch (error) {
     console.error('사이트 수정 실패:', error);
     res.status(500).json({ success: false, message: '사이트 수정 실패' });
@@ -983,13 +983,13 @@ router.delete('/:id', auth, async (req, res) => {
 
     res.json({ success: true, message: '사이트가 삭제되었습니다' });
 
-    // 실시간 동기화
+    // 실시간 동기화 (같은 계정을 보고 있는 사용자에게만 알림)
     emitDataChange('sites:changed', {
       action: 'delete',
       siteId: id,
       accountId: req.user.filterAccountId,
       user: req.user.displayName || req.user.username
-    }, { room: 'page:sites', excludeSocket: req.socketId });
+    }, { room: `account:${req.user.filterAccountId || req.user.accountId}`, excludeSocket: req.socketId });
   } catch (error) {
     console.error('사이트 삭제 실패:', error);
     res.status(500).json({ success: false, message: '사이트 삭제 실패' });
