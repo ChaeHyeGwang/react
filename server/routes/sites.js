@@ -159,7 +159,7 @@ router.get('/', auth, async (req, res) => {
           s.notes,
           s.display_order,
           i.name AS identity_name,
-          u.username,
+          a.username,
           COALESCE(att.attendance_days, 0) AS attendance_days,
           att.last_recorded_at AS attendance_last_recorded_at
         FROM site_accounts s

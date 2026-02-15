@@ -48,17 +48,22 @@ function parseNotesForFinish(notes) {
   const parts = notes.split('/');
   
   for (const part of parts) {
-    // 칩실수루카10못먹, 칩팅루카10먹 같은 패턴 매칭
-    const match = part.match(/^(칩실수|칩팅|배거)(.+?)(\d+)(먹|못먹)/);
-    if (match) {
-      const chipType = match[1];
-      const siteName = match[2];
-      const amount = parseInt(match[3]) * 10000;
-      const status = match[4];
-      
+    const trimmedPart = part.trim();
+    if (!trimmedPart) continue;
+    
+    // 패턴 1: 사이트명 + (칩실수|칩팅|배거) + 숫자 + (먹|못먹)
+    // 예: "로로벳칩실수5먹", "의리벳배거15못먹"
+    const match1 = trimmedPart.match(/^(.+?)(칩실수|칩팅|배거)(\d+)(먹|못먹)/);
+    
+    // 패턴 2: (칩실수|칩팅|배거) + 사이트명 + 숫자 + (먹|못먹) (기존 패턴)
+    // 예: "칩실수로로벳5먹"
+    const match2 = trimmedPart.match(/^(칩실수|칩팅|배거)(.+?)(\d+)(먹|못먹)/);
+    
+    if (match1 || match2) {
+      const siteName = match1 ? match1[1] : match2[2];
       result.push({
         site: siteName,
-        content: `${chipType}${siteName}${match[3]}${status}`
+        content: trimmedPart
       });
     }
   }
@@ -607,7 +612,7 @@ router.put('/:identityName', auth, async (req, res) => {
         emitDataChange('finish:changed', {
           action: 'update',
           date: targetDate,
-          mode: dataMode,
+          mode: mode,
           accountId: filterAccountId,
           user: req.user.displayName || req.user.username
         }, { room: `account:${filterAccountId}`, excludeSocket: req.socketId });
@@ -668,7 +673,7 @@ router.put('/:identityName', auth, async (req, res) => {
           emitDataChange('finish:changed', {
             action: 'update',
             date: targetDate,
-            mode: dataMode,
+            mode: mode,
             accountId: filterAccountId,
             user: req.user.displayName || req.user.username
           }, { room: `account:${filterAccountId}`, excludeSocket: req.socketId });
@@ -697,10 +702,6 @@ router.post('/init', auth, async (req, res) => {
       'SELECT id, name FROM identities WHERE account_id = ? ORDER BY id',
       [filterAccountId]
     );
-    
-    if (identities.length === 0) {
-      return res.status(404).json({ error: '명의가 없습니다' });
-    }
     
     if (identities.length === 0) {
       return res.json({ message: '명의가 없습니다.', date: targetDate });

@@ -214,15 +214,16 @@ async function getAttendanceStats({ accountId, siteName, identityName }) {
 }
 
 /**
- * 이전 날짜 계산
+ * 이전 날짜 계산 (UTC 오류 방지: 정오 기준 계산)
  */
 function getPreviousDay(dateString) {
-  const date = new Date(dateString);
+  const [year, month, day] = dateString.split('-').map(Number);
+  const date = new Date(year, month - 1, day, 12, 0, 0);
   date.setDate(date.getDate() - 1);
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
 }
 
 /**
@@ -239,6 +240,45 @@ async function handleMonthlyRollover({ accountId, siteName, identityName, rollov
   return;
 }
 
+/**
+ * site_attendance 테이블 동기화 (출석 로그 기반으로 재계산)
+ * - 출석 로그 변경 후 반드시 호출하여 site_attendance를 최신 상태로 유지
+ * - getAttendanceStats 결과를 반환하므로 중복 호출 불필요
+ */
+async function syncSiteAttendanceRecord({ accountId, siteName, identityName }) {
+  try {
+    const identity = await db.get(
+      `SELECT id AS identity_id FROM identities WHERE account_id = ? AND name = ?`,
+      [accountId, identityName]
+    );
+    if (!identity) return null;
+
+    const siteAccount = await db.get(
+      `SELECT id FROM site_accounts WHERE identity_id = ? AND site_name = ? LIMIT 1`,
+      [identity.identity_id, siteName]
+    );
+    if (!siteAccount) return null;
+
+    const stats = await getAttendanceStats({ accountId, siteName, identityName });
+    const consecutiveDays = stats.consecutiveDays || 0;
+    const lastAttendanceDate = stats.lastAttendanceDate || null;
+
+    const { upsertSiteAttendance } = require('./siteAttendance');
+    await upsertSiteAttendance({
+      accountId,
+      identityId: identity.identity_id,
+      siteAccountId: siteAccount.id,
+      attendanceDays: consecutiveDays,
+      lastRecordedAt: lastAttendanceDate
+    });
+
+    return stats;
+  } catch (error) {
+    console.error('site_attendance 동기화 실패:', error);
+    return null;
+  }
+}
+
 module.exports = {
   addAttendanceLog,
   removeAttendanceLog,
@@ -247,6 +287,7 @@ module.exports = {
   calculateConsecutiveDays,
   calculateTotalDays,
   getAttendanceStats,
+  syncSiteAttendanceRecord,
   handleMonthlyRollover
 };
 

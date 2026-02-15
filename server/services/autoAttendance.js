@@ -255,19 +255,20 @@ async function calcConsecutiveDays(accountId, siteName, identityName, rollover =
   const dates = new Set(logs.map(l => l.attendance_date));
   if (dates.size === 0) return 0;
   
-  // 가장 최근 날짜 찾기 (includeDate가 더 최근일 수 있음)
+  // 가장 최근 날짜 찾기
   const allDates = Array.from(dates).sort().reverse();
   let checkDate = allDates[0];
   
-  // 현재 월 계산 (이월 X일 때 월 경계 체크용)
-  const currentMonth = checkDate.substring(0, 7); // YYYY-MM
+  // 이월 X일 때 월 경계 체크: 현재 KST 월 기준 (마지막 출석일 월이 아님)
+  // 이유: 이월 X는 "매월 1일에 초기화"이므로, 이전 월의 출석은 무시해야 함
+  const kstCurrentMonth = getKSTDateString().substring(0, 7); // 현재 KST YYYY-MM
   
   let days = 0;
   while (dates.has(checkDate)) {
-    // 이월 X인 경우: 월이 바뀌면 중단
+    // 이월 X인 경우: 현재 월을 벗어나면 중단
     if (rollover === 'X') {
       const checkMonth = checkDate.substring(0, 7);
-      if (checkMonth !== currentMonth) {
+      if (checkMonth !== kstCurrentMonth) {
         break;
       }
     }
@@ -289,12 +290,18 @@ async function calcConsecutiveDays(accountId, siteName, identityName, rollover =
 
 /**
  * site_attendance 테이블 업데이트
+ * ON CONFLICT DO UPDATE 사용 (INSERT OR REPLACE는 기존 행을 삭제하여 created_at 등 소실)
  */
 async function updateAttendance(accountId, identityId, siteAccountId, days, lastDate) {
   await db.run(
-    `INSERT OR REPLACE INTO site_attendance 
-     (account_id, identity_id, site_account_id, period_type, period_value, attendance_days, last_recorded_at, updated_at)
-     VALUES (?, ?, ?, 'total', 'all', ?, ?, datetime('now'))`,
+    `INSERT INTO site_attendance 
+     (account_id, identity_id, site_account_id, period_type, period_value, attendance_days, last_recorded_at, created_at, updated_at)
+     VALUES (?, ?, ?, 'total', 'all', ?, ?, datetime('now'), datetime('now'))
+     ON CONFLICT(account_id, identity_id, site_account_id, period_type, period_value)
+     DO UPDATE SET
+       attendance_days = excluded.attendance_days,
+       last_recorded_at = COALESCE(excluded.last_recorded_at, site_attendance.last_recorded_at),
+       updated_at = excluded.updated_at`,
     [accountId, identityId, siteAccountId, days, lastDate]
   );
 }
@@ -304,6 +311,9 @@ async function updateAttendance(accountId, identityId, siteAccountId, days, last
  * 주의: 트랜잭션 내에서 사용하면 안됨 (커밋 후 출석일 조회 필요)
  */
 async function processSiteAttendance(accountId, siteName, identityName, chargeValue, date) {
+  // 독립 호출이므로 캐시 초기화
+  clearCache();
+  
   // 사이트 설정 조회 (출석타입, 이월 설정)
   const settings = await getSiteSettings(accountId, siteName, identityName);
   
@@ -444,10 +454,15 @@ async function handleUpdateRecord(accountId, oldRecord, newRecord, newRecordDate
         sitesToCalculate.push({ siteName: newSite, identityName: newIdentity, chargeRaw: newChargeRaw, date: newDate });
       }
       
-      // 명의/사이트가 변경된 경우 기존 데이터도 처리 (로그 제거) - 같은 날짜 내에서
-      if (siteChanged && !dateChanged && newDate) {
-        await processLogOnly(accountId, oldSite, oldIdentity, '', newDate);
-        sitesToCalculate.push({ siteName: oldSite, identityName: oldIdentity, chargeRaw: '', date: newDate });
+      // 명의/사이트가 변경된 경우 기존 데이터도 처리 (로그 제거 + 재계산)
+      if (siteChanged) {
+        if (!dateChanged && newDate) {
+          // 같은 날짜 내에서 사이트/명의만 변경: 이전 사이트의 해당 날짜 로그 제거
+          await processLogOnly(accountId, oldSite, oldIdentity, '', newDate);
+        }
+        // dateChanged인 경우 이전 날짜 로그는 이미 위의 dateChanged 블록에서 제거됨
+        // 두 경우 모두 이전 사이트의 출석일을 재계산해야 함
+        sitesToCalculate.push({ siteName: oldSite, identityName: oldIdentity, chargeRaw: '', date: oldDate || newDate });
       }
     }
     
@@ -502,11 +517,37 @@ async function calculateAndUpdateAttendance(accountId, siteName, identityName, c
   const days = await calcConsecutiveDays(accountId, siteName, identityName, settings.rollover);
   
   // 출석일 테이블 업데이트
+  // charge > 0: identity/siteAccount 없으면 자동 생성
+  // charge = 0: 생성하지 않되, 기존 레코드가 있으면 반드시 업데이트 (stale 방지)
   const identityId = await getIdentityId(accountId, identityName, charge > 0);
   if (identityId) {
     const siteAccountId = await getSiteAccountId(identityId, siteName, charge > 0);
     if (siteAccountId) {
       await updateAttendance(accountId, identityId, siteAccountId, days, charge > 0 ? date : null);
+    } else if (charge <= 0) {
+      // charge=0인데 siteAccount가 없으면 → identity 기반으로 siteAccount 검색 시도 (삭제된 경우 대비)
+      const fallbackSiteAccount = await db.get(
+        `SELECT id FROM site_accounts WHERE identity_id = ? AND site_name = ? LIMIT 1`,
+        [identityId, siteName]
+      );
+      if (fallbackSiteAccount) {
+        await updateAttendance(accountId, identityId, fallbackSiteAccount.id, days, null);
+      }
+    }
+  } else if (charge <= 0) {
+    // charge=0인데 identity가 없으면 → DB에서 직접 검색 시도 (삭제된 경우 대비)
+    const fallbackIdentity = await db.get(
+      `SELECT id FROM identities WHERE account_id = ? AND name = ? LIMIT 1`,
+      [accountId, identityName]
+    );
+    if (fallbackIdentity) {
+      const fallbackSiteAccount = await db.get(
+        `SELECT id FROM site_accounts WHERE identity_id = ? AND site_name = ? LIMIT 1`,
+        [fallbackIdentity.id, siteName]
+      );
+      if (fallbackSiteAccount) {
+        await updateAttendance(accountId, fallbackIdentity.id, fallbackSiteAccount.id, days, null);
+      }
     }
   }
   

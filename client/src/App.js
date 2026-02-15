@@ -191,15 +191,17 @@ function App() {
                 <Route 
                   path="backup" 
                   element={
-                    <BackupManagement />
+                    <AdminRoute>
+                      <BackupManagement />
+                    </AdminRoute>
                   } 
                 />
                 <Route 
                   path="offices" 
                   element={
-                    <ProtectedRoute>
+                    <AdminRoute>
                       <OfficeManagement />
-                    </ProtectedRoute>
+                    </AdminRoute>
                   } 
                 />
                 <Route 

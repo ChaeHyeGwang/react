@@ -231,7 +231,7 @@ router.put('/:id', auth, async (req, res) => {
     await db.run(
       `UPDATE communities 
        SET site_name = ?, domain = ?, referral_path = ?, approval_call = ?, identity_name = ?, 
-           account_id = ?, password = ?, exchange_password = ?, nickname = ?, status = ?, 
+           account_id_site = ?, password = ?, exchange_password = ?, nickname = ?, status = ?, 
            referral_code = ?, notes = ?, updated_at = ?
        WHERE id = ? AND account_id = ?`,
       [

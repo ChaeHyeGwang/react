@@ -6,10 +6,10 @@ const {
   removeAttendanceLog,
   getAttendanceStats,
   checkAttendanceExists,
-  getAttendanceLogs
+  getAttendanceLogs,
+  syncSiteAttendanceRecord
 } = require('../utils/attendanceLog');
 const db = require('../database/db');
-const { getAccountOfficeId } = require('../services/siteNotesService');
 
 // 출석 통계 조회 API
 router.get('/stats', auth, async (req, res) => {
@@ -153,94 +153,9 @@ router.post('/toggle', auth, async (req, res) => {
       }
     }
 
-    // 출석 로그 추가/제거 후 출석일 재계산
-    try {
-      // identity_id와 site_account_id 조회
-      const identity = await db.get(
-        `SELECT i.id AS identity_id
-         FROM identities i
-         WHERE i.account_id = ? AND i.name = ?`,
-        [accountId, identityName]
-      );
-      
-      if (identity) {
-        const siteAccount = await db.get(
-          `SELECT id FROM site_accounts 
-           WHERE identity_id = ? AND site_name = ?
-           LIMIT 1`,
-          [identity.identity_id, siteName]
-        );
-        
-        if (siteAccount) {
-          // 출석 통계 조회 (로그 기반으로 계산)
-          const stats = await getAttendanceStats({
-            accountId,
-            siteName,
-            identityName
-          });
-          
-          const consecutiveDays = stats.consecutiveDays || 0;
-          const lastAttendanceDate = stats.lastAttendanceDate;
-          
-          // site_notes에서 rollover 정보 조회
-          const officeId = await getAccountOfficeId(accountId);
-          const { getSiteNoteData } = require('../services/siteNotesService');
-          const siteNotes = await getSiteNoteData({
-            siteName,
-            identityName,
-            accountId,
-            officeId
-          });
-          const rollover = siteNotes?.data?.rollover || 'X';
-          
-          // 현재 월 계산
-          const now = new Date();
-          const kstDate = new Date(now.toLocaleString('en-US', {timeZone: 'Asia/Seoul'}));
-          const year = kstDate.getFullYear();
-          const month = String(kstDate.getMonth() + 1).padStart(2, '0');
-          const currentMonth = `${year}-${month}`;
-          
-          const { getKSTDateTimeString } = require('../utils/time');
-          const timestamp = getKSTDateTimeString();
-          
-          // 출석 기록 조회 또는 업데이트
-          let attendance = await db.get(
-            `SELECT * FROM site_attendance
-             WHERE account_id = ? AND identity_id = ? AND site_account_id = ?
-             AND period_type = 'total' AND period_value = 'all'`,
-            [accountId, identity.identity_id, siteAccount.id]
-          );
-          
-          if (!attendance) {
-            // 출석 기록이 없으면 새로 생성
-            await db.run(
-              `INSERT INTO site_attendance (account_id, identity_id, site_account_id, period_type, period_value, attendance_days, current_month, last_recorded_at, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-              [accountId, identity.identity_id, siteAccount.id, 'total', 'all', consecutiveDays, currentMonth, lastAttendanceDate || null, timestamp, timestamp]
-            );
-          } else {
-            // 출석 기록 업데이트 (출석 로그 기반으로 재계산된 값 사용)
-            await db.run(
-              `UPDATE site_attendance
-               SET attendance_days = ?, current_month = ?, last_recorded_at = ?, updated_at = ?
-               WHERE account_id = ? AND identity_id = ? AND site_account_id = ?
-               AND period_type = 'total' AND period_value = 'all'`,
-              [consecutiveDays, currentMonth, lastAttendanceDate || attendance.last_recorded_at, timestamp, accountId, identity.identity_id, siteAccount.id]
-            );
-          }
-        }
-      }
-    } catch (recalcError) {
-      console.error('출석일 재계산 실패:', recalcError);
-      // 재계산 실패해도 응답은 정상 반환
-    }
-    
-    // 최신 통계 조회
-    const stats = await getAttendanceStats({
-      accountId,
-      siteName,
-      identityName
-    });
+    // 출석 로그 변경 후 site_attendance 동기화 및 통계 조회 (1회만 호출)
+    const stats = await syncSiteAttendanceRecord({ accountId, siteName, identityName })
+      || await getAttendanceStats({ accountId, siteName, identityName });
     
     res.json({
       success: true,
@@ -387,7 +302,6 @@ router.post('/add-past', auth, async (req, res) => {
     });
     
     // 변경 로그 기록 (access_logs에 저장)
-    const db = require('../database/db');
     await db.run(
       `INSERT INTO access_logs (account_id, action, details, ip_address, user_agent, timestamp)
        VALUES (?, ?, ?, ?, ?, ?)`,
@@ -401,12 +315,9 @@ router.post('/add-past', auth, async (req, res) => {
       ]
     );
     
-    // 최신 통계 조회
-    const stats = await getAttendanceStats({
-      accountId,
-      siteName,
-      identityName
-    });
+    // site_attendance 동기화 및 최신 통계 조회
+    const stats = await syncSiteAttendanceRecord({ accountId, siteName, identityName })
+      || await getAttendanceStats({ accountId, siteName, identityName });
     
     res.json({
       success: true,
@@ -532,7 +443,6 @@ router.post('/bulk-add', auth, async (req, res) => {
     }
     
     // 변경 로그 기록 (access_logs에 저장)
-    const db = require('../database/db');
     await db.run(
       `INSERT INTO access_logs (account_id, action, details, ip_address, user_agent, timestamp)
        VALUES (?, ?, ?, ?, ?, ?)`,
@@ -546,12 +456,9 @@ router.post('/bulk-add', auth, async (req, res) => {
       ]
     );
     
-    // 최신 통계 조회
-    const stats = await getAttendanceStats({
-      accountId,
-      siteName,
-      identityName
-    });
+    // site_attendance 동기화 및 최신 통계 조회
+    const stats = await syncSiteAttendanceRecord({ accountId, siteName, identityName })
+      || await getAttendanceStats({ accountId, siteName, identityName });
     
     res.json({
       success: true,
@@ -686,81 +593,9 @@ router.post('/bulk-remove', auth, async (req, res) => {
       }
     }
     
-    // 출석일 재계산 (site_attendance 테이블 업데이트)
-    try {
-      // 사이트 설정 조회 (이월 설정 등)
-      const { getSiteNoteData, getAccountOfficeId } = require('../services/siteNotesService');
-      const officeId = await getAccountOfficeId(accountId);
-      const siteNote = await getSiteNoteData({
-        siteName,
-        identityName: null, // 이월 설정은 명의별이 아니므로 null
-        accountId,
-        officeId
-      });
-      
-      const rollover = siteNote?.data?.rollover || 'X';
-      
-      // 출석 통계 재계산
-      const stats = await getAttendanceStats({
-        accountId,
-        siteName,
-        identityName
-      });
-      
-      // site_attendance 테이블 업데이트
-      const identity = await db.get(
-        `SELECT id as identity_id FROM identities 
-         WHERE account_id = ? AND name = ?`,
-        [accountId, identityName]
-      );
-      
-      if (identity) {
-        const siteAccount = await db.get(
-          `SELECT id FROM site_accounts 
-           WHERE identity_id = ? AND site_name = ?`,
-          [identity.identity_id, siteName]
-        );
-        
-        if (siteAccount) {
-          const now = new Date();
-          const kstDate = new Date(now.toLocaleString('en-US', {timeZone: 'Asia/Seoul'}));
-          const year = kstDate.getFullYear();
-          const month = String(kstDate.getMonth() + 1).padStart(2, '0');
-          const currentMonth = `${year}-${month}`;
-          
-          // 출석 기록 조회 또는 업데이트
-          let attendance = await db.get(
-            `SELECT * FROM site_attendance
-             WHERE account_id = ? AND identity_id = ? AND site_account_id = ?
-             AND period_type = 'total' AND period_value = 'all'`,
-            [accountId, identity.identity_id, siteAccount.id]
-          );
-          
-          const timestamp = new Date().toISOString();
-          
-          if (!attendance) {
-            // 출석 기록이 없으면 새로 생성
-            await db.run(
-              `INSERT INTO site_attendance (account_id, identity_id, site_account_id, period_type, period_value, attendance_days, current_month, last_recorded_at, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-              [accountId, identity.identity_id, siteAccount.id, 'total', 'all', stats.consecutiveDays, currentMonth, stats.lastAttendanceDate || null, timestamp, timestamp]
-            );
-          } else {
-            // 출석 기록 업데이트
-            await db.run(
-              `UPDATE site_attendance
-               SET attendance_days = ?, current_month = ?, last_recorded_at = ?, updated_at = ?
-               WHERE account_id = ? AND identity_id = ? AND site_account_id = ?
-               AND period_type = 'total' AND period_value = 'all'`,
-              [stats.consecutiveDays, currentMonth, stats.lastAttendanceDate || attendance.last_recorded_at, timestamp, accountId, identity.identity_id, siteAccount.id]
-            );
-          }
-        }
-      }
-    } catch (recalcError) {
-      console.error('출석일 재계산 실패:', recalcError);
-      // 재계산 실패해도 응답은 정상 반환
-    }
+    // site_attendance 동기화 및 최신 통계 조회
+    const stats = await syncSiteAttendanceRecord({ accountId, siteName, identityName })
+      || await getAttendanceStats({ accountId, siteName, identityName });
     
     // 변경 로그 기록 (access_logs에 저장)
     await db.run(
@@ -775,13 +610,6 @@ router.post('/bulk-remove', auth, async (req, res) => {
         new Date().toISOString()
       ]
     );
-    
-    // 최신 통계 조회
-    const stats = await getAttendanceStats({
-      accountId,
-      siteName,
-      identityName
-    });
     
     res.json({
       success: true,

@@ -38,7 +38,7 @@ const Dashboard = () => {
 
   useEffect(() => {
     loadAllData();
-    // eslint-disable-next-line
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedYearMonth]);
 
   const loadAllData = async () => {
@@ -67,6 +67,7 @@ const Dashboard = () => {
       setSummary(response.data);
     } catch (error) {
       console.error('요약 데이터 로드 실패:', error);
+      throw error;
     }
   };
 
@@ -76,6 +77,7 @@ const Dashboard = () => {
       setMonthlyTrend(response.data);
     } catch (error) {
       console.error('월별 추이 로드 실패:', error);
+      throw error;
     }
   };
 
@@ -87,6 +89,7 @@ const Dashboard = () => {
       setDailyTrend(response.data);
     } catch (error) {
       console.error('일별 추이 로드 실패:', error);
+      throw error;
     }
   };
 
@@ -98,6 +101,7 @@ const Dashboard = () => {
       setSiteStats(response.data);
     } catch (error) {
       console.error('사이트별 통계 로드 실패:', error);
+      throw error;
     }
   };
 
@@ -109,6 +113,7 @@ const Dashboard = () => {
       setIdentityStats(response.data);
     } catch (error) {
       console.error('유저별 통계 로드 실패:', error);
+      throw error;
     }
   };
 
@@ -119,8 +124,9 @@ const Dashboard = () => {
 
   const formatCurrencyWithSign = (amount) => {
     if (!amount && amount !== 0) return '0';
+    if (amount === 0) return '0';
     const formatted = Math.abs(amount).toLocaleString('ko-KR');
-    return amount >= 0 ? `+${formatted}` : `-${formatted}`;
+    return amount > 0 ? `+${formatted}` : `-${formatted}`;
   };
 
   // 차트 색상
@@ -192,20 +198,16 @@ const Dashboard = () => {
 
   const siteDetails = summary.siteDetails || [];
   
-  // useMemo로 필터링 최적화 및 정확성 보장
+  // useMemo로 필터링 최적화
   const filteredSiteDetails = useMemo(() => {
-    console.log('[Dashboard] 필터링 적용:', siteDetailFilter, '전체:', siteDetails.length);
-    
-    const result = siteDetails.filter(detail => {
+    return siteDetails.filter(detail => {
       if (siteDetailFilter === 'approved') return detail.includedInApproved === true;
       if (siteDetailFilter === 'excluded') return detail.includedInTotal === false;
       if (siteDetailFilter === 'included') return detail.includedInTotal === true;
       return true; // 'all'
     });
-    
-    console.log('[Dashboard] 필터링 결과:', result.length, '개');
-    return result;
-  }, [siteDetails, siteDetailFilter]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [summary.siteDetails, siteDetailFilter]);
 
   if (loading) {
     return (
@@ -286,10 +288,12 @@ const Dashboard = () => {
         <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md dark:shadow-gray-900/50 p-6 border-l-4 border-green-500 hover:shadow-lg transition-shadow">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm text-gray-600 dark:text-gray-300 font-medium">이번 주 수익</p>
+              <p className="text-sm text-gray-600 dark:text-gray-300 font-medium">
+                {selectedYearMonth === getCurrentYearMonth() ? '이번 주 수익' : '주간 수익 (해당 없음)'}
+              </p>
               <p className="text-2xl font-bold text-gray-900 dark:text-white mt-2">
-                {formatCurrencyWithSign(summary.weeklyMargin)}
-                <span className="text-sm font-normal text-gray-600 dark:text-gray-300 ml-1">원</span>
+                {selectedYearMonth === getCurrentYearMonth() ? formatCurrencyWithSign(summary.weeklyMargin) : '-'}
+                {selectedYearMonth === getCurrentYearMonth() && <span className="text-sm font-normal text-gray-600 dark:text-gray-300 ml-1">원</span>}
               </p>
             </div>
             <div className="bg-green-100 p-3 rounded-full">
@@ -299,7 +303,9 @@ const Dashboard = () => {
             </div>
           </div>
           <div className="mt-4 flex items-center text-xs">
-            <span className="text-gray-600 dark:text-gray-300">월요일 ~ 오늘</span>
+            <span className="text-gray-600 dark:text-gray-300">
+              {selectedYearMonth === getCurrentYearMonth() ? '월요일 ~ 오늘' : '현재 월에서만 표시됩니다'}
+            </span>
           </div>
         </div>
 
@@ -385,10 +391,7 @@ const Dashboard = () => {
                 ].map(filter => (
                   <button
                     key={filter.key}
-                    onClick={() => {
-                      console.log('[Dashboard] 필터 버튼 클릭:', filter.key);
-                      setSiteDetailFilter(filter.key);
-                    }}
+                    onClick={() => setSiteDetailFilter(filter.key)}
                     className={`px-3 py-1 rounded-full text-xs font-semibold transition-colors ${
                       siteDetailFilter === filter.key
                         ? 'bg-blue-600 text-white'
@@ -426,15 +429,7 @@ const Dashboard = () => {
                         </td>
                       </tr>
                     ) : (
-                      filteredSiteDetails
-                        .filter(detail => {
-                          // 렌더링 시점에서 한번 더 필터 적용 (안전장치)
-                          if (siteDetailFilter === 'approved') return detail.includedInApproved === true;
-                          if (siteDetailFilter === 'excluded') return detail.includedInTotal === false;
-                          if (siteDetailFilter === 'included') return detail.includedInTotal === true;
-                          return true;
-                        })
-                        .map((detail, idx) => (
+                      filteredSiteDetails.map((detail, idx) => (
                         <tr key={`${detail.siteName}-${detail.lastStatus}-${idx}`} className="text-sm dark:text-white">
                           <td className="border border-gray-300 dark:border-gray-600 px-3 py-2 font-semibold">{detail.siteName}</td>
                           <td className="border border-gray-300 dark:border-gray-600 px-3 py-2">
@@ -542,7 +537,13 @@ const Dashboard = () => {
               </tr>
             </thead>
             <tbody>
-              {identityStats.map((item, index) => (
+              {identityStats.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="border border-gray-300 dark:border-gray-600 px-4 py-6 text-center text-gray-500 dark:text-gray-300">
+                    해당 월의 유저별 통계 데이터가 없습니다.
+                  </td>
+                </tr>
+              ) : identityStats.map((item, index) => (
                 <tr key={item.identityName} className={`${index % 2 === 0 ? 'bg-white dark:bg-gray-800' : 'bg-gray-50 dark:bg-gray-700/50'} dark:text-white`}>
                   <td className="border border-gray-300 dark:border-gray-600 sm:px-4 sm:py-2 px-2 py-1 whitespace-nowrap">
                     <span className="whitespace-nowrap text-xs sm:text-sm"><Badge color="gray">{index + 1}</Badge></span>
@@ -569,7 +570,7 @@ const Dashboard = () => {
 
       {/* 사이트별 통계 */}
       <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md dark:shadow-gray-900/50 p-6">
-        <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-4">🌐 사이트별 포인트 순위 (TOP 10)</h2>
+        <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-4">🌐 사이트별 포인트 순위 {siteStats.length > 10 ? '(TOP 10)' : ''}</h2>
         <div className="overflow-x-auto">
           <table className="w-full border-collapse min-w-[720px] sm:min-w-0">
             <thead>
@@ -583,7 +584,13 @@ const Dashboard = () => {
               </tr>
             </thead>
             <tbody>
-              {siteStats.map((item, index) => (
+              {siteStats.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="border border-gray-300 dark:border-gray-600 px-4 py-6 text-center text-gray-500 dark:text-gray-300">
+                    해당 월의 사이트별 통계 데이터가 없습니다.
+                  </td>
+                </tr>
+              ) : siteStats.slice(0, 10).map((item, index) => (
                 <tr key={item.siteName} className={`${index % 2 === 0 ? 'bg-white dark:bg-gray-800' : 'bg-gray-50 dark:bg-gray-700/50'} dark:text-white`}>
                   <td className="border border-gray-300 dark:border-gray-600 sm:px-4 sm:py-2 px-2 py-1 whitespace-nowrap">
                     <span className="whitespace-nowrap text-xs sm:text-sm"><Badge color="gray">{index + 1}</Badge></span>

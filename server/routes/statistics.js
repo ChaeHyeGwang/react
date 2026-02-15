@@ -38,29 +38,41 @@ router.get('/summary', auth, async (req, res) => {
     const monthlyProfit = await db.get(monthlyProfitSql, monthlyProfitParams);
     
     // 이번 주 수익 (월요일부터 오늘까지)
+    // 현재 월을 조회 중일 때만 의미 있는 값, 과거 월이면 0
     const today = new Date();
-    const dayOfWeek = today.getDay();
-    const monday = new Date(today);
-    monday.setDate(today.getDate() - (dayOfWeek === 0 ? 6 : dayOfWeek - 1));
-    
-    const weekStart = monday.getDate();
-    const weekEnd = today.getDate();
+    const currentYearMonth = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
     
     let weeklyProfit = 0;
-    for (let day = weekStart; day <= weekEnd; day++) {
-      let dayProfitSql = 'SELECT SUM(s.ka_amount) as total FROM settlements s';
-      let dayProfitParams = [yearMonth, day];
-      if (filterAccountId) {
-        dayProfitSql += ' WHERE s.year_month = ? AND s.day_number = ? AND s.account_id = ?';
-        dayProfitParams.push(filterAccountId);
-      } else if (filterOfficeId) {
-        dayProfitSql += ' INNER JOIN accounts a ON s.account_id = a.id WHERE s.year_month = ? AND s.day_number = ? AND a.office_id = ?';
-        dayProfitParams.push(filterOfficeId);
-      } else {
-        dayProfitSql += ' WHERE s.year_month = ? AND s.day_number = ?';
+    if (yearMonth === currentYearMonth) {
+      const dayOfWeek = today.getDay();
+      const monday = new Date(today);
+      monday.setDate(today.getDate() - (dayOfWeek === 0 ? 6 : dayOfWeek - 1));
+      
+      // 월 경계를 넘는 주를 처리: 날짜를 하루씩 순회
+      const dates = [];
+      const current = new Date(monday);
+      while (current <= today) {
+        const ym = `${current.getFullYear()}-${String(current.getMonth() + 1).padStart(2, '0')}`;
+        const dayNum = current.getDate();
+        dates.push({ yearMonth: ym, day: dayNum });
+        current.setDate(current.getDate() + 1);
       }
-      const dayProfit = await db.get(dayProfitSql, dayProfitParams);
-      weeklyProfit += dayProfit?.total || 0;
+      
+      for (const { yearMonth: ym, day } of dates) {
+        let dayProfitSql = 'SELECT SUM(s.ka_amount) as total FROM settlements s';
+        let dayProfitParams = [ym, day];
+        if (filterAccountId) {
+          dayProfitSql += ' WHERE s.year_month = ? AND s.day_number = ? AND s.account_id = ?';
+          dayProfitParams.push(filterAccountId);
+        } else if (filterOfficeId) {
+          dayProfitSql += ' INNER JOIN accounts a ON s.account_id = a.id WHERE s.year_month = ? AND s.day_number = ? AND a.office_id = ?';
+          dayProfitParams.push(filterOfficeId);
+        } else {
+          dayProfitSql += ' WHERE s.year_month = ? AND s.day_number = ?';
+        }
+        const dayProfit = await db.get(dayProfitSql, dayProfitParams);
+        weeklyProfit += dayProfit?.total || 0;
+      }
     }
     
     // 전체 누적 수익
@@ -682,8 +694,8 @@ router.get('/by-identity', auth, async (req, res) => {
         const parts = site.status.split('/');
         const lastStatus = parts[parts.length - 1].trim();
         
-        // 졸업, 팅, 가입전이 아니면 전체에 포함
-        if (!lastStatus.includes('졸업') && !lastStatus.includes('팅') && !lastStatus.includes('가입전')) {
+        // 졸업, 팅, 가입전, 대기가 아니면 전체에 포함 (summary와 동일 기준)
+        if (!lastStatus.includes('졸업') && !lastStatus.includes('팅') && !lastStatus.includes('가입전') && !lastStatus.includes('대기')) {
           totalSites++;
         }
         

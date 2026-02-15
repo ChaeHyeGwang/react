@@ -162,8 +162,9 @@ function Finish({ isStartMode = false }) {
     };
     
     saveQueueRef.current.push(saveTask);
-    processSaveQueue();
-    isWithdrawalSavingRef.current = false;
+    processSaveQueue().finally(() => {
+      isWithdrawalSavingRef.current = false;
+    });
   };
   
   // 취침 데이터 편집 시작
@@ -265,7 +266,11 @@ function Finish({ isStartMode = false }) {
       // 🚀 모든 API를 병렬로 호출하여 로딩 속도 개선
       const [identitiesList, finishRes, drbetRes, summaryRes] = await Promise.all([
         getIdentitiesCached(),
-        axiosInstance.get('/finish', { params: { date: selectedDate, mode: dataMode } }).catch(() => null),
+        axiosInstance.get('/finish', { params: { date: selectedDate, mode: dataMode } }).catch(err => {
+          // 404(데이터 없음)만 초기화 대상, 그 외 네트워크/서버 에러는 빈 배열 반환 (불필요한 /init 호출 방지)
+          if (err.response?.status === 404) return null;
+          return { data: [] };
+        }),
         axiosInstance.get('/drbet').catch(() => ({ data: [] })),
         axiosInstance.get('/finish/summary', { params: { date: selectedDate, mode: dataMode } })
       ]);
@@ -1233,8 +1238,9 @@ function Finish({ isStartMode = false }) {
         <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-6 text-center">정산 요약</h2>
         
         {(() => {
-          const startBaseAmount = startAmountTotal > 0 ? startAmountTotal : yesterdayBalance;
+          // 시작 금액 합산이 설정된 경우 해당 값 사용, 아니면 현재 잔액 합계 사용 (텔레그램 발송 로직과 동일)
           const totalBalanceValue = (balances['받치기'] || 0) + balanceTotal + withdrawalTotal + manualWithdrawalTotal + coinWallet;
+          const startBaseAmount = startAmountTotal > 0 ? startAmountTotal : startTotalValue;
           const todayProfitValue = totalBalanceValue - startBaseAmount;
           const finalDifferenceValue = todayProfitValue - drbetMarginTotal;
 

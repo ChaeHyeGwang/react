@@ -270,9 +270,9 @@ const Layout = () => {
       { to: '/sites', label: '사이트 관리', icon: '🌐', hasSubmenu: true },
       { to: '/site-info', label: '사이트 정보 조회', icon: '📋' },
       { to: '/settlements', label: '정산 관리', icon: '💰' },
-      { to: '/drbet', label: '메인', icon: '🎲' },
+      { to: '/drbet', label: '메인', icon: '🎲', alwaysShow: true },
       { to: '/start', label: '시작', icon: '🚀' },
-      { to: '/finish', label: '마무리', icon: '🏁' },
+      { to: '/finish', label: '마무리', icon: '🏁', alwaysShow: true },
     ]),
     // 슈퍼관리자 전용 메뉴
     ...(isAdmin && !isOfficeManager ? [
@@ -470,7 +470,7 @@ const Layout = () => {
       {/* 모바일 하단 탭바 네비게이션 */}
       <nav className="sm:hidden fixed bottom-0 inset-x-0 z-40 bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700">
         <div className="grid grid-cols-4">
-          {navItems.filter(item => item.alwaysShow || true).slice(0,4).map((item) => (
+          {navItems.filter(item => item.alwaysShow).slice(0,4).map((item) => (
             <NavLink
               key={item.to}
               to={item.to}

@@ -39,8 +39,10 @@ const SiteManagement = () => {
   
   // 커뮤니티 상태
   const [communities, setCommunities] = useState([]);
-  const [showCommunityModal, setShowCommunityModal] = useState(false);
-  const [editingCommunity, setEditingCommunity] = useState(null);
+  
+  // 커뮤니티 페이징 상태
+  const [communityCurrentPage, setCommunityCurrentPage] = useState(1);
+  const [communityItemsPerPage] = useState(50);
   
   // 커뮤니티 인라인 편집 상태
   const [editingCommunityCell, setEditingCommunityCell] = useState(null); // { communityId, field }
@@ -95,11 +97,9 @@ const SiteManagement = () => {
   
   // 모달 상태
   const [showIdentityModal, setShowIdentityModal] = useState(false);
-  const [showSiteModal, setShowSiteModal] = useState(false);
   const [showBulkImportModal, setShowBulkImportModal] = useState(false);
   const [bulkImportMode, setBulkImportMode] = useState('sites'); // 'sites' or 'communities'
   const [editingIdentity, setEditingIdentity] = useState(null);
-  const [editingSite, setEditingSite] = useState(null);
   
   // 사이트 메타데이터(이벤트/요율 등) 모달 상태
   const [siteNotesModal, setSiteNotesModal] = useState({
@@ -129,13 +129,8 @@ const SiteManagement = () => {
   const [allSiteNames, setAllSiteNames] = useState([]); // 기존 모든 사이트명
   const [siteNameSuggestions, setSiteNameSuggestions] = useState([]); // 자동완성 제안
   const [showSuggestions, setShowSuggestions] = useState(false); // 자동완성 드롭다운 표시
-  const [similarWarning, setSimilarWarning] = useState(null); // 유사 사이트명 경고
-  const [showMergeModal, setShowMergeModal] = useState(false); // 통합 도구 모달
-  const [duplicateGroups, setDuplicateGroups] = useState([]); // 중복/유사 그룹
-  const [selectedMergeSource, setSelectedMergeSource] = useState(''); // 통합 원본
-  const [selectedMergeTarget, setSelectedMergeTarget] = useState(''); // 통합 대상
-  const siteNameInputRef = useRef(null); // 사이트명 입력 필드 ref
-
+  
+  
   // KST 기준 오늘 날짜 (MM.DD)
   const getTodayKSTDate = useCallback(() => {
     const now = new Date();
@@ -358,37 +353,6 @@ const SiteManagement = () => {
     return zodiacArray[finalIndex];
   };
   
-  const [communityForm, setCommunityForm] = useState({
-    site_name: '',      // 출석
-    domain: '',         // 도메인
-    referral_path: '',  // 경로-코드
-    approval_call: false, // 승전 (X/O)
-    identity_name: '',  // 성함
-    account_id: '',     // 아이디
-    password: '',       // 비번
-    exchange_password: '', // 환비
-    nickname: '',       // 닉네임
-    status: '가입전',   // 승인유무
-    referral_code: '',  // 경로
-    notes: ''           // 장
-  });
-  
-  const [siteForm, setSiteForm] = useState({
-    site_name: '',      // 출석
-    domain: '',         // 도메인
-    referral_path: '',  // 경로-코드
-    approval_call: false, // 승전 (X/O)
-    identity_name: '',  // 성함
-    account_id: '',     // 아이디
-    password: '',       // 비번
-    exchange_password: '', // 환비
-    nickname: '',       // 닉네임
-    status: '가입전',   // 승인유무
-    referral_code: '',  // 경로
-    category: '',       // 장
-    notes: ''
-  });
-
   // 승인유무 상태 추출 함수 (드래그 검증용)
   const getStatusGroup = (status) => {
     if (!status) return '가입전';
@@ -414,9 +378,16 @@ const SiteManagement = () => {
     
     if (sourceIndex === destIndex) return;
     
+    // 페이지네이션 오프셋 적용 (paginatedSites 인덱스 → filteredSites 인덱스)
+    const pageOffset = (currentPage - 1) * itemsPerPage;
+    const actualSourceIndex = pageOffset + sourceIndex;
+    const actualDestIndex = pageOffset + destIndex;
+    
     // 같은 승인유무 그룹 내에서만 이동 가능한지 검증
-    const sourceItem = filteredSites[sourceIndex];
-    const destItem = filteredSites[destIndex];
+    const sourceItem = filteredSites[actualSourceIndex];
+    const destItem = filteredSites[actualDestIndex];
+    
+    if (!sourceItem || !destItem) return;
     
     const sourceGroup = getStatusGroup(sourceItem.status);
     const destGroup = getStatusGroup(destItem.status);
@@ -428,8 +399,8 @@ const SiteManagement = () => {
     
     // 배열에서 위치 변경
     const reorderedSites = Array.from(filteredSites);
-    const [movedItem] = reorderedSites.splice(sourceIndex, 1);
-    reorderedSites.splice(destIndex, 0, movedItem);
+    const [movedItem] = reorderedSites.splice(actualSourceIndex, 1);
+    reorderedSites.splice(actualDestIndex, 0, movedItem);
     
     // 모든 항목의 display_order를 재할당 (0부터 시작)
     const updatedSites = reorderedSites.map((site, index) => ({
@@ -577,33 +548,6 @@ const SiteManagement = () => {
     }
   };
 
-  // 사이트명 입력 시 자동완성 필터링
-  const handleSiteNameChange = (value) => {
-    setSiteForm({ ...siteForm, site_name: value });
-    
-    if (value.trim().length > 0) {
-      const filtered = allSiteNames.filter(name =>
-        name.toLowerCase().includes(value.toLowerCase())
-      );
-      setSiteNameSuggestions(filtered.slice(0, 10));
-      setShowSuggestions(filtered.length > 0);
-    } else {
-      setSiteNameSuggestions([]);
-      setShowSuggestions(false);
-    }
-    
-    // 유사도 경고 초기화
-    setSimilarWarning(null);
-  };
-
-  // 자동완성 선택
-  const handleSuggestionSelect = (name) => {
-    setSiteForm({ ...siteForm, site_name: name });
-    setShowSuggestions(false);
-    setSiteNameSuggestions([]);
-    setSimilarWarning(null);
-  };
-
   // 유사 사이트명 확인 (저장 전)
   const checkSimilarSiteNames = async (siteName) => {
     if (!siteName || siteName.trim() === '') return null;
@@ -625,55 +569,6 @@ const SiteManagement = () => {
       console.error('유사 사이트명 확인 실패:', error);
     }
     return null;
-  };
-
-  // 중복/유사 사이트 그룹 조회 (통합 도구용)
-  const loadDuplicateGroups = async () => {
-    try {
-      const response = await axiosInstance.get('/sites/duplicates');
-      if (response.data.success) {
-        setDuplicateGroups(response.data.groups || []);
-      }
-    } catch (error) {
-      console.error('중복 사이트명 조회 실패:', error);
-      toast.error('중복 사이트명을 조회할 수 없습니다');
-    }
-  };
-
-  // 사이트명 통합 실행
-  const handleMergeSiteNames = async () => {
-    if (!selectedMergeSource || !selectedMergeTarget) {
-      toast.error('원본과 대상을 모두 선택해주세요');
-      return;
-    }
-    
-    if (selectedMergeSource === selectedMergeTarget) {
-      toast.error('원본과 대상이 같습니다');
-      return;
-    }
-    
-    try {
-      const response = await axiosInstance.post('/sites/merge-names', {
-        sourceName: selectedMergeSource,
-        targetName: selectedMergeTarget
-      });
-      
-      if (response.data.success) {
-        toast.success(response.data.message);
-        // 목록 새로고침
-        await loadAllSiteNames();
-        await loadDuplicateGroups();
-        if (selectedIdentity) {
-          await loadSites(selectedIdentity.id);
-        }
-        // 상태 초기화
-        setSelectedMergeSource('');
-        setSelectedMergeTarget('');
-      }
-    } catch (error) {
-      console.error('사이트명 통합 실패:', error);
-      toast.error('사이트명 통합에 실패했습니다');
-    }
   };
 
   // 커뮤니티 목록 로드 (사이트 목록처럼 명의별로 필터링)
@@ -829,10 +724,11 @@ const SiteManagement = () => {
     
     // 검색어 필터 (debounced 값 사용 - 서버 부하 감소)
     if (debouncedSearchTerm) {
+      const term = debouncedSearchTerm.toLowerCase();
       filtered = filtered.filter(site => 
-        site.site_name.toLowerCase().includes(debouncedSearchTerm.toLowerCase()) ||
-        site.domain.toLowerCase().includes(debouncedSearchTerm.toLowerCase()) ||
-        site.nickname.toLowerCase().includes(debouncedSearchTerm.toLowerCase())
+        (site.site_name || '').toLowerCase().includes(term) ||
+        (site.domain || '').toLowerCase().includes(term) ||
+        (site.nickname || '').toLowerCase().includes(term)
       );
     }
     
@@ -1003,10 +899,11 @@ const SiteManagement = () => {
     
     // 검색어 필터 (debounced 값 사용 - 서버 부하 감소)
     if (debouncedCommunitySearchTerm) {
+      const term = debouncedCommunitySearchTerm.toLowerCase();
       filtered = filtered.filter(community => 
-        community.site_name.toLowerCase().includes(debouncedCommunitySearchTerm.toLowerCase()) ||
-        community.domain.toLowerCase().includes(debouncedCommunitySearchTerm.toLowerCase()) ||
-        community.nickname.toLowerCase().includes(debouncedCommunitySearchTerm.toLowerCase())
+        (community.site_name || '').toLowerCase().includes(term) ||
+        (community.domain || '').toLowerCase().includes(term) ||
+        (community.nickname || '').toLowerCase().includes(term)
       );
     }
     
@@ -1022,9 +919,12 @@ const SiteManagement = () => {
         // 날짜를 제외한 순수 상태만 추출
         const pureStatus = lastPart?.replace(/^\d{1,2}\.\d{1,2}\s*/, '').trim() || '';
         
-        // "수동입력" 필터의 경우: "수동입력"이 포함된 경우
+        // "수동입력" 필터의 경우: 유효한 상태 목록에 없는 경우만 수동입력으로 간주
         if (communityStatusFilter === '수동입력') {
-          return lastPart?.includes('수동입력');
+          const validStatuses = ['가입전', '대기', '승인', '장점검', '팅', '졸업'];
+          const pureStatusWithoutManual = pureStatus.replace(/^수동입력\s+/, '').trim();
+          if (!pureStatusWithoutManual) return false;
+          return !validStatuses.includes(pureStatusWithoutManual);
         }
         
         // 각 상태에 맞게 체크
@@ -1142,6 +1042,22 @@ const SiteManagement = () => {
     return allFiltered;
   }, [debouncedCommunitySearchTerm, communityStatusFilter, communityMonthFilter, communities]);
   
+  // 커뮤니티 필터 변경 시 페이지 초기화
+  useEffect(() => {
+    setCommunityCurrentPage(1);
+  }, [debouncedCommunitySearchTerm, communityStatusFilter, communityMonthFilter]);
+  
+  // 커뮤니티 totalItems/페이징 계산
+  const communityTotalItems = useMemo(() => filteredCommunities.length, [filteredCommunities]);
+  
+  const paginatedCommunities = React.useMemo(() => {
+    const startIndex = (communityCurrentPage - 1) * communityItemsPerPage;
+    const endIndex = startIndex + communityItemsPerPage;
+    return filteredCommunities.slice(startIndex, endIndex);
+  }, [filteredCommunities, communityCurrentPage, communityItemsPerPage]);
+  
+  const communityTotalPages = Math.ceil(communityTotalItems / communityItemsPerPage);
+  
   // 승인유무 필드 색상 결정 함수
   const getStatusColor = (status) => {
     if (!status) return 'bg-white dark:bg-[#363B46] text-black dark:text-white';
@@ -1197,7 +1113,8 @@ const SiteManagement = () => {
     if (!selectedIdentity || selectedIdentity.id !== latestIdentity.id) {
       setSelectedIdentity(latestIdentity);
       loadSites(latestIdentity.id);
-      loadCommunities();
+      // loadCommunities는 useEffect(selectedIdentity 변경 감지)에서 자동 호출됨
+      // 여기서 직접 호출하면 stale closure로 이전 identity의 데이터를 요청하는 레이스 컨디션 발생
     }
   };
 
@@ -1734,112 +1651,6 @@ const SiteManagement = () => {
     }
   };
 
-  // 사이트 추가/수정 모달 열기
-  const openSiteModal = (site = null) => {
-    if (!selectedIdentity) {
-      toast.error('먼저 유저를 선택해주세요');
-      return;
-    }
-    
-    if (site) {
-      setEditingSite(site);
-      setSiteForm({
-        site_name: site.site_name,
-        domain: site.domain || '',
-        referral_path: site.referral_path || '',
-        approval_call: site.approval_call || false,
-        identity_name: selectedIdentity.name,
-        account_id: site.account_id,
-        password: site.password,
-        exchange_password: site.exchange_password || '',
-        nickname: site.nickname || '',
-        status: site.status,
-        referral_code: site.referral_code || '',
-        category: site.category || '',
-        notes: site.notes || ''
-      });
-    } else {
-      setEditingSite(null);
-      setSiteForm({
-        site_name: '',
-        domain: '',
-        referral_path: '',
-        approval_call: false,
-        identity_name: selectedIdentity.name,
-        account_id: '',
-        password: '',
-        exchange_password: '',
-        nickname: '',
-        status: '가입전',
-        referral_code: '',
-        category: '',
-        notes: ''
-      });
-    }
-    // 모달 열 때 사이트명 목록 로드 (비어있으면)
-    if (allSiteNames.length === 0) {
-      loadAllSiteNames();
-    }
-    setShowSiteModal(true);
-  };
-
-  // 사이트 저장
-  const saveSite = async (skipSimilarCheck = false) => {
-    try {
-      // 유사도 검사 (새 사이트명인 경우만)
-      if (!skipSimilarCheck && siteForm.site_name && !editingSite) {
-        const similar = await checkSimilarSiteNames(siteForm.site_name);
-        if (similar && similar.length > 0) {
-          setSimilarWarning(similar);
-          // 사용자가 확인하도록 대기 (저장 중단)
-          const confirmed = window.confirm(
-            `유사한 사이트명이 있습니다:\n${similar.map(s => `• ${s.name} (${Math.round(s.similarity * 100)}%)`).join('\n')}\n\n그래도 "${siteForm.site_name}"으로 저장하시겠습니까?`
-          );
-          if (!confirmed) {
-            return; // 저장 중단
-          }
-        }
-      }
-      
-      // 현재 날짜를 MM.DD 형식으로 가져오기
-      const now = new Date();
-      const month = String(now.getMonth() + 1).padStart(2, '0');
-      const day = String(now.getDate()).padStart(2, '0');
-      const datePrefix = `${month}.${day}`;
-      
-      // 상태가 변경되었고, 날짜가 없으면 날짜 추가
-      let statusWithDate = siteForm.status;
-      if (statusWithDate && !statusWithDate.match(/^\d{1,2}\.\d{1,2}/)) {
-        statusWithDate = `${datePrefix} ${statusWithDate}`;
-      }
-      
-      const dataToSave = {
-        ...siteForm,
-        status: statusWithDate
-      };
-      
-      if (editingSite) {
-        await axiosInstance.put(`/sites/${editingSite.id}`, dataToSave);
-        toast.success('사이트가 수정되었습니다');
-      } else {
-        await axiosInstance.post('/sites', {
-          ...dataToSave,
-          identity_id: selectedIdentity.id
-        });
-        toast.success('사이트가 추가되었습니다');
-        // 새 사이트명 추가 후 목록 갱신
-        loadAllSiteNames();
-      }
-      
-      setShowSiteModal(false);
-      setSimilarWarning(null);
-      loadSites(selectedIdentity.id);
-    } catch (error) {
-      console.error('사이트 저장 실패:', error);
-      toast.error('사이트 저장에 실패했습니다');
-    }
-  };
-
   // 사이트 삭제
   const deleteSite = async (site) => {
     if (!window.confirm(`"${site.site_name}" 사이트를 삭제하시겠습니까?`)) {
@@ -1853,56 +1664,6 @@ const SiteManagement = () => {
     } catch (error) {
       console.error('사이트 삭제 실패:', error);
       toast.error('사이트 삭제에 실패했습니다');
-    }
-  };
-
-  // 커뮤니티 저장
-  const saveCommunity = async () => {
-    try {
-      // 저장할 데이터 준비
-      const communityToSave = { ...communityForm };
-      
-      // identity_name이 없으면 selectedIdentity에서 가져오기
-      if (!communityToSave.identity_name && selectedIdentity) {
-        communityToSave.identity_name = selectedIdentity.name;
-      }
-      
-      // 상태에 날짜 추가 (날짜가 없으면)
-      if (communityToSave.status && !communityToSave.status.match(/^\d{1,2}\.\d{1,2}/)) {
-        const now = new Date();
-        const month = String(now.getMonth() + 1).padStart(2, '0');
-        const day = String(now.getDate()).padStart(2, '0');
-        communityToSave.status = `${month}.${day} ${communityToSave.status}`;
-      }
-      
-      if (editingCommunity) {
-        await axiosInstance.put(`/communities/${editingCommunity.id}`, communityToSave);
-        toast.success('커뮤니티가 수정되었습니다');
-      } else {
-        await axiosInstance.post('/communities', communityToSave);
-        toast.success('커뮤니티가 추가되었습니다');
-      }
-      
-      setShowCommunityModal(false);
-      setCommunityForm({
-        site_name: '',
-        domain: '',
-        referral_path: '',
-        approval_call: false,
-        identity_name: '',
-        account_id: '',
-        password: '',
-        exchange_password: '',
-        nickname: '',
-        status: '가입전',
-        referral_code: '',
-        notes: ''
-      });
-      setEditingCommunity(null);
-      loadCommunities();
-    } catch (error) {
-      console.error('커뮤니티 저장 실패:', error);
-      toast.error('커뮤니티 저장에 실패했습니다');
     }
   };
 
@@ -1920,26 +1681,6 @@ const SiteManagement = () => {
       console.error('커뮤니티 삭제 실패:', error);
       toast.error('커뮤니티 삭제에 실패했습니다');
     }
-  };
-
-  // 커뮤니티 편집
-  const openEditCommunity = (community) => {
-    setEditingCommunity(community);
-    setCommunityForm({
-      site_name: community.site_name || '',
-      domain: community.domain || '',
-      referral_path: community.referral_path || '',
-      approval_call: community.approval_call || false,
-      identity_name: community.identity_name || '',
-      account_id: community.account_id || '',
-      password: community.password || '',
-      exchange_password: community.exchange_password || '',
-      nickname: community.nickname || '',
-      status: community.status || '가입전',
-      referral_code: community.referral_code || '',
-      notes: community.notes || ''
-    });
-    setShowCommunityModal(true);
   };
 
   // 커뮤니티 인라인 편집 시작
@@ -3080,13 +2821,6 @@ const SiteManagement = () => {
         
         <div className="flex items-center gap-3">
           <button
-            onClick={() => openSiteModal()}
-            disabled={!selectedIdentity}
-            className="bg-green-600 text-white px-6 py-3 rounded-md hover:bg-green-700 font-bold disabled:bg-gray-400"
-          >
-              🌐 새 사이트 추가
-          </button>
-          <button
               onClick={() => {
                 setBulkImportMode('sites');
                 resetBulkImportState();
@@ -3103,18 +2837,6 @@ const SiteManagement = () => {
           >
             📤 엑셀로 복사
           </button>
-          {/* 사이트명 통합 도구 (관리자 이상) */}
-          {(isOfficeManager || isSuperAdmin) && (
-            <button
-              onClick={() => {
-                loadDuplicateGroups();
-                setShowMergeModal(true);
-              }}
-              className="bg-orange-600 text-white px-6 py-3 rounded-md hover:bg-orange-700 font-bold"
-            >
-              🔗 사이트명 통합
-            </button>
-          )}
             {/* 전체 모드에서는 행추가 버튼 숨김 */}
             {selectedIdentity?.id !== 'all' && (
             <button
@@ -3954,12 +3676,6 @@ const SiteManagement = () => {
                             📋
                           </button>
                           <button
-                            onClick={() => openSiteModal(site)}
-                            className="px-4 py-2 bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white rounded-lg font-medium text-sm shadow-md hover:shadow-lg transition-all duration-200 hover:scale-105 active:scale-95"
-                          >
-                            ✏️
-                          </button>
-                          <button
                             onClick={() => deleteSite(site)}
                             className="px-4 py-2 bg-gradient-to-r from-red-500 to-rose-600 hover:from-red-600 hover:to-rose-700 text-white rounded-lg font-medium text-sm shadow-md hover:shadow-lg transition-all duration-200 hover:scale-105 active:scale-95"
                           >
@@ -4067,47 +3783,24 @@ const SiteManagement = () => {
                 onChange={(e) => setCommunityMonthFilter(e.target.value)}
                 className="border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-md px-3 py-2 focus:ring-blue-500 focus:border-blue-500"
               >
-                <option>전체</option>
-                <option>1월</option>
-                <option>2월</option>
-                <option>3월</option>
-                <option>4월</option>
-                <option>5월</option>
-                <option>6월</option>
-                <option>7월</option>
-                <option>8월</option>
-                <option>9월</option>
-                <option>10월</option>
-                <option>11월</option>
-                <option>12월</option>
+                <option value="전체">전체</option>
+                <option value="1">1월</option>
+                <option value="2">2월</option>
+                <option value="3">3월</option>
+                <option value="4">4월</option>
+                <option value="5">5월</option>
+                <option value="6">6월</option>
+                <option value="7">7월</option>
+                <option value="8">8월</option>
+                <option value="9">9월</option>
+                <option value="10">10월</option>
+                <option value="11">11월</option>
+                <option value="12">12월</option>
               </select>
             </div>
           </div>
 
           <div className="flex items-center gap-3 flex-wrap">
-            <button
-              onClick={() => {
-                setEditingCommunity(null);
-                setCommunityForm({
-                  site_name: '',
-                  domain: '',
-                  referral_path: '',
-                  approval_call: false,
-                  identity_name: selectedIdentity?.name || '',
-                  account_id: '',
-                  password: '',
-                  exchange_password: '',
-                  nickname: '',
-                  status: '가입전',
-                  referral_code: '',
-                  notes: ''
-                });
-                setShowCommunityModal(true);
-              }}
-              className="bg-green-600 text-white px-6 py-3 rounded-md hover:bg-green-700 font-bold"
-            >
-              🌐 새 커뮤니티 추가
-            </button>
             <button
               onClick={() => {
                 setBulkImportMode('communities');
@@ -4234,13 +3927,9 @@ const SiteManagement = () => {
                       </button>
                     </td>
                     <td className="px-5 py-5 text-center border-r border-gray-100 dark:border-gray-800/30">
-                      <input
-                        type="text"
-                        value={newCommunityRow.name || ''}
-                        onChange={(e) => setNewCommunityRow({...newCommunityRow, name: e.target.value})}
-                        className="w-full border border-gray-300 dark:border-gray-600 rounded-md px-2 py-1 text-center dark:bg-gray-700 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        placeholder="성함"
-                      />
+                      <span className="inline-flex items-center px-3 py-1.5 rounded-full bg-gradient-to-r from-indigo-100 to-purple-100 dark:from-indigo-900/40 dark:to-purple-900/40 text-indigo-700 dark:text-indigo-300 font-medium text-base shadow-sm">
+                        {selectedIdentity?.name}
+                      </span>
                     </td>
                     <td className="px-5 py-5 text-center border-r border-gray-100 dark:border-gray-800/30">
                       <input
@@ -4346,7 +4035,7 @@ const SiteManagement = () => {
                 )}
                 
                 {/* 기존 커뮤니티 목록 - 이 부분은 원본 코드에서 계속됨 */}
-                {filteredCommunities.map((community, index) => {
+                {paginatedCommunities.map((community, index) => {
                   const renderCommunityEditableCell = (field, value, className = '') => {
                     const isEditing = editingCommunityCell?.communityId === community.id && editingCommunityCell?.field === field;
                     
@@ -4368,7 +4057,7 @@ const SiteManagement = () => {
                       );
                     }
                     
-                    // 도메인 필드는 일반 텍스트로 표시
+                    // 도메인 필드는 더블클릭으로 수정
                     if (field === 'domain') {
                       return (
                         <div
@@ -4384,8 +4073,8 @@ const SiteManagement = () => {
                       );
                     }
                     
-                    // referral_code 필드는 하이퍼링크 처리
-                    if (field === 'referral_code' && value) {
+                    // referral_code 필드에 '@' 문자가 있으면 파란색으로 표시
+                    if (field === 'referral_code' && value && value.includes('@')) {
                       return (
                         <div
                           onClick={async () => await startEditingCommunityCell(community.id, field, value)}
@@ -4403,9 +4092,291 @@ const SiteManagement = () => {
                         className={`cursor-pointer hover:bg-blue-50 dark:hover:bg-gray-700 px-2 py-1 rounded text-center font-bold text-gray-900 dark:text-white ${className}`}
                         title="클릭하여 수정"
                       >
-                        {value || '-'}
+                        {value || <span className="text-gray-400 dark:text-gray-500">-</span>}
                       </div>
                     );
+                  };
+
+                  // 커뮤니티 상태 셀 (사이트와 동일한 리치 에디터)
+                  const renderCommunityStatusCell = () => {
+                    const isEditing = editingCommunityCell?.communityId === community.id && editingCommunityCell?.field === 'status';
+                    
+                    if (isEditing) {
+                      // 우클릭으로 시작된 경우만 input 표시
+                      if (isManualInputMode) {
+                        const manualMatch = community.status?.match(/^\d{1,2}\.\d{1,2}\s*수동입력\s+(.+)$/);
+                        const initialValue = manualMatch ? manualMatch[1] : '';
+                        let currentValue = initialValue;
+                        
+                        return (
+                          <div className="flex gap-2 items-center">
+                            <input
+                              type="text"
+                              defaultValue={initialValue}
+                              onChange={(e) => { currentValue = e.target.value; }}
+                              onBlur={async () => {
+                                const inputText = currentValue || '';
+                                const existingMatch = community.status?.match(/^\d{1,2}\.\d{1,2}\s*수동입력\s+(.+)$/);
+                                const existingText = existingMatch ? existingMatch[1] : '';
+                                
+                                if (inputText !== existingText) {
+                                  const now = new Date();
+                                  const kstDate = new Date(now.toLocaleString('en-US', {timeZone: 'Asia/Seoul'}));
+                                  const month = String(kstDate.getMonth() + 1).padStart(2, '0');
+                                  const day = String(kstDate.getDate()).padStart(2, '0');
+                                  const datePrefix = `${month}.${day}`;
+                                  const newValue = inputText ? `${datePrefix} ${inputText}` : `${datePrefix}`;
+                                  
+                                  let finalValue = newValue;
+                                  if (community.status && community.status.trim()) {
+                                    let normalizedStatus = community.status.trim().replace(/\s*\/\s*/g, ' / ');
+                                    const statusParts = normalizedStatus.split('/').map(s => s.trim());
+                                    const isAlreadyExists = statusParts.some(part => {
+                                      const purePart = part.replace(/^\d{1,2}\.\d{1,2}\s*/, '').trim().replace(/^수동입력\s+/, '').trim();
+                                      return purePart === (inputText || '');
+                                    });
+                                    
+                                    if (inputText === '대기') {
+                                      const filteredParts = statusParts.filter(part => {
+                                        const purePart = part.replace(/^\d{1,2}\.\d{1,2}\s*/, '').trim().replace(/^수동입력\s+/, '').trim();
+                                        return purePart !== '가입전';
+                                      });
+                                      normalizedStatus = filteredParts.join(' / ');
+                                      if (!isAlreadyExists) {
+                                        finalValue = normalizedStatus ? `${normalizedStatus} / ${newValue}` : newValue;
+                                      } else {
+                                        finalValue = normalizedStatus;
+                                      }
+                                    } else if (!isAlreadyExists) {
+                                      finalValue = `${normalizedStatus} / ${newValue}`;
+                                    } else {
+                                      finalValue = normalizedStatus;
+                                    }
+                                  }
+                                  
+                                  try {
+                                    await axiosInstance.put(`/communities/${community.id}`, { ...community, status: finalValue });
+                                    toast.success('수정되었습니다');
+                                    loadCommunities();
+                                  } catch (error) {
+                                    toast.error('수정 실패');
+                                  }
+                                }
+                                
+                                setEditingCommunityCell(null);
+                                setEditingCommunityValue('');
+                                setIsManualInputMode(false);
+                              }}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') e.target.blur();
+                                else if (e.key === 'Escape') { setEditingCommunityCell(null); setEditingCommunityValue(''); setIsManualInputMode(false); }
+                              }}
+                              autoFocus
+                              placeholder="자유롭게 입력하세요"
+                              className="w-full px-2 py-1 border border-blue-500 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-[#282C34] dark:text-white dark:border-blue-400"
+                            />
+                          </div>
+                        );
+                      }
+                      
+                      // 리치 에디터 (사이트와 동일)
+                      const statusHistory = community.status ? community.status.split('/').map(s => s.trim()).filter(s => s) : [];
+                      const statusOptions = ['가입전', '대기', '승인', '장점검', '팅', '졸업'];
+                      
+                      const getKSTToday = () => {
+                        const now = new Date();
+                        const kstDate = new Date(now.toLocaleString('en-US', {timeZone: 'Asia/Seoul'}));
+                        return `${String(kstDate.getMonth() + 1).padStart(2, '0')}.${String(kstDate.getDate()).padStart(2, '0')}`;
+                      };
+                      const initialDate = editingStatusDate !== '' ? editingStatusDate : getKSTToday();
+                      
+                      const closeCommunityStatusEditor = () => {
+                        setEditingCommunityCell(null);
+                        setEditingCommunityValue('');
+                        setEditingStatusDate('');
+                        setEditingHistoryIndex(null);
+                        setEditingHistoryDate('');
+                        setEditingHistoryStatus('');
+                        setIsManualInputMode(false);
+                      };
+                      
+                      return (
+                        <div className="space-y-2 min-w-[280px]">
+                          <div className="flex items-center justify-between border-b border-gray-200 dark:border-gray-600 pb-2">
+                            <span className="font-bold text-sm text-gray-700 dark:text-gray-200">📋 승인유무 편집</span>
+                            <button type="button" onClick={closeCommunityStatusEditor} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 text-lg font-bold" title="닫기">✕</button>
+                          </div>
+                          
+                          {statusHistory.length > 0 && (
+                            <div className="space-y-1">
+                              <div className="text-xs font-semibold text-gray-500 dark:text-gray-400">기존 이력:</div>
+                              {statusHistory.map((historyItem, idx) => {
+                                const dateMatch = historyItem.match(/^(\d{1,2}\.\d{1,2})\s*(.*)$/);
+                                const itemDate = dateMatch ? dateMatch[1] : '';
+                                const itemStatus = dateMatch ? dateMatch[2].trim() : historyItem.trim();
+                                const isEditingThis = editingHistoryIndex === idx;
+                                
+                                if (isEditingThis) {
+                                  return (
+                                    <div key={idx} className="flex items-center gap-1 bg-blue-50 dark:bg-blue-900/30 p-2 rounded border-2 border-blue-500">
+                                      <input type="text" value={editingHistoryDate} onChange={(e) => setEditingHistoryDate(e.target.value)} placeholder="MM.DD" className="w-16 px-2 py-1 text-sm border border-blue-400 rounded dark:bg-gray-700 dark:text-white focus:ring-2 focus:ring-blue-500" autoFocus />
+                                      <select value={statusOptions.includes(editingHistoryStatus) ? editingHistoryStatus : ''} onChange={(e) => setEditingHistoryStatus(e.target.value)} className="flex-1 px-2 py-1 text-sm border border-blue-400 rounded dark:bg-gray-700 dark:text-white">
+                                        <option value="">직접입력</option>
+                                        {statusOptions.map(opt => (<option key={opt} value={opt}>{opt}</option>))}
+                                      </select>
+                                      {!statusOptions.includes(editingHistoryStatus) && (
+                                        <input type="text" value={editingHistoryStatus} onChange={(e) => setEditingHistoryStatus(e.target.value)} placeholder="상태" className="w-20 px-2 py-1 text-sm border border-blue-400 rounded dark:bg-gray-700 dark:text-white" />
+                                      )}
+                                      <button type="button" onClick={async (e) => {
+                                        e.stopPropagation();
+                                        const datePattern = /^(\d{1,2})\.(\d{1,2})$/;
+                                        if (editingHistoryDate && !datePattern.test(editingHistoryDate)) { toast.error('날짜 형식: MM.DD (예: 01.23)'); return; }
+                                        const newHistoryItem = editingHistoryDate ? `${editingHistoryDate} ${editingHistoryStatus}`.trim() : editingHistoryStatus.trim();
+                                        const newHistory = [...statusHistory]; newHistory[idx] = newHistoryItem;
+                                        const newStatus = newHistory.join(' / ');
+                                        try {
+                                          await axiosInstance.put(`/communities/${community.id}`, { ...community, status: newStatus });
+                                          toast.success('수정 완료'); closeCommunityStatusEditor(); await loadCommunities();
+                                        } catch (error) { toast.error('수정 실패'); }
+                                      }} className="px-2 py-1 bg-green-500 hover:bg-green-600 text-white rounded text-sm font-bold">✓</button>
+                                      <button type="button" onClick={(e) => { e.stopPropagation(); setEditingHistoryIndex(null); setEditingHistoryDate(''); setEditingHistoryStatus(''); }} className="px-2 py-1 bg-gray-400 hover:bg-gray-500 text-white rounded text-sm font-bold">취소</button>
+                                    </div>
+                                  );
+                                }
+                                
+                                return (
+                                  <div key={idx} className="flex items-center justify-between bg-white dark:bg-gray-600 px-3 py-2 rounded border border-gray-200 dark:border-gray-500 hover:border-blue-400 dark:hover:border-blue-400 cursor-pointer group transition-colors"
+                                    onClick={(e) => { e.stopPropagation(); setEditingHistoryIndex(idx); setEditingHistoryDate(itemDate); setEditingHistoryStatus(itemStatus); }} title="클릭하여 편집">
+                                    <span className="text-sm font-medium text-gray-700 dark:text-gray-200">{historyItem}</span>
+                                    <button type="button" onMouseDown={(e) => { e.stopPropagation(); e.preventDefault(); }}
+                                      onClick={async (e) => {
+                                        e.stopPropagation(); e.preventDefault();
+                                        const newHistory = statusHistory.filter((_, i) => i !== idx);
+                                        const newStatus = newHistory.join(' / ');
+                                        try {
+                                          await axiosInstance.put(`/communities/${community.id}`, { ...community, status: newStatus || '' });
+                                          toast.success('삭제 완료'); closeCommunityStatusEditor(); await loadCommunities();
+                                        } catch (error) { toast.error('삭제 실패'); }
+                                      }}
+                                      className="opacity-0 group-hover:opacity-100 text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/30 rounded p-1 transition-opacity" title="삭제">🗑️</button>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+                          
+                          {statusHistory.length > 0 && (<div className="border-t border-gray-200 dark:border-gray-600 pt-2"></div>)}
+                          
+                          <div className="space-y-2">
+                            <div className="text-xs font-semibold text-gray-500 dark:text-gray-400">새 상태 추가:</div>
+                            <div className="flex items-center gap-2">
+                              <input type="text" value={editingStatusDate || initialDate} onChange={(e) => setEditingStatusDate(e.target.value)} placeholder="MM.DD" className="w-16 px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded dark:bg-gray-700 dark:text-white focus:border-blue-500 focus:ring-1 focus:ring-blue-500" />
+                              <select
+                                value={(() => {
+                                  const cv = editingCommunityValue?.replace(/^\d{1,2}\.\d{1,2}\s*/, '').trim() || '';
+                                  if (cv && !statusOptions.includes(cv)) return '수동입력';
+                                  return cv;
+                                })()}
+                                onChange={(e) => {
+                                  const dp = editingStatusDate || initialDate;
+                                  if (e.target.value === '수동입력') setEditingCommunityValue(`${dp} `);
+                                  else setEditingCommunityValue(`${dp} ${e.target.value}`);
+                                }}
+                                className="flex-1 px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded dark:bg-gray-700 dark:text-white focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                              >
+                                <option value="">상태 선택</option>
+                                {statusOptions.map(opt => (<option key={opt} value={opt}>{opt}</option>))}
+                                <option value="수동입력">✏️ 수동입력</option>
+                              </select>
+                            </div>
+                            
+                            {(() => {
+                              const cv = editingCommunityValue?.replace(/^\d{1,2}\.\d{1,2}\s*/, '').trim() || '';
+                              const selectedDropdown = (cv && !statusOptions.includes(cv)) ? '수동입력' : cv;
+                              if (selectedDropdown === '수동입력' || cv === '' || (cv && !statusOptions.includes(cv))) {
+                                const isManualSelected = selectedDropdown === '수동입력';
+                                if (isManualSelected) {
+                                  return (
+                                    <input type="text" value={cv} onChange={(e) => { const dp = editingStatusDate || initialDate; setEditingCommunityValue(`${dp} ${e.target.value}`); }}
+                                      placeholder="상태를 직접 입력 (예: 강아지, 고구마)" className="w-full px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded dark:bg-gray-700 dark:text-white focus:border-blue-500 focus:ring-1 focus:ring-blue-500" autoFocus />
+                                  );
+                                }
+                              }
+                              return null;
+                            })()}
+                            
+                            <button type="button" onClick={async () => {
+                              const datePrefix = editingStatusDate || initialDate;
+                              const datePattern = /^(\d{1,2})\.(\d{1,2})$/;
+                              if (!datePattern.test(datePrefix)) { toast.error('날짜 형식: MM.DD (예: 01.23)'); return; }
+                              const newStatusValue = editingCommunityValue?.replace(/^\d{1,2}\.\d{1,2}\s*/, '').trim();
+                              if (!newStatusValue) { toast.error('상태를 선택해주세요'); return; }
+                              const newStatusWithDate = `${datePrefix} ${newStatusValue}`;
+                              let finalValue = newStatusWithDate;
+                              if (community.status && community.status.trim()) {
+                                let normalizedStatus = community.status.trim().replace(/\s*\/\s*/g, ' / ');
+                                const statusParts = normalizedStatus.split('/').map(s => s.trim());
+                                const isAlreadyExists = statusParts.some(part => part.replace(/^\d{1,2}\.\d{1,2}\s*/, '').trim() === newStatusValue);
+                                if (newStatusValue === '대기') {
+                                  const filteredParts = statusParts.filter(part => part.replace(/^\d{1,2}\.\d{1,2}\s*/, '').trim() !== '가입전');
+                                  normalizedStatus = filteredParts.join(' / ');
+                                }
+                                if (!isAlreadyExists) { finalValue = normalizedStatus ? `${normalizedStatus} / ${newStatusWithDate}` : newStatusWithDate; }
+                                else { toast.error('이미 존재하는 상태입니다'); return; }
+                              }
+                              try {
+                                await axiosInstance.put(`/communities/${community.id}`, { ...community, status: finalValue });
+                                toast.success('상태 추가 완료'); closeCommunityStatusEditor(); await loadCommunities();
+                              } catch (error) { toast.error('추가 실패'); }
+                            }} className="w-full px-3 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded font-medium text-sm transition-colors">
+                              ➕ 상태 추가
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    }
+                    
+                    // 비편집 모드: 클릭하면 편집 모드로 전환 (사이트와 동일)
+                    return (
+                      <div
+                        onClick={() => {
+                          const todayDate = getTodayKSTDate();
+                          setEditingStatusDate(todayDate);
+                          setEditingCommunityValue('');
+                          setEditingHistoryIndex(null);
+                          setEditingCommunityCell({ communityId: community.id, field: 'status' });
+                        }}
+                        onContextMenu={async (e) => {
+                          e.preventDefault();
+                          setIsManualInputMode(true);
+                          await startEditingCommunityCell(community.id, 'status', community.status);
+                        }}
+                        className="cursor-pointer hover:bg-blue-50 dark:hover:bg-blue-900/20 px-2 py-1 rounded text-center font-bold text-gray-900 dark:text-white transition-colors"
+                        title="클릭하여 편집, 우클릭: 수동 입력"
+                      >
+                        {community.status || '-'}
+                      </div>
+                    );
+                  };
+
+                  // 상태별 행 배경색 결정 (사이트와 동일)
+                  const getCommunityRowBgColor = () => {
+                    if (!community.status) return 'bg-white dark:bg-gray-800';
+                    const parts = community.status.split('/').map(s => s.trim());
+                    const lastPart = parts[parts.length - 1];
+                    const validStatuses = ['가입전', '대기', '승인', '장점검', '팅', '졸업'];
+                    const pureStatus = lastPart?.replace(/^\d{1,2}\.\d{1,2}\s*/, '').trim() || '';
+                    const pureStatusWithoutManual = pureStatus.replace(/^수동입력\s+/, '').trim();
+                    const isManualInput = !validStatuses.includes(pureStatusWithoutManual);
+                    
+                    if (lastPart?.includes('졸업')) return 'bg-red-100 dark:bg-red-900/50';
+                    if (lastPart?.includes('팅')) return 'bg-red-100 dark:bg-red-900/50';
+                    if (isManualInput) return 'bg-green-100 dark:bg-green-900/50';
+                    if (lastPart?.includes('장점검')) return 'bg-green-100 dark:bg-green-900/50';
+                    if (lastPart?.includes('대기')) return 'bg-yellow-100 dark:bg-yellow-900/50';
+                    if (lastPart?.includes('가입전')) return 'bg-purple-100 dark:bg-purple-900/50';
+                    if (lastPart?.includes('승인')) return 'bg-gray-50 dark:bg-[#363B46]';
+                    return 'bg-gray-50 dark:bg-[#363B46]';
                   };
                   
                   return (
@@ -4422,7 +4393,7 @@ const SiteManagement = () => {
                           }}
                           {...provided.draggableProps}
                           {...provided.dragHandleProps}
-                          className={`group border-b border-gray-100 dark:border-gray-800/50 hover:bg-gradient-to-r hover:from-gray-50 hover:to-gray-100/50 dark:hover:from-gray-800/30 dark:hover:to-gray-800/50 hover:shadow-lg hover:shadow-gray-200/50 dark:hover:shadow-gray-900/50 transition-all duration-300 ease-out cursor-grab active:cursor-grabbing ${
+                          className={`group border-b border-gray-100 dark:border-gray-800/50 hover:bg-gradient-to-r hover:from-gray-50 hover:to-gray-100/50 dark:hover:from-gray-800/30 dark:hover:to-gray-800/50 hover:shadow-lg hover:shadow-gray-200/50 dark:hover:shadow-gray-900/50 transition-all duration-300 ease-out cursor-grab active:cursor-grabbing ${getCommunityRowBgColor()} ${
                             snapshot.isDragging 
                               ? 'bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/40 dark:to-indigo-900/40 shadow-2xl scale-[1.02] ring-4 ring-blue-300 dark:ring-blue-700 border-l-4 border-blue-400 dark:border-blue-500' 
                               : highlightedCommunityId === community.id 
@@ -4446,22 +4417,20 @@ const SiteManagement = () => {
                           <td className="px-5 py-5 text-center border-r border-gray-100 dark:border-gray-800/30 text-base">{renderCommunityEditableCell('referral_code', community.referral_code, 'font-medium')}</td>
                           <td className="px-5 py-5 text-center border-r border-gray-100 dark:border-gray-800/30">
                             {editingApprovalCall?.id === community.id && editingApprovalCall?.type === 'community' ? (
-                              <button
-                                onClick={() => {
-                                  saveApprovalCall(community.id, 'community', !editingApprovalValue);
+                              <select
+                                value={editingApprovalValue ? 'O' : 'X'}
+                                onChange={(e) => {
+                                  const newValue = e.target.value === 'O';
+                                  setEditingApprovalValue(newValue);
+                                  saveApprovalCall(newValue);
                                 }}
-                                className={`inline-flex items-center justify-center w-8 h-8 rounded-full transition-all duration-200 ${
-                                  editingApprovalValue
-                                    ? 'bg-gradient-to-br from-green-400 to-emerald-500'
-                                    : 'bg-gradient-to-br from-red-400 to-rose-500'
-                                }`}
+                                onBlur={() => setEditingApprovalCall(null)}
+                                autoFocus
+                                className="px-3 py-1.5 border-2 border-blue-400 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-300 font-semibold dark:bg-gray-800 dark:text-white dark:border-blue-500 transition-all"
                               >
-                                {editingApprovalValue ? (
-                                  <span className="text-white font-bold text-sm">✓</span>
-                                ) : (
-                                  <span className="text-white font-bold text-sm">✕</span>
-                                )}
-                              </button>
+                                <option value="X">X</option>
+                                <option value="O">O</option>
+                              </select>
                             ) : (
                               <div
                                 onClick={() => startEditingApprovalCall(community.id, 'community', community.approval_call)}
@@ -4476,214 +4445,16 @@ const SiteManagement = () => {
                               </div>
                             )}
                           </td>
-                          <td className="px-5 py-5 text-center border-r border-gray-100 dark:border-gray-800/30 text-base text-gray-800 dark:text-gray-200">{renderCommunityEditableCell('name', community.name, 'font-medium')}</td>
+                          <td className="px-5 py-5 text-center border-r border-gray-100 dark:border-gray-800/30">
+                            <span className="inline-flex items-center px-3 py-1.5 rounded-full bg-gradient-to-r from-indigo-100 to-purple-100 dark:from-indigo-900/40 dark:to-purple-900/40 text-indigo-700 dark:text-indigo-300 font-medium text-base shadow-sm">
+                              {selectedIdentity?.name}
+                            </span>
+                          </td>
                           <td className="px-5 py-5 text-center border-r border-gray-100 dark:border-gray-800/30 text-base text-gray-800 dark:text-gray-200">{renderCommunityEditableCell('user_id', community.user_id, 'font-medium')}</td>
                           <td className="px-5 py-5 text-center border-r border-gray-100 dark:border-gray-800/30 text-base text-gray-800 dark:text-gray-200">{renderCommunityEditableCell('password', community.password, 'font-medium')}</td>
                           <td className="px-5 py-5 text-center border-r border-gray-100 dark:border-gray-800/30 text-base text-gray-800 dark:text-gray-200">{renderCommunityEditableCell('exchange_password', community.exchange_password, 'font-medium')}</td>
                           <td className="px-5 py-5 text-center border-r border-gray-100 dark:border-gray-800/30 text-base text-gray-800 dark:text-gray-200">{renderCommunityEditableCell('nickname', community.nickname, 'font-medium')}</td>
-                          <td className="px-5 py-5 text-center border-r border-gray-100 dark:border-gray-800/30 text-base">
-                            {(() => {
-                              const isEditing = editingCommunityCell?.communityId === community.id && editingCommunityCell?.field === 'status';
-                              
-                              if (isEditing) {
-                                return (
-                                  <div className="relative">
-                                    <input
-                                      type="text"
-                                      value={editingCommunityValue}
-                                      onChange={(e) => setEditingCommunityValue(e.target.value)}
-                                      onBlur={() => saveEditingCommunityCell()}
-                                      onKeyDown={handleCommunityCellKeyDown}
-                                      className="w-full border rounded px-2 py-1 text-center dark:bg-gray-700 dark:border-gray-600 dark:text-white"
-                                      autoFocus
-                                    />
-                                    {/* 상태 이력 표시 (편집/삭제 가능) */}
-                                    {Array.isArray(community.status_history) && community.status_history.length > 0 && (
-                                      <div className="absolute top-full left-0 right-0 mt-1 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded shadow-lg z-10 max-h-48 overflow-y-auto">
-                                        <div className="p-2 text-xs">
-                                          <div className="font-bold mb-1 text-gray-700 dark:text-white">📋 이력 (클릭하여 편집):</div>
-                                          {community.status_history.slice().reverse().map((history, idx) => {
-                                            const actualIdx = community.status_history.length - 1 - idx;
-                                            const isEditingThisHistory = editingHistoryIndex === `comm-${community.id}-${actualIdx}`;
-                                            
-                                            if (isEditingThisHistory) {
-                                              const communityStatusOptions = ['가입전', '대기', '승인', '장점검', '팅', '졸업'];
-                                              return (
-                                                <div key={idx} className="flex items-center gap-1 py-1 bg-blue-50 dark:bg-blue-900/30 px-1 rounded border border-blue-400 mb-1">
-                                                  <input
-                                                    type="text"
-                                                    value={editingHistoryDate}
-                                                    onChange={(e) => setEditingHistoryDate(e.target.value)}
-                                                    placeholder="MM.DD"
-                                                    className="w-14 px-1 py-0.5 text-xs border border-gray-300 dark:border-gray-600 rounded dark:bg-gray-700 dark:text-white"
-                                                  />
-                                                  <select
-                                                    value={communityStatusOptions.includes(editingHistoryStatus) ? editingHistoryStatus : ''}
-                                                    onChange={(e) => setEditingHistoryStatus(e.target.value)}
-                                                    className="px-1 py-0.5 text-xs border border-gray-300 dark:border-gray-600 rounded dark:bg-gray-700 dark:text-white"
-                                                  >
-                                                    <option value="">직접입력</option>
-                                                    {communityStatusOptions.map(opt => (
-                                                      <option key={opt} value={opt}>{opt}</option>
-                                                    ))}
-                                                  </select>
-                                                  {!communityStatusOptions.includes(editingHistoryStatus) && (
-                                                    <input
-                                                      type="text"
-                                                      value={editingHistoryStatus}
-                                                      onChange={(e) => setEditingHistoryStatus(e.target.value)}
-                                                      placeholder="상태"
-                                                      className="w-14 px-1 py-0.5 text-xs border border-gray-300 dark:border-gray-600 rounded dark:bg-gray-700 dark:text-white"
-                                                    />
-                                                  )}
-                                                  <button
-                                                    type="button"
-                                                    onClick={async (e) => {
-                                                      e.stopPropagation();
-                                                      const datePattern = /^(\d{1,2})\.(\d{1,2})$/;
-                                                      if (editingHistoryDate && !datePattern.test(editingHistoryDate)) {
-                                                        toast.error('날짜 형식: MM.DD');
-                                                        return;
-                                                      }
-                                                      
-                                                      const newHistory = [...community.status_history];
-                                                      newHistory[actualIdx] = {
-                                                        date: editingHistoryDate,
-                                                        status: editingHistoryStatus
-                                                      };
-                                                      
-                                                      try {
-                                                        await axiosInstance.put(`/communities/${community.id}`, {
-                                                          status_history: newHistory
-                                                        });
-                                                        toast.success('이력이 수정되었습니다');
-                                                        setEditingHistoryIndex(null);
-                                                        setEditingHistoryDate('');
-                                                        setEditingHistoryStatus('');
-                                                        await loadCommunities();
-                                                      } catch (error) {
-                                                        toast.error('수정 실패');
-                                                      }
-                                                    }}
-                                                    className="text-green-600 hover:text-green-800 px-1 font-bold"
-                                                  >
-                                                    ✓
-                                                  </button>
-                                                  <button
-                                                    type="button"
-                                                    onClick={(e) => {
-                                                      e.stopPropagation();
-                                                      setEditingHistoryIndex(null);
-                                                    }}
-                                                    className="text-gray-500 hover:text-gray-700 px-1 font-bold"
-                                                  >
-                                                    ✕
-                                                  </button>
-                                                </div>
-                                              );
-                                            }
-                                            
-                                            return (
-                                              <div 
-                                                key={idx} 
-                                                className="flex items-center justify-between py-0.5 border-b border-gray-100 dark:border-gray-700 last:border-0 group cursor-pointer hover:bg-blue-50 dark:hover:bg-blue-900/20 px-1 rounded"
-                                                onClick={(e) => {
-                                                  e.stopPropagation();
-                                                  setEditingHistoryIndex(`comm-${community.id}-${actualIdx}`);
-                                                  setEditingHistoryDate(history.date || '');
-                                                  setEditingHistoryStatus(history.status || '');
-                                                }}
-                                                title="클릭하여 편집"
-                                              >
-                                                <span className="text-gray-600 dark:text-white">
-                                                  {history.date}: {history.status}
-                                                </span>
-                                                <button
-                                                  onMouseDown={(e) => {
-                                                    e.preventDefault();
-                                                    e.stopPropagation();
-                                                    setIsDeletingHistory(true);
-                                                  }}
-                                                  onClick={async (e) => {
-                                                    e.stopPropagation();
-                                                    try {
-                                                      const newHistory = community.status_history.filter((_, i) => i !== actualIdx);
-                                                      await axiosInstance.put(`/communities/${community.id}`, {
-                                                        status_history: newHistory
-                                                      });
-                                                      toast.success('이력이 삭제되었습니다');
-                                                      await loadCommunities();
-                                                    } catch (error) {
-                                                      console.error('[커뮤니티 이력 삭제] 삭제 실패:', error);
-                                                      toast.error('이력 삭제에 실패했습니다');
-                                                    } finally {
-                                                      setIsDeletingHistory(false);
-                                                    }
-                                                  }}
-                                                  className="opacity-0 group-hover:opacity-100 text-red-500 hover:text-red-700 ml-2 transition-opacity"
-                                                  title="이력 삭제"
-                                                >
-                                                  ✕
-                                                </button>
-                                              </div>
-                                            );
-                                          })}
-                                        </div>
-                                      </div>
-                                    )}
-                                  </div>
-                                );
-                              }
-                              
-                              return (
-                                <div
-                                  onClick={async () => {
-                                    setIsManualInputMode(false);
-                                    
-                                    const currentStatus = community.status;
-                                    const pureStatus = currentStatus ? currentStatus.replace(/^\d{1,2}\.\d{1,2}\s*/, '').replace(/\s*수동입력$/, '') : '';
-                                    const statusOrder = ['가입전', '대기', '승인', '장점검', '팅', '졸업'];
-                                    const currentIndex = statusOrder.indexOf(pureStatus);
-                                    
-                                    const now = new Date();
-                                    const month = String(now.getMonth() + 1).padStart(2, '0');
-                                    const day = String(now.getDate()).padStart(2, '0');
-                                    const datePrefix = `${month}.${day}`;
-                                    
-                                    let nextStatus;
-                                    if (currentIndex === -1 || currentIndex === statusOrder.length - 1) {
-                                      nextStatus = statusOrder[0];
-                                    } else {
-                                      nextStatus = statusOrder[currentIndex + 1];
-                                      if (nextStatus !== '가입전' && nextStatus !== '대기') {
-                                        nextStatus = `${datePrefix} ${nextStatus}`;
-                                      }
-                                    }
-                                    
-                                    try {
-                                      await axiosInstance.put(`/communities/${community.id}`, {
-                                        ...community,
-                                        status: nextStatus
-                                      });
-                                      toast.success('상태가 변경되었습니다');
-                                      loadCommunities();
-                                    } catch (error) {
-                                      console.error('상태 변경 실패:', error);
-                                      toast.error('상태 변경에 실패했습니다');
-                                    }
-                                  }}
-                                  onDoubleClick={async () => {
-                                    setIsManualInputMode(true);
-                                    await startEditingCommunityCell(community.id, 'status', community.status);
-                                  }}
-                                  className="cursor-pointer hover:bg-blue-50 dark:hover:bg-gray-700 px-2 py-1 rounded text-center font-bold text-gray-900 dark:text-white"
-                                  title="클릭: 상태 순환, 더블클릭: 수동 입력"
-                                >
-                                  {community.status || '-'}
-                                </div>
-                              );
-                            })()}
-                          </td>
+                          <td className="px-5 py-5 text-center border-r border-gray-100 dark:border-gray-800/30 text-base">{renderCommunityStatusCell()}</td>
                           <td className="px-5 py-5 text-center border-r border-gray-100 dark:border-gray-800/30 text-base text-gray-700 dark:text-gray-300">{renderCommunityEditableCell('path', community.path, 'font-medium')}</td>
                           <td className="px-5 py-5 text-center border-r border-gray-100 dark:border-gray-800/30 text-base text-gray-700 dark:text-gray-300">{renderCommunityEditableCell('category', community.category, 'font-medium')}</td>
                           <td className="px-5 py-5 text-center whitespace-nowrap">
@@ -4694,12 +4465,6 @@ const SiteManagement = () => {
                                 title="커뮤니티 정보 복사"
                               >
                                 📋
-                              </button>
-                              <button
-                                onClick={() => openEditCommunity(community)}
-                                className="px-4 py-2 bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white rounded-lg font-medium text-sm shadow-md hover:shadow-lg transition-all duration-200 hover:scale-105 active:scale-95"
-                              >
-                                ✏️
                               </button>
                               <button
                                 onClick={() => deleteCommunity(community)}
@@ -4723,6 +4488,48 @@ const SiteManagement = () => {
           </table>
         </div>
         </DragDropContext>
+        
+        {/* 커뮤니티 페이징 UI */}
+        {communityTotalPages > 1 && (
+          <div className="px-6 py-4 border-t border-gray-200 dark:border-gray-700 flex items-center justify-between">
+            <div className="text-sm text-gray-600 dark:text-gray-400">
+              총 {communityTotalItems}개 중 {(communityCurrentPage - 1) * communityItemsPerPage + 1}-{Math.min(communityCurrentPage * communityItemsPerPage, communityTotalItems)}개 표시
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setCommunityCurrentPage(1)}
+                disabled={communityCurrentPage === 1}
+                className="px-3 py-1 text-sm border rounded-md disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-100 dark:hover:bg-gray-700 dark:border-gray-600 dark:text-white"
+              >
+                처음
+              </button>
+              <button
+                onClick={() => setCommunityCurrentPage(prev => Math.max(1, prev - 1))}
+                disabled={communityCurrentPage === 1}
+                className="px-3 py-1 text-sm border rounded-md disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-100 dark:hover:bg-gray-700 dark:border-gray-600 dark:text-white"
+              >
+                이전
+              </button>
+              <span className="px-4 py-1 text-sm font-medium dark:text-white">
+                {communityCurrentPage} / {communityTotalPages}
+              </span>
+              <button
+                onClick={() => setCommunityCurrentPage(prev => Math.min(communityTotalPages, prev + 1))}
+                disabled={communityCurrentPage === communityTotalPages}
+                className="px-3 py-1 text-sm border rounded-md disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-100 dark:hover:bg-gray-700 dark:border-gray-600 dark:text-white"
+              >
+                다음
+              </button>
+              <button
+                onClick={() => setCommunityCurrentPage(communityTotalPages)}
+                disabled={communityCurrentPage === communityTotalPages}
+                className="px-3 py-1 text-sm border rounded-md disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-100 dark:hover:bg-gray-700 dark:border-gray-600 dark:text-white"
+              >
+                마지막
+              </button>
+            </div>
+          </div>
+        )}
       </div>
       )}
     </div>
@@ -5071,236 +4878,6 @@ const SiteManagement = () => {
         </div>
       )}
 
-      {/* 사이트 추가/수정 모달 */}
-      {showSiteModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow dark:shadow-gray-900/50 p-6 w-full max-w-3xl max-h-[90vh] overflow-y-auto">
-            <h3 className="text-xl font-bold mb-4">
-              {editingSite ? '🔧 사이트 수정' : '➕ 새 사이트 추가'}
-            </h3>
-            
-            {/* 유사 사이트명 경고 */}
-            {similarWarning && (
-              <div className="mb-4 p-3 bg-yellow-50 dark:bg-yellow-900/30 border border-yellow-300 dark:border-yellow-700 rounded-md">
-                <div className="flex items-start gap-2">
-                  <span className="text-yellow-600 dark:text-yellow-400">⚠️</span>
-                  <div>
-                    <p className="text-sm font-medium text-yellow-800 dark:text-yellow-300">
-                      유사한 사이트명이 존재합니다
-                    </p>
-                    <ul className="mt-1 text-sm text-yellow-700 dark:text-yellow-400">
-                      {similarWarning.map((item, idx) => (
-                        <li key={idx} className="flex items-center gap-2">
-                          <span>• {item.name}</span>
-                          <span className="text-xs text-yellow-600 dark:text-yellow-500">
-                            (유사도: {Math.round(item.similarity * 100)}%)
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => handleSuggestionSelect(item.name)}
-                            className="text-xs px-2 py-0.5 bg-yellow-200 dark:bg-yellow-800 hover:bg-yellow-300 dark:hover:bg-yellow-700 rounded"
-                          >
-                            이 이름 사용
-                          </button>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                </div>
-              </div>
-            )}
-            
-            <div className="grid grid-cols-2 gap-4">
-              <div className="relative">
-                <label className="block text-sm font-bold text-gray-700 dark:text-white mb-1">출석 (사이트명) *</label>
-                <input
-                  ref={siteNameInputRef}
-                  type="text"
-                  value={siteForm.site_name}
-                  onChange={(e) => handleSiteNameChange(e.target.value)}
-                  onFocus={() => {
-                    if (siteForm.site_name.trim().length > 0 && siteNameSuggestions.length > 0) {
-                      setShowSuggestions(true);
-                    }
-                  }}
-                  onBlur={() => {
-                    // 클릭 이벤트가 먼저 실행되도록 약간의 딜레이
-                    setTimeout(() => setShowSuggestions(false), 200);
-                  }}
-                  className="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-md px-3 py-2"
-                  placeholder="원탑"
-                  required
-                  autoComplete="off"
-                />
-                {/* 자동완성 드롭다운 */}
-                {showSuggestions && siteNameSuggestions.length > 0 && (
-                  <div className="absolute z-50 w-full mt-1 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md shadow-lg max-h-48 overflow-y-auto">
-                    <div className="px-3 py-1 text-xs text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-gray-600">
-                      기존 사이트명 (클릭하여 선택)
-                    </div>
-                    {siteNameSuggestions.map((name, idx) => (
-                      <div
-                        key={idx}
-                        className="px-3 py-2 cursor-pointer hover:bg-blue-50 dark:hover:bg-blue-900/30 text-gray-800 dark:text-gray-200"
-                        onClick={() => handleSuggestionSelect(name)}
-                      >
-                        {name}
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-              
-              <div>
-                <label className="block text-sm font-bold text-gray-700 dark:text-white mb-1">도메인</label>
-                <input
-                  type="text"
-                  value={siteForm.domain}
-                  onChange={(e) => setSiteForm({...siteForm, domain: e.target.value})}
-                  className="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-md px-3 py-2"
-                  placeholder="onetop.link"
-                />
-              </div>
-              
-              <div>
-                <label className="block text-sm font-bold text-gray-700 dark:text-white mb-1">경로-코드</label>
-                <input
-                  type="text"
-                  value={siteForm.referral_path}
-                  onChange={(e) => setSiteForm({...siteForm, referral_path: e.target.value})}
-                  className="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-md px-3 py-2"
-                  placeholder="둘리티비"
-                />
-              </div>
-              
-              <div>
-                <label className="block text-sm font-bold text-gray-700 dark:text-white mb-1">승전 (승인전화)</label>
-                <select
-                  value={siteForm.approval_call ? 'O' : 'X'}
-                  onChange={(e) => setSiteForm({...siteForm, approval_call: e.target.value === 'O'})}
-                  className="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-md px-3 py-2"
-                >
-                  <option value="X">X (필요없음)</option>
-                  <option value="O">O (필요함)</option>
-                </select>
-              </div>
-              
-              <div>
-                <label className="block text-sm font-bold text-gray-700 dark:text-white mb-1">아이디 *</label>
-                <input
-                  type="text"
-                  value={siteForm.account_id}
-                  onChange={(e) => setSiteForm({...siteForm, account_id: e.target.value})}
-                  className="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-md px-3 py-2"
-                  placeholder="가이07"
-                  required
-                />
-              </div>
-              
-              <div>
-                <label className="block text-sm font-bold text-gray-700 dark:text-white mb-1">비번 *</label>
-                <input
-                  type="text"
-                  value={siteForm.password}
-                  onChange={(e) => setSiteForm({...siteForm, password: e.target.value})}
-                  className="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-md px-3 py-2"
-                  placeholder="애애99"
-                  required
-                />
-              </div>
-              
-              <div>
-                <label className="block text-sm font-bold text-gray-700 dark:text-white mb-1">환비 (환전비밀번호)</label>
-                <input
-                  type="text"
-                  value={siteForm.exchange_password}
-                  onChange={(e) => setSiteForm({...siteForm, exchange_password: e.target.value})}
-                  className="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-md px-3 py-2"
-                  placeholder="9090"
-                />
-              </div>
-              
-              <div>
-                <label className="block text-sm font-bold text-gray-700 dark:text-white mb-1">닉네임</label>
-                <input
-                  type="text"
-                  value={siteForm.nickname}
-                  onChange={(e) => setSiteForm({...siteForm, nickname: e.target.value})}
-                  className="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-md px-3 py-2"
-                  placeholder="우리의꿈"
-                />
-              </div>
-              
-              <div>
-                <label className="block text-sm font-bold text-gray-700 dark:text-white mb-1">승인유무 (상태)</label>
-                <select
-                  value={siteForm.status}
-                  onChange={(e) => setSiteForm({...siteForm, status: e.target.value})}
-                  className="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-md px-3 py-2"
-                >
-                  <option value="선택하세요">선택하세요</option>
-                  <option value="가입전">가입전</option>
-                          <option value="대기">대기</option>
-                          <option value="승인">승인</option>
-                  <option value="장점검">장점검</option>
-                  <option value="수동입력">수동입력</option>
-                          <option value="팅">팅</option>
-                          <option value="졸업">졸업</option>
-                </select>
-              </div>
-              
-              <div>
-                <label className="block text-sm font-bold text-gray-700 dark:text-white mb-1">경로</label>
-                <input
-                  type="text"
-                  value={siteForm.referral_code}
-                  onChange={(e) => setSiteForm({...siteForm, referral_code: e.target.value})}
-                  className="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-md px-3 py-2"
-                  placeholder="둘리티비"
-                />
-              </div>
-              
-              <div>
-                <label className="block text-sm font-bold text-gray-700 dark:text-white mb-1">장</label>
-                <input
-                  type="text"
-                  value={siteForm.category}
-                  onChange={(e) => setSiteForm({...siteForm, category: e.target.value})}
-                  className="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-md px-3 py-2"
-                  placeholder="카페"
-                />
-              </div>
-              
-              <div className="col-span-2">
-                <label className="block text-sm font-bold text-gray-700 dark:text-white mb-1">메모</label>
-                <textarea
-                  value={siteForm.notes}
-                  onChange={(e) => setSiteForm({...siteForm, notes: e.target.value})}
-                  className="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-md px-3 py-2"
-                  rows="2"
-                  placeholder="추가 메모사항"
-                />
-              </div>
-            </div>
-            
-            <div className="flex justify-end gap-2 mt-6">
-              <button
-                onClick={() => setShowSiteModal(false)}
-                className="px-6 py-2 border border-gray-300 dark:border-gray-700 rounded-md hover:bg-gray-50 dark:hover:bg-gray-700 font-medium dark:bg-[#282C34] dark:text-white"
-              >
-                취소
-              </button>
-              <button
-                onClick={saveSite}
-                className="px-6 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 font-bold"
-              >
-                💾 저장
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* 일괄 등록 모달 */}
       {showBulkImportModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
@@ -5404,314 +4981,6 @@ const SiteManagement = () => {
                 onClick={() => {
                   setShowBulkImportModal(false);
                   resetBulkImportState();
-                }}
-                className="px-6 py-2 border border-gray-300 dark:border-gray-700 rounded-md hover:bg-gray-50 dark:hover:bg-gray-700 font-medium dark:bg-[#282C34] dark:text-white"
-              >
-                닫기
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* 커뮤니티 추가/수정 모달 */}
-      {showCommunityModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow dark:shadow-gray-900/50 p-6 w-full max-w-3xl max-h-[90vh] overflow-y-auto">
-            <h3 className="text-xl font-bold mb-4">
-              {editingCommunity ? '🔧 커뮤니티 수정' : '➕ 새 커뮤니티 추가'}
-            </h3>
-            
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-bold text-gray-700 dark:text-white mb-1">출석 (사이트명) *</label>
-                <input
-                  type="text"
-                  value={communityForm.site_name}
-                  onChange={(e) => setCommunityForm({ ...communityForm, site_name: e.target.value })}
-                  className="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-md px-3 py-2"
-                  placeholder="출석"
-                  required
-                />
-              </div>
-              
-              <div>
-                <label className="block text-sm font-bold text-gray-700 dark:text-white mb-1">도메인</label>
-                <input
-                  type="text"
-                  value={communityForm.domain}
-                  onChange={(e) => setCommunityForm({ ...communityForm, domain: e.target.value })}
-                  className="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-md px-3 py-2"
-                  placeholder="example.com"
-                />
-              </div>
-              
-              <div>
-                <label className="block text-sm font-bold text-gray-700 dark:text-white mb-1">경로-코드</label>
-                <input
-                  type="text"
-                  value={communityForm.referral_path}
-                  onChange={(e) => setCommunityForm({ ...communityForm, referral_path: e.target.value })}
-                  className="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-md px-3 py-2"
-                  placeholder="경로-코드"
-                />
-              </div>
-              
-              <div>
-                <label className="block text-sm font-bold text-gray-700 dark:text-white mb-1">승전 (승인전화)</label>
-                <select
-                  value={communityForm.approval_call ? 'O' : 'X'}
-                  onChange={(e) => setCommunityForm({ ...communityForm, approval_call: e.target.value === 'O' })}
-                  className="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-md px-3 py-2"
-                >
-                  <option value="X">X (필요없음)</option>
-                  <option value="O">O (필요함)</option>
-                </select>
-              </div>
-              
-              <div>
-                <label className="block text-sm font-bold text-gray-700 dark:text-white mb-1">성함</label>
-                <input
-                  type="text"
-                  value={communityForm.identity_name}
-                  onChange={(e) => setCommunityForm({ ...communityForm, identity_name: e.target.value })}
-                  className="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-md px-3 py-2"
-                  placeholder="성함"
-                />
-              </div>
-              
-              <div>
-                <label className="block text-sm font-bold text-gray-700 dark:text-white mb-1">아이디 *</label>
-                <input
-                  type="text"
-                  value={communityForm.account_id}
-                  onChange={(e) => setCommunityForm({ ...communityForm, account_id: e.target.value })}
-                  className="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-md px-3 py-2"
-                  placeholder="아이디"
-                  required
-                />
-              </div>
-              
-              <div>
-                <label className="block text-sm font-bold text-gray-700 dark:text-white mb-1">비번 *</label>
-                <input
-                  type="text"
-                  value={communityForm.password}
-                  onChange={(e) => setCommunityForm({ ...communityForm, password: e.target.value })}
-                  className="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-md px-3 py-2"
-                  placeholder="비번"
-                  required
-                />
-              </div>
-              
-              <div>
-                <label className="block text-sm font-bold text-gray-700 dark:text-white mb-1">환비 (환전비밀번호)</label>
-                <input
-                  type="text"
-                  value={communityForm.exchange_password}
-                  onChange={(e) => setCommunityForm({ ...communityForm, exchange_password: e.target.value })}
-                  className="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-md px-3 py-2"
-                  placeholder="환비"
-                />
-              </div>
-              
-              <div>
-                <label className="block text-sm font-bold text-gray-700 dark:text-white mb-1">닉네임</label>
-                <input
-                  type="text"
-                  value={communityForm.nickname}
-                  onChange={(e) => setCommunityForm({ ...communityForm, nickname: e.target.value })}
-                  className="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-md px-3 py-2"
-                  placeholder="닉네임"
-                />
-              </div>
-              
-              <div>
-                <label className="block text-sm font-bold text-gray-700 dark:text-white mb-1">승인유무 (상태)</label>
-                <select
-                  value={communityForm.status}
-                  onChange={(e) => setCommunityForm({ ...communityForm, status: e.target.value })}
-                  className="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-md px-3 py-2"
-                >
-                  <option value="선택하세요">선택하세요</option>
-                  <option value="가입전">가입전</option>
-                  <option value="대기">대기</option>
-                  <option value="승인">승인</option>
-                  <option value="장점검">장점검</option>
-                  <option value="수동입력">수동입력</option>
-                  <option value="팅">팅</option>
-                  <option value="졸업">졸업</option>
-                </select>
-              </div>
-              
-              <div>
-                <label className="block text-sm font-bold text-gray-700 dark:text-white mb-1">경로</label>
-                <input
-                  type="text"
-                  value={communityForm.referral_code}
-                  onChange={(e) => setCommunityForm({ ...communityForm, referral_code: e.target.value })}
-                  className="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-md px-3 py-2"
-                  placeholder="경로"
-                />
-              </div>
-              
-              <div>
-                <label className="block text-sm font-bold text-gray-700 dark:text-white mb-1">장</label>
-                <input
-                  type="text"
-                  value={communityForm.notes}
-                  onChange={(e) => setCommunityForm({ ...communityForm, notes: e.target.value })}
-                  className="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-md px-3 py-2"
-                  placeholder="장"
-                />
-              </div>
-            </div>
-            
-            <div className="flex justify-end gap-2 mt-6">
-              <button
-                onClick={() => {
-                  setShowCommunityModal(false);
-                  setEditingCommunity(null);
-                }}
-                className="px-6 py-2 border border-gray-300 dark:border-gray-700 rounded-md hover:bg-gray-50 dark:hover:bg-gray-700 font-medium dark:bg-[#282C34] dark:text-white"
-              >
-                취소
-              </button>
-              <button
-                onClick={saveCommunity}
-                className="px-6 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 font-bold"
-              >
-                💾 저장
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* 사이트명 통합 모달 */}
-      {showMergeModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow dark:shadow-gray-900/50 p-6 w-full max-w-4xl max-h-[90vh] overflow-y-auto">
-            <h3 className="text-xl font-bold mb-4 flex items-center gap-2">
-              🔗 사이트명 통합 도구
-              <span className="text-sm font-normal text-gray-500 dark:text-gray-400">
-                유사하거나 중복된 사이트명을 하나로 통합합니다
-              </span>
-            </h3>
-            
-            {/* 수동 통합 */}
-            <div className="mb-6 p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
-              <h4 className="text-lg font-semibold mb-3">직접 통합</h4>
-              <div className="grid grid-cols-3 gap-4 items-end">
-                <div>
-                  <label className="block text-sm font-medium mb-1">원본 (변경할 이름)</label>
-                  <input
-                    type="text"
-                    value={selectedMergeSource}
-                    onChange={(e) => setSelectedMergeSource(e.target.value)}
-                    className="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-md px-3 py-2"
-                    placeholder="예: 케이탑25"
-                    list="allSiteNamesList"
-                  />
-                  <datalist id="allSiteNamesList">
-                    {allSiteNames.map((name, idx) => (
-                      <option key={idx} value={name} />
-                    ))}
-                  </datalist>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium mb-1">대상 (통합할 이름)</label>
-                  <input
-                    type="text"
-                    value={selectedMergeTarget}
-                    onChange={(e) => setSelectedMergeTarget(e.target.value)}
-                    className="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-md px-3 py-2"
-                    placeholder="예: 케이탑"
-                    list="allSiteNamesList"
-                  />
-                </div>
-                <button
-                  onClick={() => {
-                    if (window.confirm(`"${selectedMergeSource}"를 "${selectedMergeTarget}"으로 통합하시겠습니까?\n이 작업은 되돌릴 수 없습니다.`)) {
-                      handleMergeSiteNames();
-                    }
-                  }}
-                  disabled={!selectedMergeSource || !selectedMergeTarget}
-                  className="px-4 py-2 bg-orange-600 text-white rounded-md hover:bg-orange-700 font-bold disabled:bg-gray-400"
-                >
-                  통합 실행
-                </button>
-              </div>
-            </div>
-            
-            {/* 자동 감지된 유사 그룹 */}
-            <div className="mb-4">
-              <h4 className="text-lg font-semibold mb-3 flex items-center gap-2">
-                유사 사이트명 그룹
-                <button
-                  onClick={loadDuplicateGroups}
-                  className="text-sm px-2 py-1 bg-gray-200 dark:bg-gray-600 rounded hover:bg-gray-300 dark:hover:bg-gray-500"
-                >
-                  🔄 새로고침
-                </button>
-              </h4>
-              
-              {duplicateGroups.length === 0 ? (
-                <p className="text-gray-500 dark:text-gray-400 text-center py-4">
-                  유사한 사이트명 그룹이 없습니다
-                </p>
-              ) : (
-                <div className="space-y-3 max-h-96 overflow-y-auto">
-                  {duplicateGroups.map((group, groupIdx) => (
-                    <div key={groupIdx} className="p-3 border border-gray-200 dark:border-gray-600 rounded-lg">
-                      <div className="flex flex-wrap gap-2">
-                        {group.map((item, itemIdx) => (
-                          <div
-                            key={itemIdx}
-                            className={`flex items-center gap-2 px-3 py-1 rounded-full text-sm ${
-                              itemIdx === 0 
-                                ? 'bg-blue-100 dark:bg-blue-900/50 text-blue-800 dark:text-blue-300 font-medium' 
-                                : 'bg-yellow-100 dark:bg-yellow-900/50 text-yellow-800 dark:text-yellow-300'
-                            }`}
-                          >
-                            <span>{item.name}</span>
-                            <span className="text-xs opacity-70">({item.count}개)</span>
-                            {item.similarity && (
-                              <span className="text-xs opacity-50">
-                                {Math.round(item.similarity * 100)}%
-                              </span>
-                            )}
-                            <button
-                              onClick={() => {
-                                if (itemIdx === 0) {
-                                  setSelectedMergeTarget(item.name);
-                                } else {
-                                  setSelectedMergeSource(item.name);
-                                }
-                              }}
-                              className={`ml-1 px-2 py-0.5 text-xs rounded ${
-                                itemIdx === 0 
-                                  ? 'bg-blue-200 dark:bg-blue-800 hover:bg-blue-300 dark:hover:bg-blue-700' 
-                                  : 'bg-yellow-200 dark:bg-yellow-800 hover:bg-yellow-300 dark:hover:bg-yellow-700'
-                              }`}
-                            >
-                              {itemIdx === 0 ? '대상으로' : '원본으로'}
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-            
-            <div className="flex justify-end gap-2 mt-6">
-              <button
-                onClick={() => {
-                  setShowMergeModal(false);
-                  setSelectedMergeSource('');
-                  setSelectedMergeTarget('');
                 }}
                 className="px-6 py-2 border border-gray-300 dark:border-gray-700 rounded-md hover:bg-gray-50 dark:hover:bg-gray-700 font-medium dark:bg-[#282C34] dark:text-white"
               >

@@ -2196,28 +2196,29 @@ function DRBet() {
     const normalizedSite = normalizeName(siteValue);
     const mapKey = `${normalizedIdentity}||${normalizedSite}`;
     
-    // 우선순위: 레코드 필드 > 레코드 맵 > ref 캐시 > state 캐시
-    const recordFieldValue = record[`_attendanceDays_${siteIndex}`];
-    const recordMapValue = record._attendanceDays?.[mapKey];
+    // 우선순위: ref 캐시 > state 캐시 > 레코드 맵 > 레코드 필드
+    // ref 캐시는 토글 시 동기적으로 즉시 업데이트되며, loadRecords에 의해 덮어쓰이지 않으므로 가장 신뢰할 수 있음
     const refCacheValue = attendanceStatsCacheRef.current[cacheKey]?.consecutiveDays;
     const stateValue = siteAttendanceDays[cacheKey];
+    const recordMapValue = record._attendanceDays?.[mapKey];
+    const recordFieldValue = record[`_attendanceDays_${siteIndex}`];
     
-    // 우선순위: 레코드 필드 > 레코드 맵 > ref 캐시 > state 캐시
-    // 레코드 필드가 undefined가 아닌 경우에도, 값이 0이면 레코드 맵을 확인 (업데이트된 값이 있을 수 있음)
     let attendanceDays;
     
-    // 레코드 맵을 우선 확인 (가장 최신 값)
-    if (recordMapValue !== undefined && recordMapValue !== null) {
+    if (refCacheValue !== undefined && refCacheValue !== null) {
+      // ref 캐시 최우선 (토글 즉시 반영, loadRecords에 영향받지 않음)
+      attendanceDays = refCacheValue;
+    } else if (stateValue !== undefined && stateValue !== null) {
+      // state 캐시 (loadAttendanceData에서 업데이트)
+      attendanceDays = stateValue;
+    } else if (recordMapValue !== undefined && recordMapValue !== null) {
+      // 레코드 맵 (서버 응답에서 설정)
       attendanceDays = recordMapValue;
     } else if (recordFieldValue !== undefined && recordFieldValue !== null) {
-      // 레코드 필드에 값이 있으면 사용
+      // 레코드 필드 (클라이언트 설정)
       attendanceDays = recordFieldValue;
-    } else if (refCacheValue !== undefined && refCacheValue !== null) {
-      // ref 캐시에 값이 있으면 사용
-      attendanceDays = refCacheValue;
     } else {
-      // state 캐시 사용 (없으면 0)
-      attendanceDays = stateValue || 0;
+      attendanceDays = 0;
     }
     
     
@@ -2239,7 +2240,6 @@ function DRBet() {
     
     // 출석 여부 판단
     let hasAttended;
-    log(attendanceType)
     if (attendanceType === '자동') {
       // 자동 모드: 충전금액으로 출석 여부 판단
       const parseCharge = (str) => {
@@ -2624,23 +2624,9 @@ function DRBet() {
           timestamp: Date.now()
         };
         
-        // 대시보드 갱신을 위한 refreshTick 증가
-        setRefreshTick(prev => prev + 1);
-
-        // DRBet 레코드의 attendance 플래그를 DB에 반영 (새로고침 후에도 출완 유지)
-        if (record.id) {
-          try {
-            const updatedRecordForServer = {
-              ...record,
-              [attendanceField]: newState ? 1 : 0
-            };
-            await axiosInstance.put(`/drbet/${record.id}`, updatedRecordForServer);
-          } catch (err) {
-            console.error('DRBet 출석 플래그 업데이트 실패:', err);
-          }
-        }
-        
-        // 레코드 상태 업데이트 (클라이언트 메모리)
+        // 즉시 레코드 상태 업데이트 (PUT 호출 전에 UI 반영)
+        // ref 캐시가 표시 우선순위 최상위이므로, 출석일은 이미 정확하게 표시됨
+        // 여기서는 attendance 플래그(출완/출필)만 레코드에 반영
         setRecords(prev => prev.map(r => 
           r.id === record.id 
             ? { ...r, [attendanceField]: newState ? 1 : 0 }
@@ -2651,6 +2637,19 @@ function DRBet() {
             ? { ...r, [attendanceField]: newState ? 1 : 0 }
             : r
         ));
+        
+        // 대시보드 갱신을 위한 refreshTick 증가
+        setRefreshTick(prev => prev + 1);
+
+        // DRBet 레코드의 attendance 플래그를 DB에 반영 (fire-and-forget: UI 차단 없음)
+        if (record.id) {
+          axiosInstance.put(`/drbet/${record.id}`, {
+            ...record,
+            [attendanceField]: newState ? 1 : 0
+          }).catch(err => {
+            console.error('DRBet 출석 플래그 업데이트 실패:', err);
+          });
+        }
         
         // 성공 메시지
         if (newState) {

@@ -48,7 +48,8 @@ const auth = async (req, res, next) => {
       displayName: account.display_name,
       accountType: account.account_type,
       officeId: account.office_id || null,
-      isOfficeManager: account.is_office_manager === 1 || account.is_office_manager === true
+      isOfficeManager: account.is_office_manager === 1 || account.is_office_manager === true,
+      isSuperAdmin: account.account_type === 'super_admin'
     };
 
     // 관리자가 선택한 계정 ID가 헤더에 있으면 추가

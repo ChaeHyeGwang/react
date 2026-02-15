@@ -91,13 +91,34 @@ router.put('/reorder', auth, async (req, res) => {
   try {
     const { records } = req.body; // [{ id, display_order }, ...]
     
-      for (const record of records) {
-        // account_id로 필터링하여 다른 계정의 레코드를 수정하지 못하도록 함
+    for (const record of records) {
+      if (req.user.isOfficeManager && req.user.filterOfficeId) {
+        if (req.user.filterAccountId) {
+          await db.run(
+            `UPDATE drbet_records SET display_order = ? 
+             WHERE id = ? AND account_id = ?`,
+            [record.display_order, record.id, req.user.filterAccountId]
+          );
+        } else {
+          // 사무실 관리자 계정 미선택: 사무실 내 레코드만 업데이트
+          await db.run(
+            `UPDATE drbet_records SET display_order = ? 
+             WHERE id = ? AND account_id IN (
+               SELECT id FROM accounts WHERE office_id = ?
+             )`,
+            [record.display_order, record.id, req.user.filterOfficeId]
+          );
+        }
+      } else {
+        if (!req.user.filterAccountId) {
+          return res.status(403).json({ message: '계정을 선택해주세요.' });
+        }
         await db.run(
           `UPDATE drbet_records SET display_order = ? WHERE id = ? AND account_id = ?`,
           [record.display_order, record.id, req.user.filterAccountId]
         );
       }
+    }
     
     res.json({ message: '순서가 업데이트되었습니다' });
   } catch (error) {
@@ -651,23 +672,47 @@ router.put('/:id', auth, async (req, res) => {
 router.delete('/:id', auth, async (req, res) => {
   try {
     const { id } = req.params;
-    const accountId = req.user.filterAccountId;
     
-    // 먼저 해당 레코드가 현재 사용자의 계정에 속하는지 확인
-    const existingRecord = await db.get(
-      `SELECT * FROM drbet_records WHERE id = ? AND account_id = ?`,
-      [id, accountId]
-    );
+    // 사무실 관리자 or 일반 사용자 권한 체크
+    let existingRecord;
+    if (req.user.isOfficeManager && req.user.filterOfficeId) {
+      if (req.user.filterAccountId) {
+        existingRecord = await db.get(
+          `SELECT dr.* FROM drbet_records dr
+           INNER JOIN accounts a ON dr.account_id = a.id
+           WHERE dr.id = ? AND dr.account_id = ? AND a.office_id = ?`,
+          [id, req.user.filterAccountId, req.user.filterOfficeId]
+        );
+      } else {
+        existingRecord = await db.get(
+          `SELECT dr.* FROM drbet_records dr
+           INNER JOIN accounts a ON dr.account_id = a.id
+           WHERE dr.id = ? AND a.office_id = ?`,
+          [id, req.user.filterOfficeId]
+        );
+      }
+    } else {
+      if (!req.user.filterAccountId) {
+        return res.status(403).json({ message: '계정을 선택해주세요.' });
+      }
+      existingRecord = await db.get(
+        `SELECT * FROM drbet_records WHERE id = ? AND account_id = ?`,
+        [id, req.user.filterAccountId]
+      );
+    }
 
     if (!existingRecord) {
       return res.status(403).json({ message: '이 레코드에 대한 접근 권한이 없습니다.' });
     }
     
-    // 🎯 자동 출석 처리 (삭제 - 새 모듈 사용)
-    await handleDeleteRecord(accountId, existingRecord, existingRecord.record_date);
+    const accountId = existingRecord.account_id;
     
-    await db.run(`DELETE FROM drbet_records WHERE id = ? AND account_id = ?`, [id, accountId]);
+    // DRBet 레코드 먼저 삭제 (출석 처리보다 선행하여 데이터 정합성 보장)
+    await db.run(`DELETE FROM drbet_records WHERE id = ?`, [id]);
     await invalidateSummaryForDate(accountId, existingRecord.record_date);
+    
+    // 🎯 자동 출석 처리 (삭제 - 레코드 삭제 후 출석 로그 정리)
+    await handleDeleteRecord(accountId, existingRecord, existingRecord.record_date);
     
     // 감사 로그 기록
     await logAudit(req, {

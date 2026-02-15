@@ -74,6 +74,21 @@ export async function toggleAttendance(siteName, identityName, attendanceDate, d
 }
 
 /**
+ * KST Intl.DateTimeFormat (서버와 동일한 타임존 사용)
+ */
+const KST_FORMATTER = new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'Asia/Seoul',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit'
+});
+
+function formatKSTDate(date = new Date()) {
+  // en-CA 로케일은 YYYY-MM-DD 형식으로 반환
+  return KST_FORMATTER.format(date);
+}
+
+/**
  * 연속 출석 계산 (클라이언트 측)
  */
 export function calculateConsecutiveDays(logs, endDate = null) {
@@ -82,13 +97,13 @@ export function calculateConsecutiveDays(logs, endDate = null) {
   }
 
   const targetDate = endDate || getTodayDateString();
-  const sortedLogs = [...logs].sort((a, b) => b.localeCompare(a)); // 내림차순 정렬
+  const logSet = new Set(logs);
   
   let consecutiveDays = 0;
   let checkDate = targetDate;
 
   for (let i = 0; i < 365; i++) { // 최대 365일
-    if (sortedLogs.includes(checkDate)) {
+    if (logSet.has(checkDate)) {
       consecutiveDays++;
       checkDate = getPreviousDay(checkDate);
     } else {
@@ -100,49 +115,44 @@ export function calculateConsecutiveDays(logs, endDate = null) {
 }
 
 /**
- * 오늘 날짜 문자열 (YYYY-MM-DD)
+ * 오늘 날짜 문자열 (YYYY-MM-DD, KST 기준)
  */
 export function getTodayDateString() {
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = String(now.getMonth() + 1).padStart(2, '0');
-  const day = String(now.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
+  return formatKSTDate(new Date());
 }
 
 /**
- * 현재 년-월 문자열 (YYYY-MM)
+ * 현재 년-월 문자열 (YYYY-MM, KST 기준)
  */
 export function getCurrentMonthString() {
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = String(now.getMonth() + 1).padStart(2, '0');
-  return `${year}-${month}`;
+  return formatKSTDate(new Date()).substring(0, 7);
 }
 
 /**
- * 이전 날짜 계산
+ * 이전 날짜 계산 (UTC 오류 방지: 정오 기준 계산)
  */
 export function getPreviousDay(dateString) {
-  const date = new Date(dateString);
+  const [year, month, day] = dateString.split('-').map(Number);
+  const date = new Date(year, month - 1, day, 12, 0, 0);
   date.setDate(date.getDate() - 1);
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
 }
 
 /**
  * 최근 N일의 출석 여부 배열 반환
  */
 export function getRecentAttendance(logs, days = 7) {
+  const logSet = new Set(logs);
   const result = [];
   let checkDate = getTodayDateString();
   
   for (let i = 0; i < days; i++) {
     result.push({
       date: checkDate,
-      attended: logs.includes(checkDate)
+      attended: logSet.has(checkDate)
     });
     checkDate = getPreviousDay(checkDate);
   }
@@ -160,9 +170,10 @@ export function calculateAttendanceRate(logs, yearMonth) {
   
   const monthLogs = logs.filter(log => log.startsWith(yearMonth));
   const daysInMonth = getDaysInMonth(yearMonth);
-  const todayDay = new Date().getDate();
   
-  // 이번 달이면 오늘까지만 계산
+  // 이번 달이면 오늘(KST)까지만 계산
+  const todayStr = getTodayDateString();
+  const todayDay = parseInt(todayStr.split('-')[2], 10);
   const targetDays = yearMonth === getCurrentMonthString() ? todayDay : daysInMonth;
   
   const rate = (monthLogs.length / targetDays) * 100;
@@ -185,6 +196,7 @@ export function generateAttendanceCalendar(logs, yearMonth) {
     yearMonth = getCurrentMonthString();
   }
   
+  const logSet = new Set(logs);
   const [year, month] = yearMonth.split('-').map(Number);
   const daysInMonth = getDaysInMonth(yearMonth);
   const calendar = [];
@@ -194,7 +206,7 @@ export function generateAttendanceCalendar(logs, yearMonth) {
     calendar.push({
       date: dateString,
       day,
-      attended: logs.includes(dateString)
+      attended: logSet.has(dateString)
     });
   }
   
