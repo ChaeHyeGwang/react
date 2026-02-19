@@ -61,19 +61,26 @@ const auth = async (req, res, next) => {
     }
 
     if (parsedSelectedAccountId && account.account_type === 'super_admin') {
-      // 슈퍼관리자가 사무실 관리자를 선택한 경우, 그 사무실 관리자의 사무실 데이터로 필터링
+      // 슈퍼관리자가 계정을 선택한 경우 (사무실 관리자 또는 일반 계정)
       const selectedAccount = await db.get(
-        'SELECT office_id FROM accounts WHERE id = ? AND is_office_manager = 1 AND status = "active"',
+        'SELECT id, office_id, is_office_manager FROM accounts WHERE id = ? AND status = "active"',
         [parsedSelectedAccountId]
       );
       
       if (!selectedAccount) {
-        return res.status(403).json({ error: '선택한 계정이 유효한 사무실 관리자가 아닙니다.' });
+        return res.status(403).json({ error: '선택한 계정을 찾을 수 없습니다.' });
       }
       
       req.user.selectedAccountId = parsedSelectedAccountId;
-      req.user.filterAccountId = null; // 계정 필터 없음 (사무실 전체)
-      req.user.filterOfficeId = selectedAccount.office_id; // 선택한 사무실 관리자의 사무실로 필터링
+      if (selectedAccount.is_office_manager === 1) {
+        // 사무실 관리자 선택 -> 해당 사무실 전체 데이터 접근
+        req.user.filterAccountId = null;
+        req.user.filterOfficeId = selectedAccount.office_id;
+      } else {
+        // 일반 계정 선택 -> 해당 계정 데이터만 접근
+        req.user.filterAccountId = parsedSelectedAccountId;
+        req.user.filterOfficeId = selectedAccount.office_id || null;
+      }
     } else if (req.user.isOfficeManager && account.office_id) {
       // 사무실 관리자는 자신의 사무실에 속한 모든 계정의 데이터 접근 가능
       req.user.filterOfficeId = account.office_id; // 자신의 사무실만

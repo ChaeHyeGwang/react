@@ -158,13 +158,25 @@ router.get('/accounts', auth, async (req, res) => {
     let accounts = [];
 
     if (req.user.accountType === 'super_admin') {
-      // 슈퍼관리자는 사무실 관리자만 조회
-      accounts = await db.all(
-        `SELECT id, username, display_name, account_type, status, created_date, last_login, office_id, is_office_manager, display_order 
-         FROM accounts 
-         WHERE is_office_manager = 1 AND status = 'active'
-         ORDER BY display_order ASC, display_name ASC`
-      );
+      const { office_id } = req.query;
+      if (office_id) {
+        // 특정 사무실의 모든 계정 조회 (서브 계정 목록용)
+        accounts = await db.all(
+          `SELECT id, username, display_name, account_type, status, created_date, last_login, office_id, is_office_manager, display_order 
+           FROM accounts 
+           WHERE office_id = ? AND status = 'active'
+           ORDER BY is_office_manager DESC, display_order ASC, display_name ASC`,
+          [parseInt(office_id, 10)]
+        );
+      } else {
+        // 사무실 관리자 목록 조회 (기본)
+        accounts = await db.all(
+          `SELECT id, username, display_name, account_type, status, created_date, last_login, office_id, is_office_manager, display_order 
+           FROM accounts 
+           WHERE is_office_manager = 1 AND status = 'active'
+           ORDER BY display_order ASC, display_name ASC`
+        );
+      }
     } else if (req.user.isOfficeManager && req.user.officeId) {
       accounts = await db.all(
         `SELECT id, username, display_name, account_type, status, created_date, last_login, office_id, is_office_manager, display_order 

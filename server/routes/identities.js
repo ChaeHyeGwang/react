@@ -426,7 +426,10 @@ router.put('/:id', auth, async (req, res) => {
     
     // 해당 명의가 현재 사용자의 것인지 확인
     const identity = await db.get('SELECT * FROM identities WHERE id = ?', [id]);
-    if (!identity || identity.account_id !== filterAccountId) {
+    if (!identity) {
+      return res.status(403).json({ success: false, message: '권한이 없습니다' });
+    }
+    if (!req.user.isSuperAdmin && identity.account_id !== filterAccountId) {
       return res.status(403).json({ 
         success: false, 
         message: '권한이 없습니다' 
@@ -500,7 +503,10 @@ router.delete('/:id', auth, async (req, res) => {
     
     // 해당 명의가 현재 사용자의 것인지 확인 및 명의 정보 가져오기
     const identity = await db.get('SELECT * FROM identities WHERE id = ?', [id]);
-    if (!identity || identity.account_id !== filterAccountId) {
+    if (!identity) {
+      return res.status(403).json({ success: false, message: '권한이 없습니다' });
+    }
+    if (!req.user.isSuperAdmin && identity.account_id !== filterAccountId) {
       return res.status(403).json({ 
         success: false, 
         message: '권한이 없습니다' 

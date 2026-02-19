@@ -636,7 +636,10 @@ router.post('/', auth, async (req, res) => {
     
     // 해당 명의가 현재 사용자의 것인지 확인
     const identity = await db.get('SELECT account_id FROM identities WHERE id = ?', [identity_id]);
-    if (!identity || identity.account_id !== filterAccountId) {
+    if (!identity) {
+      return res.status(403).json({ success: false, message: '권한이 없습니다' });
+    }
+    if (!req.user.isSuperAdmin && identity.account_id !== filterAccountId) {
       return res.status(403).json({ 
         success: false, 
         message: '권한이 없습니다' 
@@ -710,8 +713,8 @@ router.put('/:id', auth, async (req, res) => {
       return res.status(404).json({ success: false, message: '사이트를 찾을 수 없습니다' });
     }
     
-    // 해당 사이트가 현재 사용자의 것인지 확인 (사무실 관리자는 같은 사무실 내 사이트 수정 가능)
-    if (currentSite.identity_id) {
+    // 해당 사이트가 현재 사용자의 것인지 확인 (슈퍼관리자는 모든 사이트 수정 가능)
+    if (currentSite.identity_id && !req.user.isSuperAdmin) {
       const identity = await db.get('SELECT account_id FROM identities WHERE id = ?', [currentSite.identity_id]);
       if (!identity) {
         return res.status(403).json({ 
@@ -720,7 +723,6 @@ router.put('/:id', auth, async (req, res) => {
         });
       }
       
-      // 사무실 관리자인 경우: 같은 사무실의 사이트인지 확인
       if (req.user.isOfficeManager && req.user.filterOfficeId) {
         const siteOwner = await db.get(
           `SELECT office_id FROM accounts WHERE id = ?`,
@@ -733,8 +735,6 @@ router.put('/:id', auth, async (req, res) => {
           });
         }
       } else if (!req.user.isOfficeManager) {
-        // 일반 사용자: 본인 것만 수정 가능
-        // filterAccountId가 있으면 사용, 없으면 자신의 accountId 사용
         const filterAccountId = req.user.filterAccountId || req.user.accountId;
         
         if (identity.account_id !== filterAccountId) {
@@ -930,8 +930,8 @@ router.delete('/:id', auth, async (req, res) => {
       });
     }
     
-    // 권한 확인 (사무실 관리자는 같은 사무실 내 사이트 삭제 가능)
-    if (site.identity_id) {
+    // 권한 확인 (슈퍼관리자는 모든 사이트 삭제 가능)
+    if (site.identity_id && !req.user.isSuperAdmin) {
       const identity = await db.get('SELECT account_id FROM identities WHERE id = ?', [site.identity_id]);
       if (!identity) {
         return res.status(403).json({ 
@@ -940,7 +940,6 @@ router.delete('/:id', auth, async (req, res) => {
         });
       }
       
-      // 사무실 관리자인 경우: 같은 사무실의 사이트인지 확인
       if (req.user.isOfficeManager && req.user.filterOfficeId) {
         const siteOwner = await db.get(
           `SELECT office_id FROM accounts WHERE id = ?`,
@@ -953,7 +952,6 @@ router.delete('/:id', auth, async (req, res) => {
           });
         }
       } else if (!req.user.isOfficeManager) {
-        // 일반 사용자: 본인 것만 삭제 가능
         const filterAccountId = req.user.filterAccountId || req.user.accountId;
         
         if (identity.account_id !== filterAccountId) {

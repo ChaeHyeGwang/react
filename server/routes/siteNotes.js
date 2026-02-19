@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { auth } = require('../middleware/auth');
+const { auth, requireSuperAdmin } = require('../middleware/auth');
 const db = require('../database/db');
 const {
   upsertSiteAttendance,
@@ -12,6 +12,153 @@ const {
 } = require('../services/siteNotesService');
 const { getKSTDateTimeString } = require('../utils/time');
 const { invalidateSummaryForDate } = require('../services/drbetSummary');
+
+// 슈퍼관리자용 전체 사이트 정보 오버뷰
+router.get('/admin/overview', auth, requireSuperAdmin, async (req, res) => {
+  try {
+    const rows = await db.all(`
+      SELECT 
+        sa.id AS site_id,
+        sa.site_name,
+        sa.status AS site_status,
+        i.id AS identity_id,
+        i.name AS identity_name,
+        a.id AS account_id,
+        a.display_name AS account_name,
+        a.office_id,
+        o.name AS office_name,
+        o.status AS office_status,
+        sn.data AS note_data,
+        sn.recorded_by_identity,
+        sn.updated_at AS note_updated_at
+      FROM site_accounts sa
+      INNER JOIN identities i ON sa.identity_id = i.id
+      INNER JOIN accounts a ON i.account_id = a.id
+      LEFT JOIN offices o ON a.office_id = o.id
+      LEFT JOIN site_notes sn ON sn.site_name = sa.site_name 
+        AND (sn.office_id = a.office_id OR (sn.office_id IS NULL AND a.office_id IS NULL))
+      WHERE sa.status != 'auto' 
+        AND a.status = 'active' 
+        AND a.account_type != 'super_admin'
+      ORDER BY COALESCE(o.name, '미배정'), a.display_name, i.name, sa.site_name
+    `);
+
+    const now = new Date();
+    const yearMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    const pointRows = await db.all(
+      `SELECT account_id, SUM(ka_amount) as total FROM settlements WHERE year_month = ? GROUP BY account_id`,
+      [yearMonth]
+    );
+    const pointsMap = {};
+    pointRows.forEach(p => { pointsMap[p.account_id] = p.total || 0; });
+
+    const officeMap = new Map();
+    let totalEvents = 0;
+    let totalSites = 0;
+    const allIdentityIds = new Set();
+
+    rows.forEach(row => {
+      const officeKey = row.office_id || 0;
+      const officeName = row.office_name || '미배정';
+
+      if (!officeMap.has(officeKey)) {
+        officeMap.set(officeKey, {
+          id: row.office_id,
+          name: officeName,
+          status: row.office_status || 'active',
+          identityMap: new Map(),
+          accountIds: new Set()
+        });
+      }
+
+      const office = officeMap.get(officeKey);
+      office.accountIds.add(row.account_id);
+
+      const identityKey = row.identity_id;
+      allIdentityIds.add(identityKey);
+
+      if (!office.identityMap.has(identityKey)) {
+        office.identityMap.set(identityKey, {
+          id: row.identity_id,
+          name: row.identity_name,
+          accountId: row.account_id,
+          accountName: row.account_name,
+          sites: []
+        });
+      }
+
+      const identity = office.identityMap.get(identityKey);
+
+      let noteData = {};
+      try {
+        noteData = row.note_data ? JSON.parse(row.note_data) : {};
+      } catch (e) {
+        noteData = {};
+      }
+
+      const events = Array.isArray(noteData.events) ? noteData.events : [];
+      totalEvents += events.length;
+      totalSites++;
+
+      identity.sites.push({
+        id: row.site_id,
+        site_name: row.site_name,
+        status: row.site_status,
+        recorded_by: row.recorded_by_identity || '',
+        updated_at: row.note_updated_at || '',
+        tenure: noteData.tenure || '',
+        attendanceType: noteData.attendanceType || '자동',
+        rollover: noteData.rollover || '',
+        settlement: noteData.settlement || '',
+        payback: noteData.payback || null,
+        rate: noteData.rate || '',
+        events
+      });
+    });
+
+    const offices = [];
+    officeMap.forEach((office) => {
+      const identities = [];
+      office.identityMap.forEach((identity) => {
+        identities.push({
+          id: identity.id,
+          name: identity.name,
+          accountId: identity.accountId,
+          accountName: identity.accountName,
+          sites: identity.sites
+        });
+      });
+
+      let monthlyPoints = 0;
+      office.accountIds.forEach(accountId => {
+        monthlyPoints += pointsMap[accountId] || 0;
+      });
+
+      offices.push({
+        id: office.id,
+        name: office.name,
+        status: office.status,
+        monthlyPoints,
+        identities
+      });
+    });
+
+    res.json({
+      success: true,
+      yearMonth,
+      summary: {
+        totalOffices: offices.length,
+        totalIdentities: allIdentityIds.size,
+        totalSites,
+        totalEvents
+      },
+      offices
+    });
+  } catch (error) {
+    console.error('오버뷰 조회 실패:', error);
+    res.status(500).json({ success: false, message: '오버뷰 조회 실패' });
+  }
+});
 
 // 사이트 메타데이터 조회 (공유 데이터 + 계정별+명의별 출석일 조합)
 router.get('/', auth, async (req, res) => {

@@ -621,12 +621,23 @@ router.put('/:identityName', auth, async (req, res) => {
     }
     
     // 해당 명의가 현재 사용자의 것인지 확인
-    const identity = await db.get(
-      'SELECT account_id FROM identities WHERE name = ? AND account_id = ?',
-      [identityName, filterAccountId]
-    );
+    let identity;
+    if (req.user.isSuperAdmin) {
+      identity = await db.get(
+        'SELECT account_id FROM identities WHERE name = ?',
+        [identityName]
+      );
+    } else {
+      identity = await db.get(
+        'SELECT account_id FROM identities WHERE name = ? AND account_id = ?',
+        [identityName, filterAccountId]
+      );
+    }
     
-    if (!identity || identity.account_id !== filterAccountId) {
+    if (!identity) {
+      return res.status(403).json({ error: '권한이 없습니다' });
+    }
+    if (!req.user.isSuperAdmin && identity.account_id !== filterAccountId) {
       return res.status(403).json({ error: '권한이 없습니다' });
     }
     

@@ -31,6 +31,12 @@ const Layout = () => {
   const [editingAccountId, setEditingAccountId] = useState(null);
   const [editingAccountName, setEditingAccountName] = useState('');
   const [isEditMode, setIsEditMode] = useState(false);
+  const [selectedManagerId, setSelectedManagerId] = useState(() => {
+    const saved = localStorage.getItem('selectedManagerId');
+    return saved ? parseInt(saved, 10) : null;
+  });
+  const [subAccounts, setSubAccounts] = useState([]);
+  const [showSubAccountMenu, setShowSubAccountMenu] = useState(false);
 
   // 다크 모드 상태 로드 및 적용
   useEffect(() => {
@@ -135,17 +141,68 @@ const Layout = () => {
     }
   }, [isAdmin, setSelectedAccountId]);
 
+  // 선택된 관리자의 사무실 하위 계정 로드
+  useEffect(() => {
+    const loadSubAccounts = async () => {
+      if (!isAdmin || !selectedManagerId) {
+        setSubAccounts([]);
+        return;
+      }
+      const manager = accounts.find(acc => acc.id === selectedManagerId);
+      if (!manager || !manager.office_id) {
+        setSubAccounts([]);
+        return;
+      }
+      try {
+        const response = await axiosInstance.get(`/auth/accounts?office_id=${manager.office_id}`);
+        if (response.data.success) {
+          const subs = (response.data.accounts || []).filter(acc => acc.id !== selectedManagerId);
+          setSubAccounts(subs);
+        }
+      } catch (error) {
+        console.error('하위 계정 로드 실패:', error);
+        setSubAccounts([]);
+      }
+    };
+    loadSubAccounts();
+  }, [isAdmin, selectedManagerId, accounts]);
+
   // 계정 선택 핸들러
   const handleAccountSelect = (accountId) => {
     if (accountId) {
       setSelectedAccountId(accountId);
       localStorage.setItem('selectedAccountId', accountId.toString());
+      if (isAdmin) {
+        const account = accounts.find(acc => acc.id === accountId);
+        if (account && account.isOfficeManager) {
+          setSelectedManagerId(accountId);
+          localStorage.setItem('selectedManagerId', accountId.toString());
+        } else {
+          setSelectedManagerId(null);
+          localStorage.removeItem('selectedManagerId');
+        }
+      }
     } else {
       setSelectedAccountId(null);
+      setSelectedManagerId(null);
       localStorage.removeItem('selectedAccountId');
+      localStorage.removeItem('selectedManagerId');
     }
+    setSubAccounts([]);
     setShowAccountMenu(false);
-    // 페이지 새로고침하여 선택된 계정 데이터 로드
+    window.location.reload();
+  };
+
+  // 하위 계정 선택 핸들러
+  const handleSubAccountSelect = (accountId) => {
+    if (accountId) {
+      setSelectedAccountId(accountId);
+      localStorage.setItem('selectedAccountId', accountId.toString());
+    } else if (selectedManagerId) {
+      setSelectedAccountId(selectedManagerId);
+      localStorage.setItem('selectedAccountId', selectedManagerId.toString());
+    }
+    setShowSubAccountMenu(false);
     window.location.reload();
   };
 
@@ -266,7 +323,10 @@ const Layout = () => {
   // 사무실 관리자는 계정 미선택 시 대시보드만, 슈퍼관리자는 계정 미선택 시 대시보드 + 백업관리 + 사무실관리
   const navItems = [
     { to: '/dashboard', label: '대시보드', icon: '📊', alwaysShow: true },
-    ...(isAdmin && !selectedAccountId ? [] : [
+    // 슈퍼관리자는 계정 미선택 시에도 사이트 정보 조회 표시
+    ...(isAdmin && !selectedAccountId ? [
+      { to: '/site-info', label: '사이트 정보 조회', icon: '📋', alwaysShow: true },
+    ] : [
       { to: '/sites', label: '사이트 관리', icon: '🌐', hasSubmenu: true },
       { to: '/site-info', label: '사이트 정보 조회', icon: '📋' },
       { to: '/settlements', label: '정산 관리', icon: '💰' },
@@ -293,25 +353,20 @@ const Layout = () => {
         <div className="w-full px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between h-16">
             <div className="flex">
-              <div className="flex-shrink-0 flex items-center">
-                <h1 className="text-xl font-bold text-blue-600 dark:text-blue-400">
-                  🎉 핵수파티
-                </h1>
-              </div>
               {/* 데스크톱 메뉴 */}
               <div className="hidden sm:ml-6 sm:flex sm:space-x-8">
                 {navItems.map((item) => (
                   item.hasSubmenu ? (
                     <div
                       key={item.to}
-                      className="relative h-16 flex items-center"
+                      className="relative h-16 flex items-center flex-shrink-0"
                       onMouseEnter={() => setShowIdentityMenu(true)}
                       onMouseLeave={() => setShowIdentityMenu(false)}
                     >
                       <NavLink
                         to={item.to}
                         className={({ isActive }) =>
-                          `inline-flex items-center h-full px-1 pt-1 border-b-2 text-sm font-medium ${
+                          `inline-flex items-center h-full px-1 pt-1 border-b-2 text-sm font-medium whitespace-nowrap ${
                             isActive
                               ? 'border-blue-500 dark:border-blue-400 text-gray-900 dark:text-white'
                               : 'border-transparent text-gray-500 dark:text-gray-400 hover:border-gray-300 dark:hover:border-gray-600 hover:text-gray-700 dark:hover:text-gray-200'
@@ -365,7 +420,7 @@ const Layout = () => {
                 ))}
               </div>
             </div>
-            <div className="flex items-center space-x-4">
+            <div className="flex items-center space-x-2">
               {/* 다크 모드 토글 버튼 */}
               <button
                 onClick={toggleDarkMode}
@@ -381,81 +436,141 @@ const Layout = () => {
               </button>
               
               {(isAdmin || isOfficeManager) && (
-                <div className="relative">
-                  <button
-                    onClick={() => setShowAccountMenu(!showAccountMenu)}
-                    className="hidden sm:flex items-center px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 dark:focus:ring-offset-gray-800 whitespace-nowrap"
-                  >
-                    <span className="mr-2">
-                      {selectedAccount ? `👤 ${selectedAccount.display_name}` : '전체 계정'}
-                    </span>
-                    <span className="text-xs">▼</span>
-                  </button>
-                  
-                  {showAccountMenu && (
-                    <>
-                      <div 
-                        className="fixed inset-0 z-40" 
-                        onClick={() => setShowAccountMenu(false)}
-                      />
-                      <div className="absolute right-0 mt-2 w-48 bg-white dark:bg-gray-800 rounded-md shadow-lg border border-gray-200 dark:border-gray-700 z-50">
-                        <div className="py-1">
-                          {isAdmin && (
-                            <button
-                              onClick={() => handleAccountSelect(null)}
-                            className={`w-full text-left px-4 py-2 text-sm whitespace-nowrap ${
-                                !selectedAccountId
-                                  ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 font-medium'
-                                  : 'text-gray-700 dark:text-white hover:bg-gray-50 dark:hover:bg-gray-700'
-                              }`}
-                            >
-                              전체 계정
-                            </button>
-                          )}
-                          {accounts.map((account) => (
-                            <button
-                              key={account.id}
-                              onClick={() => handleAccountSelect(account.id)}
-                              className={`w-full text-left px-4 py-2 text-sm whitespace-nowrap ${
-                                selectedAccountId === account.id
-                                  ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 font-medium'
-                                  : 'text-gray-700 dark:text-white hover:bg-gray-50 dark:hover:bg-gray-700'
-                              }`}
-                            >
-                              👤 {account.display_name}
-                            </button>
-                          ))}
+                <div className="hidden sm:flex items-center gap-1">
+                  {/* 관리자/사무실 관리자 계정 선택 드롭다운 */}
+                  <div className="relative">
+                    <button
+                      onClick={() => { setShowAccountMenu(!showAccountMenu); setShowSubAccountMenu(false); }}
+                      className="flex items-center px-2 py-1.5 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 dark:focus:ring-offset-gray-800"
+                    >
+                      <span className="max-w-[120px] truncate">
+                        {selectedManagerId
+                          ? `🏢 ${accounts.find(a => a.id === selectedManagerId)?.display_name || '관리자'}`
+                          : selectedAccount
+                            ? `👤 ${selectedAccount.display_name}`
+                            : '전체 계정'}
+                      </span>
+                      <span className="text-xs ml-1 flex-shrink-0">▼</span>
+                    </button>
+                    
+                    {showAccountMenu && (
+                      <>
+                        <div 
+                          className="fixed inset-0 z-40" 
+                          onClick={() => setShowAccountMenu(false)}
+                        />
+                        <div className="absolute right-0 mt-2 w-48 bg-white dark:bg-gray-800 rounded-md shadow-lg border border-gray-200 dark:border-gray-700 z-50 max-h-80 overflow-y-auto">
+                          <div className="py-1">
+                            {isAdmin && (
+                              <button
+                                onClick={() => handleAccountSelect(null)}
+                                className={`w-full text-left px-4 py-2 text-sm whitespace-nowrap ${
+                                  !selectedAccountId
+                                    ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 font-medium'
+                                    : 'text-gray-700 dark:text-white hover:bg-gray-50 dark:hover:bg-gray-700'
+                                }`}
+                              >
+                                전체 계정
+                              </button>
+                            )}
+                            {accounts.map((account) => (
+                              <button
+                                key={account.id}
+                                onClick={() => handleAccountSelect(account.id)}
+                                className={`w-full text-left px-4 py-2 text-sm whitespace-nowrap ${
+                                  (isAdmin && selectedManagerId === account.id) || (!isAdmin && selectedAccountId === account.id)
+                                    ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 font-medium'
+                                    : 'text-gray-700 dark:text-white hover:bg-gray-50 dark:hover:bg-gray-700'
+                                }`}
+                              >
+                                {account.isOfficeManager ? '🏢' : '👤'} {account.display_name}
+                              </button>
+                            ))}
+                          </div>
                         </div>
-                      </div>
-                    </>
+                      </>
+                    )}
+                  </div>
+
+                  {/* 슈퍼관리자: 하위 계정 선택 드롭다운 */}
+                  {isAdmin && selectedManagerId && subAccounts.length > 0 && (
+                    <div className="relative">
+                      <button
+                        onClick={() => { setShowSubAccountMenu(!showSubAccountMenu); setShowAccountMenu(false); }}
+                        className="flex items-center px-2 py-1.5 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 dark:focus:ring-offset-gray-800"
+                      >
+                        <span className="max-w-[100px] truncate">
+                          {selectedAccountId && selectedAccountId !== selectedManagerId
+                            ? `👤 ${subAccounts.find(a => a.id === selectedAccountId)?.display_name || '계정'}`
+                            : '전체 (사무실)'}
+                        </span>
+                        <span className="text-xs ml-1 flex-shrink-0">▼</span>
+                      </button>
+
+                      {showSubAccountMenu && (
+                        <>
+                          <div 
+                            className="fixed inset-0 z-40" 
+                            onClick={() => setShowSubAccountMenu(false)}
+                          />
+                          <div className="absolute right-0 mt-2 w-48 bg-white dark:bg-gray-800 rounded-md shadow-lg border border-gray-200 dark:border-gray-700 z-50 max-h-80 overflow-y-auto">
+                            <div className="py-1">
+                              <button
+                                onClick={() => handleSubAccountSelect(null)}
+                                className={`w-full text-left px-4 py-2 text-sm whitespace-nowrap ${
+                                  selectedAccountId === selectedManagerId
+                                    ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 font-medium'
+                                    : 'text-gray-700 dark:text-white hover:bg-gray-50 dark:hover:bg-gray-700'
+                                }`}
+                              >
+                                🏢 전체 (사무실)
+                              </button>
+                              {subAccounts.map((account) => (
+                                <button
+                                  key={account.id}
+                                  onClick={() => handleSubAccountSelect(account.id)}
+                                  className={`w-full text-left px-4 py-2 text-sm whitespace-nowrap ${
+                                    selectedAccountId === account.id
+                                      ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 font-medium'
+                                      : 'text-gray-700 dark:text-white hover:bg-gray-50 dark:hover:bg-gray-700'
+                                  }`}
+                                >
+                                  👤 {account.display_name}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        </>
+                      )}
+                    </div>
                   )}
                 </div>
               )}
               {(isAdmin || isOfficeManager) && (
                 <button
                   onClick={() => setShowCreateAccountModal(true)}
-                  className="hidden sm:inline bg-green-600 dark:bg-green-700 text-white px-3 py-2 rounded-md text-sm font-medium hover:bg-green-700 dark:hover:bg-green-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 dark:focus:ring-offset-gray-800 whitespace-nowrap"
+                  className="hidden sm:inline bg-green-600 dark:bg-green-700 text-white px-2 py-1.5 rounded-md text-xs font-medium hover:bg-green-700 dark:hover:bg-green-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 dark:focus:ring-offset-gray-800 whitespace-nowrap"
                 >
                   ➕ 계정 추가
                 </button>
               )}
-              <span className="hidden sm:inline text-sm text-gray-700 dark:text-white mr-4">
+              <span className="hidden sm:inline text-xs text-gray-700 dark:text-white">
                 👤 {user?.displayName}님
                 {user?.accountType === 'super_admin' && (
-                  <span className="ml-2 text-xs bg-purple-100 dark:bg-purple-900/30 text-purple-800 dark:text-purple-300 px-2 py-1 rounded">
+                  <span className="ml-1 text-xs bg-purple-100 dark:bg-purple-900/30 text-purple-800 dark:text-purple-300 px-1.5 py-0.5 rounded">
                     관리자
                   </span>
                 )}
                 <span 
-                  className={`ml-2 inline-block w-2 h-2 rounded-full ${socketConnected ? 'bg-green-500' : 'bg-red-500'}`}
+                  className={`ml-1 inline-block w-2 h-2 rounded-full ${socketConnected ? 'bg-green-500' : 'bg-red-500'}`}
                   title={socketConnected ? '실시간 동기화 연결됨' : '실시간 동기화 연결 끊김'}
                 ></span>
               </span>
               <button
                 onClick={handleLogout}
-                className="hidden sm:inline bg-red-600 dark:bg-red-700 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-red-700 dark:hover:bg-red-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 dark:focus:ring-offset-gray-800 whitespace-nowrap"
+                className="hidden sm:inline bg-red-600 dark:bg-red-700 text-white px-2 py-1.5 rounded-md text-xs font-medium hover:bg-red-700 dark:hover:bg-red-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 dark:focus:ring-offset-gray-800 whitespace-nowrap"
               >
-                🚪 로그아웃
+                로그아웃
               </button>
             </div>
           </div>

@@ -68,7 +68,9 @@ const ProtectedRouteWithAccount = ({ children, path }) => {
   }
   
   // 관리자가 계정을 선택하지 않았으면 대시보드로 리다이렉트
-  if ((isAdmin || isOfficeManager) && !selectedAccountId && path !== '/dashboard') {
+  // 단, 슈퍼관리자는 계정 미선택 시에도 사이트 정보 조회(/site-info) 접근 가능
+  const allowWithoutAccount = path === '/dashboard' || (isAdmin && path === '/site-info');
+  if ((isAdmin || isOfficeManager) && !selectedAccountId && !allowWithoutAccount) {
     return <Navigate to="/dashboard" replace />;
   }
   
