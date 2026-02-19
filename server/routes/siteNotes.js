@@ -143,9 +143,22 @@ router.get('/admin/overview', auth, requireSuperAdmin, async (req, res) => {
       });
     });
 
+    // 전체 사무실 통틀어 가입 수 상위 사이트 (site_accounts, status != 'auto')
+    const signupBySite = new Map();
+    rows.forEach(row => {
+      const name = (row.site_name || '').trim();
+      if (!name) return;
+      signupBySite.set(name, (signupBySite.get(name) || 0) + 1);
+    });
+    const topSitesBySignups = Array.from(signupBySite.entries())
+      .map(([site_name, signup_count]) => ({ site_name, signup_count }))
+      .sort((a, b) => b.signup_count - a.signup_count)
+      .slice(0, 30);
+
     res.json({
       success: true,
       yearMonth,
+      topSitesBySignups,
       summary: {
         totalOffices: offices.length,
         totalIdentities: allIdentityIds.size,

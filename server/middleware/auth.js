@@ -81,6 +81,10 @@ const auth = async (req, res, next) => {
         req.user.filterAccountId = parsedSelectedAccountId;
         req.user.filterOfficeId = selectedAccount.office_id || null;
       }
+    } else if (account.account_type === 'super_admin') {
+      // 슈퍼관리자 + 전체 선택 -> 전체 사무실 데이터 접근
+      req.user.filterAccountId = null;
+      req.user.filterOfficeId = null;
     } else if (req.user.isOfficeManager && account.office_id) {
       // 사무실 관리자는 자신의 사무실에 속한 모든 계정의 데이터 접근 가능
       req.user.filterOfficeId = account.office_id; // 자신의 사무실만
