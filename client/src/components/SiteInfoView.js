@@ -27,6 +27,91 @@ const formatCurrency = (amount) => {
   return Math.abs(amount).toLocaleString('ko-KR');
 };
 
+// 사이트 한 줄 + 이벤트 펼침. 펼침 상태를 행 안에서만 관리해 부모 리렌더 없음.
+// 이벤트 상세는 table 밖 div로 렌더 → 테이블 열 너비 재계산(reflow) 발생 안 함.
+function SiteRowBlock({ site }) {
+  const [expanded, setExpanded] = useState(false);
+  const hasEvents = site.events.length > 0;
+
+  return (
+    <div className="border-b border-gray-100 dark:border-gray-700/50 last:border-b-0" style={{ contentVisibility: 'auto', containIntrinsicSize: '0 40px' }}>
+      <div className={`grid text-sm ${expanded ? 'bg-blue-50/70 dark:bg-blue-900/20' : 'hover:bg-gray-50 dark:hover:bg-gray-700/30'}`}
+        style={{ gridTemplateColumns: '1fr 64px 80px 56px 56px 64px 112px 80px' }}>
+        <div className="px-3 py-2.5">
+          <span className="font-medium text-gray-900 dark:text-white">{site.site_name}</span>
+          {site.recorded_by && (
+            <span className="text-xs text-gray-400 dark:text-gray-500 ml-1.5">({site.recorded_by})</span>
+          )}
+        </div>
+        <div className="px-3 py-2.5 text-center text-gray-700 dark:text-gray-300">{site.tenure || '-'}</div>
+        <div className="px-3 py-2.5 text-center">
+          <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${
+            site.attendanceType === '수동'
+              ? 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300'
+              : 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300'
+          }`}>{site.attendanceType}</span>
+        </div>
+        <div className="px-3 py-2.5 text-center text-gray-700 dark:text-gray-300">{site.rollover || '-'}</div>
+        <div className="px-3 py-2.5 text-center text-gray-700 dark:text-gray-300">{site.settlement || '-'}</div>
+        <div className="px-3 py-2.5 text-center text-gray-700 dark:text-gray-300">{site.rate || '-'}</div>
+        <div className="px-3 py-2.5 text-center text-gray-700 dark:text-gray-300 text-xs">{formatPayback(site.payback) || '-'}</div>
+        <div className="px-3 py-2.5 text-center">
+          {hasEvents ? (
+            <button
+              onClick={() => setExpanded(v => !v)}
+              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${
+                expanded
+                  ? 'bg-blue-200 text-blue-800 dark:bg-blue-800 dark:text-blue-200'
+                  : 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 hover:bg-blue-200 dark:hover:bg-blue-900/50'
+              }`}
+            >
+              📌 {site.events.length}건
+              <span className="text-[10px]">{expanded ? '▲' : '▼'}</span>
+            </button>
+          ) : (
+            <span className="text-xs text-gray-400 dark:text-gray-500">없음</span>
+          )}
+        </div>
+      </div>
+      {expanded && hasEvents && (
+        <div className="px-4 py-3 mx-4 mb-2 bg-blue-50/50 dark:bg-blue-950/20 rounded max-h-80 overflow-y-auto">
+          <div className="grid text-xs text-gray-500 dark:text-gray-400 border-b border-blue-200/50 dark:border-blue-800/50 font-semibold mb-1"
+            style={{ gridTemplateColumns: '128px 1fr 112px' }}>
+            <div className="py-1.5 pr-4">이벤트</div>
+            <div className="py-1.5 pr-4">이벤트내용</div>
+            <div className="py-1.5">이벤트롤링</div>
+          </div>
+          {site.events.map((event, idx) => (
+            <div key={idx} className="grid text-sm border-b border-blue-100/50 dark:border-blue-900/30 last:border-0"
+              style={{ gridTemplateColumns: '128px 1fr 112px' }}>
+              <div className="py-1.5 pr-4 font-medium text-gray-800 dark:text-gray-200">{event.event || ''}</div>
+              <div className="py-1.5 pr-4 text-gray-700 dark:text-gray-300 whitespace-pre-wrap">{event.detail || ''}</div>
+              <div className="py-1.5 text-gray-700 dark:text-gray-300">{event.rolling || 'X'}</div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// 헤더 행 (사이트 테이블용)
+function SiteTableHeader() {
+  return (
+    <div className="grid bg-gray-50 dark:bg-gray-700/50 border-b border-gray-200 dark:border-gray-600"
+      style={{ gridTemplateColumns: '1fr 64px 80px 56px 56px 64px 112px 80px' }}>
+      <div className="px-3 py-2 text-left text-xs font-semibold text-gray-600 dark:text-gray-300">사이트명</div>
+      <div className="px-3 py-2 text-center text-xs font-semibold text-gray-600 dark:text-gray-300">만근</div>
+      <div className="px-3 py-2 text-center text-xs font-semibold text-gray-600 dark:text-gray-300">출석구분</div>
+      <div className="px-3 py-2 text-center text-xs font-semibold text-gray-600 dark:text-gray-300">이월</div>
+      <div className="px-3 py-2 text-center text-xs font-semibold text-gray-600 dark:text-gray-300">승전</div>
+      <div className="px-3 py-2 text-center text-xs font-semibold text-gray-600 dark:text-gray-300">요율</div>
+      <div className="px-3 py-2 text-center text-xs font-semibold text-gray-600 dark:text-gray-300">페이백</div>
+      <div className="px-3 py-2 text-center text-xs font-semibold text-gray-600 dark:text-gray-300">이벤트</div>
+    </div>
+  );
+}
+
 // ─────────────────────────────────────────────────────
 // 슈퍼관리자 전용 오버뷰
 // ─────────────────────────────────────────────────────
@@ -35,19 +120,30 @@ function SuperAdminOverview() {
   const [loading, setLoading] = useState(true);
   const [officeFilter, setOfficeFilter] = useState('all');
   const [searchTerm, setSearchTerm] = useState('');
-  const [expandedEvents, setExpandedEvents] = useState(new Set());
   const [collapsedOffices, setCollapsedOffices] = useState(new Set());
+  const [siteStatsByPoint, setSiteStatsByPoint] = useState([]);
 
   useEffect(() => {
     loadOverview();
   }, []);
 
+  const getCurrentYearMonth = () => {
+    const now = new Date();
+    return { year: now.getFullYear(), month: now.getMonth() + 1 };
+  };
+
   const loadOverview = async () => {
     setLoading(true);
     try {
-      const response = await axiosInstance.get('/site-notes/admin/overview');
-      if (response.data.success) {
-        setData(response.data);
+      const [overviewRes, bySiteRes] = await Promise.all([
+        axiosInstance.get('/site-notes/admin/overview'),
+        axiosInstance.get('/statistics/by-site', { params: getCurrentYearMonth() })
+      ]);
+      if (overviewRes.data.success) {
+        setData(overviewRes.data);
+      }
+      if (Array.isArray(bySiteRes.data)) {
+        setSiteStatsByPoint(bySiteRes.data.slice(0, 20));
       }
     } catch (error) {
       console.error('오버뷰 로드 실패:', error);
@@ -62,15 +158,6 @@ function SuperAdminOverview() {
       const next = new Set(prev);
       if (next.has(officeId)) next.delete(officeId);
       else next.add(officeId);
-      return next;
-    });
-  };
-
-  const toggleEvents = (siteId) => {
-    setExpandedEvents(prev => {
-      const next = new Set(prev);
-      if (next.has(siteId)) next.delete(siteId);
-      else next.add(siteId);
       return next;
     });
   };
@@ -197,6 +284,69 @@ function SuperAdminOverview() {
         )}
       </div>
 
+      {/* 가장 많이 가입된 사이트 / 포인트 TOP 20 */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
+          <h2 className="px-4 py-3 font-bold text-gray-900 dark:text-white border-b border-gray-200 dark:border-gray-700">
+            📌 전체 사무실 통틀어 가입 수 상위 사이트
+          </h2>
+          <div className="overflow-x-auto max-h-64 overflow-y-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 dark:bg-gray-700/50 sticky top-0">
+                <tr>
+                  <th className="px-3 py-2 text-left text-xs font-semibold text-gray-600 dark:text-gray-300">순위</th>
+                  <th className="px-3 py-2 text-left text-xs font-semibold text-gray-600 dark:text-gray-300">사이트명</th>
+                  <th className="px-3 py-2 text-right text-xs font-semibold text-gray-600 dark:text-gray-300">가입 수</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100 dark:divide-gray-700/50">
+                {(data.topSitesBySignups || []).map((row, idx) => (
+                  <tr key={row.site_name} className="hover:bg-gray-50 dark:hover:bg-gray-700/30">
+                    <td className="px-3 py-2 text-gray-500 dark:text-gray-400">{idx + 1}</td>
+                    <td className="px-3 py-2 font-medium text-gray-900 dark:text-white">{row.site_name}</td>
+                    <td className="px-3 py-2 text-right text-gray-700 dark:text-gray-300">{row.signup_count}명</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {(!data.topSitesBySignups || data.topSitesBySignups.length === 0) && (
+              <p className="p-4 text-sm text-gray-500 dark:text-gray-400">가입 데이터가 없습니다.</p>
+            )}
+          </div>
+        </div>
+        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
+          <h2 className="px-4 py-3 font-bold text-gray-900 dark:text-white border-b border-gray-200 dark:border-gray-700">
+            💰 포인트 많이 받은 사이트 TOP 20
+          </h2>
+          <p className="px-4 py-1 text-xs text-gray-500 dark:text-gray-400 border-b border-gray-100 dark:border-gray-700">
+            이번 달 기준
+          </p>
+          <div className="overflow-x-auto max-h-64 overflow-y-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 dark:bg-gray-700/50 sticky top-0">
+                <tr>
+                  <th className="px-3 py-2 text-left text-xs font-semibold text-gray-600 dark:text-gray-300">순위</th>
+                  <th className="px-3 py-2 text-left text-xs font-semibold text-gray-600 dark:text-gray-300">사이트명</th>
+                  <th className="px-3 py-2 text-right text-xs font-semibold text-gray-600 dark:text-gray-300">총 포인트</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100 dark:divide-gray-700/50">
+                {siteStatsByPoint.map((row, idx) => (
+                  <tr key={row.siteName} className="hover:bg-gray-50 dark:hover:bg-gray-700/30">
+                    <td className="px-3 py-2 text-gray-500 dark:text-gray-400">{idx + 1}</td>
+                    <td className="px-3 py-2 font-medium text-gray-900 dark:text-white">{row.siteName}</td>
+                    <td className="px-3 py-2 text-right text-gray-700 dark:text-gray-300">{formatCurrency(row.totalPoints)}원</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {siteStatsByPoint.length === 0 && (
+              <p className="p-4 text-sm text-gray-500 dark:text-gray-400">이번 달 포인트 데이터가 없습니다.</p>
+            )}
+          </div>
+        </div>
+      </div>
+
       {/* 사무실 섹션 */}
       {filteredOffices.map(office => {
         const officeKey = office.id || 0;
@@ -210,6 +360,7 @@ function SuperAdminOverview() {
           <div
             key={officeKey}
             className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden"
+            style={{ contentVisibility: 'auto', containIntrinsicSize: '0 auto' }}
           >
             {/* 사무실 헤더 */}
             <div
@@ -273,7 +424,7 @@ function SuperAdminOverview() {
                   );
 
                   return (
-                    <div key={identity.id} className="p-4">
+                    <div key={identity.id} className="p-4" style={{ contentVisibility: 'auto', containIntrinsicSize: '0 200px' }}>
                       {/* 유저 헤더 */}
                       <div className="flex items-center gap-2 mb-3">
                         <span className="font-semibold text-gray-800 dark:text-gray-200">
@@ -289,137 +440,12 @@ function SuperAdminOverview() {
                         )}
                       </div>
 
-                      {/* 사이트 테이블 */}
-                      <div className="overflow-x-auto border border-gray-200 dark:border-gray-600 rounded-lg">
-                        <table className="w-full min-w-[760px]">
-                          <thead>
-                            <tr className="bg-gray-50 dark:bg-gray-700/50">
-                              <th className="px-3 py-2 text-left text-xs font-semibold text-gray-600 dark:text-gray-300">사이트명</th>
-                              <th className="px-3 py-2 text-center text-xs font-semibold text-gray-600 dark:text-gray-300 w-16">만근</th>
-                              <th className="px-3 py-2 text-center text-xs font-semibold text-gray-600 dark:text-gray-300 w-20">출석구분</th>
-                              <th className="px-3 py-2 text-center text-xs font-semibold text-gray-600 dark:text-gray-300 w-14">이월</th>
-                              <th className="px-3 py-2 text-center text-xs font-semibold text-gray-600 dark:text-gray-300 w-14">승전</th>
-                              <th className="px-3 py-2 text-center text-xs font-semibold text-gray-600 dark:text-gray-300 w-16">요율</th>
-                              <th className="px-3 py-2 text-center text-xs font-semibold text-gray-600 dark:text-gray-300 w-28">페이백</th>
-                              <th className="px-3 py-2 text-center text-xs font-semibold text-gray-600 dark:text-gray-300 w-20">이벤트</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-gray-100 dark:divide-gray-700/50">
-                            {identity.sites.map(site => {
-                              const isExpanded = expandedEvents.has(site.id);
-                              const hasEvents = site.events.length > 0;
-
-                              return (
-                                <React.Fragment key={site.id}>
-                                  <tr
-                                    className={`text-sm transition-colors ${
-                                      isExpanded
-                                        ? 'bg-blue-50/70 dark:bg-blue-900/20'
-                                        : 'hover:bg-gray-50 dark:hover:bg-gray-700/30'
-                                    }`}
-                                  >
-                                    <td className="px-3 py-2.5">
-                                      <span className="font-medium text-gray-900 dark:text-white">
-                                        {site.site_name}
-                                      </span>
-                                      {site.recorded_by && (
-                                        <span className="text-xs text-gray-400 dark:text-gray-500 ml-1.5">
-                                          ({site.recorded_by})
-                                        </span>
-                                      )}
-                                    </td>
-                                    <td className="px-3 py-2.5 text-center text-gray-700 dark:text-gray-300">
-                                      {site.tenure || '-'}
-                                    </td>
-                                    <td className="px-3 py-2.5 text-center">
-                                      <span
-                                        className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${
-                                          site.attendanceType === '수동'
-                                            ? 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300'
-                                            : 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300'
-                                        }`}
-                                      >
-                                        {site.attendanceType}
-                                      </span>
-                                    </td>
-                                    <td className="px-3 py-2.5 text-center text-gray-700 dark:text-gray-300">
-                                      {site.rollover || '-'}
-                                    </td>
-                                    <td className="px-3 py-2.5 text-center text-gray-700 dark:text-gray-300">
-                                      {site.settlement || '-'}
-                                    </td>
-                                    <td className="px-3 py-2.5 text-center text-gray-700 dark:text-gray-300">
-                                      {site.rate || '-'}
-                                    </td>
-                                    <td className="px-3 py-2.5 text-center text-gray-700 dark:text-gray-300 text-xs">
-                                      {formatPayback(site.payback) || '-'}
-                                    </td>
-                                    <td className="px-3 py-2.5 text-center">
-                                      {hasEvents ? (
-                                        <button
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            toggleEvents(site.id);
-                                          }}
-                                          className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium transition-colors ${
-                                            isExpanded
-                                              ? 'bg-blue-200 text-blue-800 dark:bg-blue-800 dark:text-blue-200'
-                                              : 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 hover:bg-blue-200 dark:hover:bg-blue-900/50'
-                                          }`}
-                                        >
-                                          📌 {site.events.length}건
-                                          <span className="text-[10px]">{isExpanded ? '▲' : '▼'}</span>
-                                        </button>
-                                      ) : (
-                                        <span className="text-xs text-gray-400 dark:text-gray-500">없음</span>
-                                      )}
-                                    </td>
-                                  </tr>
-
-                                  {/* 이벤트 상세 펼침 */}
-                                  {isExpanded && hasEvents && (
-                                    <tr>
-                                      <td
-                                        colSpan={8}
-                                        className="px-0 py-0 bg-blue-50/50 dark:bg-blue-950/20"
-                                      >
-                                        <div className="px-4 py-3 ml-4 mr-4 mb-1">
-                                          <table className="w-full">
-                                            <thead>
-                                              <tr className="text-xs text-gray-500 dark:text-gray-400 border-b border-blue-200/50 dark:border-blue-800/50">
-                                                <th className="text-left py-1.5 pr-4 font-semibold w-32">이벤트</th>
-                                                <th className="text-left py-1.5 pr-4 font-semibold">이벤트내용</th>
-                                                <th className="text-left py-1.5 font-semibold w-28">이벤트롤링</th>
-                                              </tr>
-                                            </thead>
-                                            <tbody>
-                                              {site.events.map((event, idx) => (
-                                                <tr
-                                                  key={idx}
-                                                  className="text-sm border-b border-blue-100/50 dark:border-blue-900/30 last:border-0"
-                                                >
-                                                  <td className="py-1.5 pr-4 font-medium text-gray-800 dark:text-gray-200">
-                                                    {event.event || ''}
-                                                  </td>
-                                                  <td className="py-1.5 pr-4 text-gray-700 dark:text-gray-300 whitespace-pre-wrap">
-                                                    {event.detail || ''}
-                                                  </td>
-                                                  <td className="py-1.5 text-gray-700 dark:text-gray-300">
-                                                    {event.rolling || 'X'}
-                                                  </td>
-                                                </tr>
-                                              ))}
-                                            </tbody>
-                                          </table>
-                                        </div>
-                                      </td>
-                                    </tr>
-                                  )}
-                                </React.Fragment>
-                              );
-                            })}
-                          </tbody>
-                        </table>
+                      {/* 사이트 목록: CSS grid 기반, 이벤트 펼침은 각 행 내부 state */}
+                      <div className="border border-gray-200 dark:border-gray-600 rounded-lg overflow-hidden overflow-x-auto" style={{ minWidth: 760 }}>
+                        <SiteTableHeader />
+                        {identity.sites.map(site => (
+                          <SiteRowBlock key={site.id} site={site} />
+                        ))}
                       </div>
                     </div>
                   );
