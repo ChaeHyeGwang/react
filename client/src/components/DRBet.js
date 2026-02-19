@@ -14,23 +14,6 @@ const log = DEBUG ? console.log.bind(console) : () => {};
 const logWarn = DEBUG ? console.warn.bind(console) : () => {};
 const logTable = DEBUG ? console.table.bind(console) : () => {};
 
-// Debounce 유틸리티 훅 (서버 부하 감소용)
-const useDebounce = (value, delay) => {
-  const [debouncedValue, setDebouncedValue] = React.useState(value);
-
-  React.useEffect(() => {
-    const handler = setTimeout(() => {
-      setDebouncedValue(value);
-    }, delay);
-
-    return () => {
-      clearTimeout(handler);
-    };
-  }, [value, delay]);
-
-  return debouncedValue;
-};
- 
 // 한국 시간 기준 날짜 문자열 반환 (YYYY-MM-DD)
 function getKSTDateString(date = null) {
   const now = date ? new Date(date) : new Date();
@@ -133,7 +116,8 @@ function DRBet() {
   const [refreshTick, setRefreshTick] = useState(0); // 강제 렌더 트리거 (출석일 즉시 반영용)
   const isComposingRef = useRef(false); // IME 조합 중 플래그
   const editingLockRef = useRef(false); // 편집 락: 편집 중 외부 데이터 리로드 차단
-  const savingNotesInlineRef = useRef(false); // 특이사항 인라인 편집 저장 중복 방지
+  const savingNotesInlineRef = useRef(false);
+  const saveNotesInlineEditRef = useRef(null);
   const [isComposingUI, setIsComposingUI] = useState(false); // 조합 중 UI 변경(제안 숨김 등)
   const [pendingSites, setPendingSites] = useState([]); // 장점검/수동입력 사이트 목록 [{identityName, siteName, siteId}]
   const siteNotesCacheRef = useRef({});
@@ -391,15 +375,13 @@ function DRBet() {
     
     // 2) 연속 출석일 로드 (유저가 있는 경우만, 캐시 활용)
     const toLoadStats = [];
-    const cacheKeyToCombo = {};
     for (const key of Object.keys(combos)) {
       const { siteName, identityName } = combos[key];
       if (siteName && identityName) {
         const cacheKey = getAttendanceCacheKey(siteName, identityName);
         const cacheEntry = attendanceStatsCacheRef.current[cacheKey];
-        const CACHE_TTL = 15 * 60 * 1000; // 15분 캐시 (5분 → 15분으로 증가)
+        const CACHE_TTL = 15 * 60 * 1000;
         
-        // 캐시가 있고 15분 이내면 캐시 사용
         if (cacheEntry && (Date.now() - cacheEntry.timestamp < CACHE_TTL)) {
           setSiteAttendanceDays(prev => ({
             ...prev,
@@ -407,7 +389,6 @@ function DRBet() {
           }));
         } else {
           toLoadStats.push({ siteName, identityName });
-          cacheKeyToCombo[cacheKey] = { siteName, identityName };
         }
       }
     }
@@ -601,7 +582,7 @@ function DRBet() {
       console.error('DR벳 기록 로드 실패:', error);
       toast.error('DR벳 기록을 불러오는데 실패했습니다');
     }
-  }, [selectedDate]); // selectedDate는 의존성에 포함 (필요시 사용)
+  }, []);
 
   // 실시간 동기화: 다른 사용자가 DR벳 데이터를 변경하면 자동 새로고침
   const { connected: socketConnected, notifyEditStart, notifyEditEnd, getEditorFor } = useRealtimeSync('drbet', {
@@ -2677,7 +2658,7 @@ function DRBet() {
   };
 
   // 재충 여부 확인 함수
-  const isRechargeRecord = (record, siteIndex, allRecordsList) => {
+  const isRechargeRecord = useCallback((record, siteIndex, allRecordsList) => {
     const identityField = `identity${siteIndex}`;
     const siteField = `site_name${siteIndex}`;
     const chargeWithdrawField = `charge_withdraw${siteIndex}`;
@@ -2734,7 +2715,7 @@ function DRBet() {
     }
     
     return false;
-  };
+  }, []);
 
   // 자동 출석 처리 함수 (충전금액 변화에 따라) - 새로운 로그 방식
   const handleAutoAttendance = async (siteName, identityName, oldChargeWithdraw, newChargeWithdraw, record = null, siteIndex = null) => {
@@ -3586,550 +3567,6 @@ function DRBet() {
     }
   };
 
-  // 자동어제불러오기: 어제 데이터의 유저/사이트 조합을 그대로 가져와서 충전금액 범위 기반으로 자동 생성
-  const loadAutoYesterdayData = async () => {
-    try {
-      const today = new Date(selectedDate);
-      const yesterday = new Date(today);
-      yesterday.setDate(yesterday.getDate() - 1);
-      const yesterdayStr = getKSTDateString(yesterday);
-      
-      // 어제 데이터 가져오기
-      const response = await axiosInstance.get('/drbet');
-      const allRecords = response.data;
-      const yesterdayRecords = allRecords.filter(r => r.record_date === yesterdayStr);
-      
-      if (yesterdayRecords.length === 0) {
-        toast.error('어제 데이터가 없습니다');
-        return;
-      }
-      
-      // 어제 데이터에서 유저/사이트 조합 추출 (재충 제외, 충전금액 없는 것 제외)
-      const yesterdayPairs = []; // { identityName, siteName, yesterdayCharge }[]
-      const yesterdayCharges = {}; // { "identityName||siteName": chargeAmount } (어제와 다른 금액 생성용)
-      const seenPairs = new Set(); // 이미 본 유저/사이트 조합 (재충 확인용)
-      
-      // 통계용
-      let totalItems = 0; // 전체 항목 수 (유저/사이트/충환전이 모두 있는 것)
-      let noChargeCount = 0; // 충전금액 없는 항목 수
-      let duplicateCount = 0; // 재충 항목 수
-      const duplicatePairs = []; // 재충된 조합 목록
-      const noChargePairs = []; // 충전금액 없는 조합 목록
-      
-      yesterdayRecords.forEach(record => {
-        for (let i = 1; i <= 4; i++) {
-          const identityName = record[`identity${i}`];
-          const siteName = record[`site_name${i}`];
-          const chargeWithdraw = record[`charge_withdraw${i}`];
-          
-          if (identityName && siteName && chargeWithdraw) {
-            totalItems++;
-            const parts = chargeWithdraw.trim().split(/\s+/);
-            const charge = parts[0] ? parseFloat(parts[0]) : 0;
-            
-            const pairKey = `${identityName.trim()}||${siteName.trim()}`;
-            
-            // 충전금액이 없으면 제외
-            if (charge <= 0) {
-              noChargeCount++;
-              noChargePairs.push({ identityName: identityName.trim(), siteName: siteName.trim() });
-              continue;
-            }
-            
-            // 재충(중복된 유저/사이트 조합) 제외
-            if (seenPairs.has(pairKey)) {
-              duplicateCount++;
-              duplicatePairs.push({ identityName: identityName.trim(), siteName: siteName.trim() });
-              continue;
-            }
-            
-            seenPairs.add(pairKey);
-            
-            // 어제 충전금액 저장 (어제와 다른 금액 생성용) - 유저+사이트 조합별로 저장
-            yesterdayCharges[pairKey] = charge;
-            
-            // 유저/사이트 조합 저장
-            yesterdayPairs.push({
-              identityName: identityName.trim(),
-              siteName: siteName.trim(),
-              yesterdayCharge: charge
-            });
-          }
-        }
-      });
-      
-      if (yesterdayPairs.length === 0) {
-        toast.error('어제 데이터에 유효한 유저/사이트 조합이 없습니다');
-        return;
-      }
-      
-      log('[자동어제불러오기] 어제 데이터 분석:');
-      log('  - 전체 어제 레코드 수:', yesterdayRecords.length, '개');
-      log('  - 전체 항목 수 (유저/사이트/충환전 모두 있는 것):', totalItems, '개');
-      log('  - 충전금액 없는 항목:', noChargeCount, '개', noChargePairs.length > 0 ? noChargePairs : '');
-      log('  - 재충 항목:', duplicateCount, '개', duplicatePairs.length > 0 ? duplicatePairs : '');
-      log('  - 재충 및 충전금액 없는 항목 제외 후:', yesterdayPairs.length, '개');
-      log('  - 계산 확인:', totalItems, '-', noChargeCount, '-', duplicateCount, '=', yesterdayPairs.length);
-      log('  - 유효한 유저/사이트 조합:', yesterdayPairs);
-      
-      // 어제 조합에서 사용된 사이트 목록 수집 (중복 제거)
-      const uniqueSites = [...new Set(yesterdayPairs.map(p => p.siteName))];
-      
-      // 사이트별 충전금액 범위 정보 bulk 조회
-      const siteRequests = uniqueSites.map(siteName => ({
-        site_name: siteName,
-        identity_name: null // 공유 데이터 조회
-      }));
-      
-      const bulkResponse = await axiosInstance.post('/site-notes/bulk', { 
-        requests: siteRequests 
-      });
-      
-      const siteChargeRanges = {}; // { "siteName": { chargeMin, chargeMax } }
-      
-      if (bulkResponse.data?.success && Array.isArray(bulkResponse.data.results)) {
-        bulkResponse.data.results.forEach(item => {
-          if (item?.site_name && item?.data) {
-            const actualData = item.data.data || item.data;
-            const chargeMin = actualData.chargeMin !== undefined && actualData.chargeMin !== null ? Number(actualData.chargeMin) : null;
-            const chargeMax = actualData.chargeMax !== undefined && actualData.chargeMax !== null ? Number(actualData.chargeMax) : null;
-            
-            if (chargeMin !== null && chargeMax !== null && chargeMax > chargeMin) {
-              siteChargeRanges[item.site_name] = { chargeMin, chargeMax };
-            }
-          }
-        });
-      }
-      
-      // 충전금액 범위가 설정되지 않은 사이트 필터링
-      const validPairs = yesterdayPairs.filter(pair => {
-        return siteChargeRanges[pair.siteName] !== undefined;
-      });
-      
-      const noChargeRangePairs = yesterdayPairs.filter(pair => {
-        return siteChargeRanges[pair.siteName] === undefined;
-      });
-      
-      log('[자동어제불러오기] 충전금액 범위 필터링:');
-      log('  - 어제 조합 (재충/충전금액 없는 것 제외 후):', yesterdayPairs.length, '개');
-      log('  - 충전금액 범위가 설정되지 않은 사이트:', noChargeRangePairs.length, '개', noChargeRangePairs);
-      log('  - 최종 유효한 조합 (충전금액 범위 있는 것만):', validPairs.length, '개');
-      
-      if (validPairs.length === 0) {
-        toast.error('충전금액 범위가 설정된 사이트가 없습니다');
-        return;
-      }
-      
-      // 유저 순서 기준으로 정렬 (사이트 관리의 유저 순서 사용)
-      // identities 배열의 순서를 기준으로 유저 우선순위 설정
-      const identityOrder = identities.map(id => id.name);
-      const identityOrderMap = new Map();
-      identityOrder.forEach((name, index) => {
-        identityOrderMap.set(name, index);
-      });
-      
-      // 거리 기반 매칭 + 그룹 보조
-      // 각 조합의 충전금액 범위 중간값과 그룹 키 계산
-      const pairsWithDistance = validPairs.map(pair => {
-        const range = siteChargeRanges[pair.siteName];
-        const mid = (range.chargeMin + range.chargeMax) / 2;
-        const groupKey = Math.round(mid / 10) * 10; // 10 단위로 반올림 (보조용)
-        const identityOrderIndex = identityOrderMap.get(pair.identityName) ?? 999; // 유저 순서 인덱스
-        return { ...pair, mid, groupKey, identityOrderIndex };
-      });
-      
-      // 유저 순서 우선으로 정렬 (첫 번째 항목 선택을 위해)
-      pairsWithDistance.sort((a, b) => {
-        if (a.identityOrderIndex !== b.identityOrderIndex) {
-          return a.identityOrderIndex - b.identityOrderIndex;
-        }
-        // 같은 유저면 중간값 순서
-        return a.mid - b.mid;
-      });
-      
-      // 거리 기반으로 행 생성
-      const newRecords = [];
-      let remainingPairs = [...pairsWithDistance];
-      const usedPairsGlobal = new Set(); // 전체 행에서 사용된 유저/사이트 조합 (전역 중복 방지)
-      const skippedPairs = []; // 전역 중복으로 스킵된 조합 (디버깅용)
-      
-      log('[자동어제불러오기] 행 생성 시작:', {
-        totalPairs: pairsWithDistance.length,
-        pairs: pairsWithDistance.map(p => `${p.identityName}||${p.siteName} (mid: ${p.mid})`)
-      });
-      
-      // 모든 항목이 처리될 때까지 반복
-      while (remainingPairs.length > 0) {
-        let currentRow = { sites: [] };
-        const usedIdentitiesInRow = new Set(); // 현재 행에서 사용된 유저
-        const usedSitesInRow = new Set(); // 현재 행에서 사용된 사이트
-        const processedIndices = []; // 이번 반복에서 처리된 인덱스
-        let baseMid = null; // 첫 번째 항목의 중간값 (거리 계산 기준)
-        let baseGroupKey = null; // 첫 번째 항목의 그룹 키 (보조 기준)
-        let firstCharge = null; // 첫 번째 항목의 충전금액 (나머지 항목들이 사용할 값)
-        
-        // 첫 번째 항목 선택 (유저 순서 우선, 이미 사용된 조합 제외)
-        let firstPairIndex = -1;
-        for (let i = 0; i < remainingPairs.length; i++) {
-          const pair = remainingPairs[i];
-          const pairKey = `${pair.identityName}||${pair.siteName}`;
-          
-          // 이미 다른 행에서 사용된 조합이면 스킵
-          if (usedPairsGlobal.has(pairKey)) {
-            if (pairKey.includes('김동욱') && pairKey.includes('골든런')) {
-              log('[자동어제불러오기] 김동욱 골든런이 전역 중복으로 스킵됨:', {
-                pairKey,
-                usedPairsGlobal: Array.from(usedPairsGlobal),
-                remainingPairs: remainingPairs.map(p => `${p.identityName}||${p.siteName}`)
-              });
-            }
-            skippedPairs.push({ pairKey, reason: '전역 중복' });
-            continue;
-          }
-          
-          firstPairIndex = i;
-          const { identityName, siteName, mid, groupKey } = pair;
-          
-          if (pairKey.includes('김동욱') && pairKey.includes('골든런')) {
-            log('[자동어제불러오기] 김동욱 골든런이 첫 번째 항목으로 선택됨:', {
-              pairKey,
-              mid,
-              groupKey,
-              currentRowSites: currentRow.sites.length
-            });
-          }
-          
-          // 충전금액 범위 내에서 랜덤 금액 생성 (어제와 다른 금액) - 첫 번째 항목만 랜덤
-          // 유저+사이트 조합별로 어제 충전금액과 비교
-          const range = siteChargeRanges[siteName];
-          const currentPairKey = `${identityName}||${siteName}`;
-          const yesterdayCharge = yesterdayCharges[currentPairKey];
-          let charge;
-          let attempts = 0;
-          do {
-            charge = Math.floor(Math.random() * (range.chargeMax - range.chargeMin + 1)) + range.chargeMin;
-            attempts++;
-          } while (yesterdayCharge !== undefined && yesterdayCharge === charge && attempts < 10);
-          
-          firstCharge = charge; // 첫 번째 항목의 충전금액 저장
-          
-          currentRow.sites.push({ siteName, identityName, charge });
-          usedIdentitiesInRow.add(identityName);
-          usedSitesInRow.add(siteName);
-          usedPairsGlobal.add(pairKey); // 전역 사용 표시
-          processedIndices.push(i);
-          baseMid = mid;
-          baseGroupKey = groupKey;
-          break;
-        }
-        
-        // 첫 번째 항목을 찾지 못했으면 이번 반복 종료
-        if (firstPairIndex === -1) {
-          const remainingKeys = remainingPairs.map(p => `${p.identityName}||${p.siteName}`);
-          if (remainingKeys.some(k => k.includes('김동욱') && k.includes('골든런'))) {
-            log('[자동어제불러오기] 첫 번째 항목을 찾지 못함, 김동욱 골든런이 남아있음:', {
-              remainingPairs: remainingKeys,
-              usedPairsGlobal: Array.from(usedPairsGlobal)
-            });
-          }
-          break;
-        }
-        
-        // 두 번째 항목부터: 첫 번째 항목의 금액이 포함되는 충전금액 범위를 가진 사이트들 찾기
-        // 그 다음 유저 순서대로 정렬해서 배치
-        const compatiblePairs = remainingPairs
-          .map((pair, idx) => ({ pair, idx }))
-          .filter(({ pair, idx }) => {
-            // 이미 처리된 항목은 제외
-            if (processedIndices.includes(idx)) return false;
-            
-            const pairKey = `${pair.identityName}||${pair.siteName}`;
-            
-            // 이미 다른 행에서 사용된 조합이면 제외
-            if (usedPairsGlobal.has(pairKey)) return false;
-            
-            // 현재 행에 이미 사용된 유저나 사이트면 제외
-            if (usedIdentitiesInRow.has(pair.identityName) || usedSitesInRow.has(pair.siteName)) return false;
-            
-            // 첫 번째 항목의 금액이 이 사이트의 충전금액 범위에 포함되는지 확인
-            const range = siteChargeRanges[pair.siteName];
-            if (!range) return false;
-            return firstCharge >= range.chargeMin && firstCharge <= range.chargeMax;
-          })
-          .map(({ pair, idx }) => ({ ...pair, originalIndex: idx }))
-          .sort((a, b) => {
-            // 유저 순서 우선
-            if (a.identityOrderIndex !== b.identityOrderIndex) {
-              return a.identityOrderIndex - b.identityOrderIndex;
-            }
-            // 같은 유저면 원래 인덱스 순서 유지
-            return a.originalIndex - b.originalIndex;
-          });
-        
-        // 호환되는 항목들을 유저 순서대로 추가 (최대 4개까지)
-        // 한 행에는 같은 유저나 같은 사이트가 중복되지 않도록 체크
-        for (let j = 0; j < compatiblePairs.length && currentRow.sites.length < 4; j++) {
-          const compatiblePair = compatiblePairs[j];
-          const pairKey = `${compatiblePair.identityName}||${compatiblePair.siteName}`;
-          
-          // 한 행에 같은 유저나 같은 사이트가 중복되지 않도록 다시 한 번 확인
-          if (usedIdentitiesInRow.has(compatiblePair.identityName)) {
-            log(`[자동어제불러오기] 유저 중복으로 스킵: ${compatiblePair.identityName} (이미 사용됨)`);
-            continue;
-          }
-          if (usedSitesInRow.has(compatiblePair.siteName)) {
-            log(`[자동어제불러오기] 사이트 중복으로 스킵: ${compatiblePair.siteName} (이미 사용됨)`);
-            continue;
-          }
-          if (usedPairsGlobal.has(pairKey)) {
-            log(`[자동어제불러오기] 조합 중복으로 스킵: ${pairKey} (이미 전역 사용됨)`);
-            continue;
-          }
-          
-          currentRow.sites.push({ 
-            siteName: compatiblePair.siteName, 
-            identityName: compatiblePair.identityName, 
-            charge: firstCharge 
-          });
-          usedIdentitiesInRow.add(compatiblePair.identityName);
-          usedSitesInRow.add(compatiblePair.siteName);
-          usedPairsGlobal.add(pairKey); // 전역 사용 표시
-          processedIndices.push(compatiblePair.originalIndex);
-        }
-        
-        // 처리된 항목들을 remainingPairs에서 제거 (역순으로 제거하여 인덱스 유지)
-        // processedIndices를 정렬한 후 역순으로 제거해야 인덱스가 맞음
-        const sortedIndices = [...processedIndices].sort((a, b) => b - a);
-        sortedIndices.forEach(idx => {
-          const removedPair = remainingPairs[idx];
-          if (removedPair) {
-            const removedPairKey = `${removedPair.identityName}||${removedPair.siteName}`;
-            if (removedPairKey.includes('김동욱') && removedPairKey.includes('골든런')) {
-              log('[자동어제불러오기] 김동욱 골든런이 remainingPairs에서 제거됨:', {
-                idx,
-                pairKey: removedPairKey,
-                remainingPairsBefore: remainingPairs.map(p => `${p.identityName}||${p.siteName}`),
-                processedIndices
-              });
-            }
-          }
-          remainingPairs.splice(idx, 1);
-        });
-        
-        if (remainingPairs.some(p => `${p.identityName}||${p.siteName}`.includes('김동욱') && `${p.identityName}||${p.siteName}`.includes('골든런'))) {
-          log('[자동어제불러오기] 김동욱 골든런이 remainingPairs에 아직 남아있음:', {
-            remainingPairs: remainingPairs.map(p => `${p.identityName}||${p.siteName}`),
-            usedPairsGlobal: Array.from(usedPairsGlobal)
-          });
-        }
-        
-        // 행이 비어있지 않으면 추가 (1개라도 있으면 추가)
-        if (currentRow.sites.length > 0) {
-          newRecords.push(currentRow);
-        } else {
-          // 더 이상 추가할 수 없으면 종료 (무한 루프 방지)
-          break;
-        }
-      }
-      
-      // 조합 개수가 가장 많은 행부터 정렬
-      newRecords.sort((a, b) => b.sites.length - a.sites.length);
-      
-      // 생성된 조합 목록
-      const createdPairs = new Set();
-      newRecords.forEach(row => {
-        row.sites.forEach(site => {
-          createdPairs.add(`${site.identityName}||${site.siteName}`);
-        });
-      });
-      
-      // 예상 조합 목록
-      const expectedPairsSet = new Set(pairsWithDistance.map(p => `${p.identityName}||${p.siteName}`));
-      
-      // 누락된 조합 찾기
-      const missingPairs = [];
-      pairsWithDistance.forEach(pair => {
-        const pairKey = `${pair.identityName}||${pair.siteName}`;
-        if (!createdPairs.has(pairKey)) {
-          missingPairs.push({
-            identityName: pair.identityName,
-            siteName: pair.siteName,
-            mid: pair.mid,
-            groupKey: pair.groupKey
-          });
-        }
-      });
-      
-      log('[자동어제불러오기] 행 생성 완료:');
-      log('  - 예상 조합 개수:', pairsWithDistance.length, '개');
-      log('  - 생성된 행 개수:', newRecords.length, '개');
-      log('  - 생성된 조합 개수:', createdPairs.size, '개');
-      log('  - 누락된 조합 개수:', missingPairs.length, '개');
-      log('  - 누락된 조합 목록:', missingPairs);
-      log('  - 생성된 조합 목록:', Array.from(createdPairs).sort());
-      log('  - 각 행 상세:');
-      newRecords.forEach((row, idx) => {
-        log(`    행${idx + 1} (${row.sites.length}개):`, row.sites.map(s => `${s.identityName}||${s.siteName}`));
-      });
-      
-      if (newRecords.length === 0) {
-        toast.error('생성할 데이터가 없습니다');
-        return;
-      }
-      
-      // DB에 저장
-      const maxOrder = records.length > 0 ? Math.max(...records.map(r => r.display_order || 0)) : -1;
-      
-      // 저장된 레코드들의 출석일 정보를 수집 (loadRecords 후에 다시 적용하기 위해)
-      const savedAttendanceDaysMap = {}; // { "유저||사이트": 출석일 }
-      const savedRecords = []; // 저장된 레코드들
-      
-      for (let i = 0; i < newRecords.length; i++) {
-        const row = newRecords[i];
-        const newRecord = {
-          id: null,
-          tmpId: `tmp-${Date.now()}-${Math.random().toString(36).slice(2,8)}-${i}`,
-          record_date: selectedDate,
-          display_order: maxOrder + 1 + i,
-          drbet_amount: 0,
-          private_amount: 0,
-          total_charge: 0,
-          total_amount: 0,
-          margin: 0,
-          rate_amount: 0,
-          site1: '',
-          site2: '',
-          site3: '',
-          site4: '',
-          notes: '',
-          identity1: '',
-          identity2: '',
-          identity3: '',
-          identity4: '',
-          site_name1: '',
-          site_name2: '',
-          site_name3: '',
-          site_name4: '',
-          charge_withdraw1: '',
-          charge_withdraw2: '',
-          charge_withdraw3: '',
-          charge_withdraw4: '',
-          cumulative_charge1: 0,
-          cumulative_withdraw1: 0,
-          cumulative_charge2: 0,
-          cumulative_withdraw2: 0,
-          isNew: true
-        };
-        
-        // 사이트 정보 채우기
-        row.sites.forEach((site, idx) => {
-          const slot = idx + 1;
-          newRecord[`identity${slot}`] = site.identityName;
-          newRecord[`site_name${slot}`] = site.siteName;
-          newRecord[`charge_withdraw${slot}`] = `${site.charge}`; // 충전만 (환전은 0)
-        });
-        
-        try {
-          // 서버 응답에서 출석일 정보 받아서 캐시 업데이트
-          const response = await axiosInstance.post('/drbet', newRecord);
-          const saved = response.data;
-          
-          // 출석일 정보 수집
-          if (saved._attendanceDays) {
-            Object.assign(savedAttendanceDaysMap, saved._attendanceDays);
-          }
-          savedRecords.push(saved);
-          
-          // 즉시 출석일 캐시 업데이트
-          refreshAttendanceDaysForRecord(saved);
-        } catch (error) {
-          console.error('자동어제 데이터 저장 실패:', error);
-        }
-      }
-      
-      // 저장된 레코드들의 출석일 통계 캐시 무효화 (최신 데이터를 가져오기 위해)
-      const attendanceCombos = new Set(); // 중복 제거용
-      savedRecords.forEach(saved => {
-        for (let i = 1; i <= 4; i++) {
-          const identityName = saved[`identity${i}`];
-          const siteName = saved[`site_name${i}`];
-          if (identityName && siteName) {
-            invalidateAttendanceCache(siteName, identityName);
-            attendanceCombos.add(`${identityName}||${siteName}`);
-          }
-        }
-      });
-      
-      // 서버에서 반환한 _attendanceDays를 즉시 적용 (UI에 바로 반영)
-      if (Object.keys(savedAttendanceDaysMap).length > 0) {
-        const attendanceDaysUpdates = {};
-        Object.keys(savedAttendanceDaysMap).forEach(mapKey => {
-          const [identityName, siteName] = mapKey.split('||');
-          const attendanceCacheKey = getAttendanceCacheKey(siteName, identityName);
-          attendanceDaysUpdates[attendanceCacheKey] = savedAttendanceDaysMap[mapKey];
-        });
-        
-        // state 업데이트
-        setSiteAttendanceDays(prev => ({
-          ...prev,
-          ...attendanceDaysUpdates
-        }));
-      }
-      
-      // 새 레코드 추가 후 화면 새로고침
-      await loadRecords();
-      
-      // loadRecords 후에 저장된 레코드들의 출석일 통계를 서버에서 다시 조회
-      // 배치 API를 사용하여 한 번에 조회 (더 빠르고 확실함)
-      if (attendanceCombos.size > 0) {
-        const sitesToLoad = Array.from(attendanceCombos).map(combo => {
-          const [identityName, siteName] = combo.split('||');
-          return { siteName, identityName };
-        });
-        
-        try {
-          const response = await axiosInstance.post('/attendance/stats/batch', {
-            sites: sitesToLoad
-          });
-          
-          if (response.data?.success && Array.isArray(response.data.results)) {
-            const attendanceDaysUpdates = {};
-            
-            response.data.results.forEach(result => {
-              const { siteName, identityName, consecutiveDays, error } = result;
-              if (!error) {
-                const cacheKey = getAttendanceCacheKey(siteName, identityName);
-                attendanceDaysUpdates[cacheKey] = consecutiveDays || 0;
-                
-                // 캐시에도 저장
-                attendanceStatsCacheRef.current[cacheKey] = {
-                  consecutiveDays: consecutiveDays || 0,
-                  timestamp: Date.now()
-                };
-              }
-            });
-            
-            // state 업데이트
-            setSiteAttendanceDays(prev => ({
-              ...prev,
-              ...attendanceDaysUpdates
-            }));
-          }
-        } catch (error) {
-          console.error('출석일 통계 배치 조회 실패:', error);
-        }
-      }
-      
-      // 강제 리렌더링 (UI 업데이트 보장)
-      setRefreshTick((t) => t + 1);
-      
-      toast.success(`자동어제 데이터 ${newRecords.length}개 행이 추가되었습니다`);
-    } catch (error) {
-      console.error('자동어제 데이터 불러오기 실패:', error);
-      toast.error('자동어제 데이터를 불러오는데 실패했습니다');
-    }
-  };
-
   // 어제 데이터 불러오기
   const loadYesterdayData = async () => {
     try {
@@ -4727,11 +4164,11 @@ function DRBet() {
       savingNotesInlineRef.current = false;
     }
   };
+  saveNotesInlineEditRef.current = saveNotesInlineEdit;
   
   useEffect(() => {
     if (!editingNotesRecordId) return;
     const handleKeyDown = (e) => {
-      // 저장 중이면 무시
       if (savingNotesInlineRef.current) {
         e.preventDefault();
         return;
@@ -4741,7 +4178,6 @@ function DRBet() {
         return;
       }
       
-      // input, textarea, select 요소에 포커스가 있으면 무시 (해당 요소에서 처리)
       const activeElement = document.activeElement;
       if (activeElement && (
         activeElement.tagName === 'INPUT' || 
@@ -4749,12 +4185,10 @@ function DRBet() {
         activeElement.tagName === 'SELECT' ||
         activeElement.isContentEditable
       )) {
-        // textarea가 아닌 input이나 select에서만 저장 실행
         if (activeElement.tagName === 'INPUT' || activeElement.tagName === 'SELECT') {
           e.preventDefault();
           e.stopPropagation();
         } else {
-          // textarea에서는 무시
           return;
         }
       }
@@ -4770,7 +4204,7 @@ function DRBet() {
       
       e.preventDefault();
       e.stopPropagation();
-      saveNotesInlineEdit(targetRecord);
+      saveNotesInlineEditRef.current?.(targetRecord);
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
@@ -9063,24 +8497,21 @@ function DRBet() {
           </div>
           <div className="flex gap-3">
             <button
+              type="button"
               onClick={loadYesterdayData}
               className="px-6 py-3 bg-gradient-to-r from-green-600 to-green-500 text-white rounded-xl hover:from-green-700 hover:to-green-600 font-bold shadow-lg hover:shadow-xl transition-all duration-200 transform hover:scale-105"
             >
               📅 어제 불러오기
             </button>
             <button
-              onClick={loadAutoYesterdayData}
-              className="px-6 py-3 bg-gradient-to-r from-purple-600 to-purple-500 text-white rounded-xl hover:from-purple-700 hover:to-purple-600 font-bold shadow-lg hover:shadow-xl transition-all duration-200 transform hover:scale-105"
-            >
-              🤖 자동어제불러오기
-            </button>
-            <button
+              type="button"
               onClick={() => addNewRow()}
               className="px-6 py-3 bg-gradient-to-r from-blue-600 to-blue-500 text-white rounded-xl hover:from-blue-700 hover:to-blue-600 font-bold shadow-lg hover:shadow-xl transition-all duration-200 transform hover:scale-105"
             >
               ➕ 행 추가
             </button>
             <button
+              type="button"
               onClick={deleteAllRecords}
               className="px-6 py-3 bg-gradient-to-r from-red-600 to-red-500 text-white rounded-xl hover:from-red-700 hover:to-red-600 font-bold shadow-lg hover:shadow-xl transition-all duration-200 transform hover:scale-105"
             >
@@ -9563,6 +8994,7 @@ function DRBet() {
                                     : 'bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 hover:border-green-400'
                                 }`}
                                 title={isCleared ? '지급 완료 취소' : '지급 완료'}
+                                aria-label={isCleared ? '당일 페이백 지급 완료 취소' : '당일 페이백 지급 완료'}
                               >
                                 {isCleared && <span className="text-sm">✓</span>}
                               </button>
@@ -9658,6 +9090,7 @@ function DRBet() {
                                     : 'bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 hover:border-green-400'
                                 }`}
                                 title={isCleared ? '지급 완료 취소' : '지급 완료'}
+                                aria-label={isCleared ? '주간 페이백 지급 완료 취소' : '주간 페이백 지급 완료'}
                               >
                                 {isCleared && <span className="text-sm">✓</span>}
                               </button>
@@ -9886,23 +9319,21 @@ function DRBet() {
               <div
                 ref={provided.innerRef}
                 {...provided.droppableProps}
-                className="space-y-3"
+                className="flex flex-wrap gap-2"
               >
-                {/* 유저별로 그룹화하여 표시 */}
                 {(() => {
-                  // 유저별로 그룹화
-                  const groupedByUser = unregisteredSitesWithMemo.reduce((acc, site, index) => {
+                  const groupedByUser = unregisteredSitesWithMemo.reduce((acc, site) => {
                     const userName = site.identityName;
-                    if (!acc[userName]) {
-                      acc[userName] = [];
-                    }
-                    acc[userName].push({ ...site, originalIndex: index });
+                    if (!acc[userName]) acc[userName] = [];
+                    acc[userName].push(site);
                     return acc;
                   }, {});
                   
-                  return Object.entries(groupedByUser).map(([userName, sites]) => (
-                    <div key={userName} className="bg-white/60 dark:bg-gray-800/60 rounded-lg p-3">
-                      <div className="flex items-center gap-2 mb-2">
+                  let globalIndex = 0;
+                  const elements = [];
+                  Object.entries(groupedByUser).forEach(([userName, sites]) => {
+                    elements.push(
+                      <div key={`header-${userName}`} className="w-full bg-white/60 dark:bg-gray-800/60 rounded-lg px-3 py-1 flex items-center gap-2">
                         <span className="text-sm font-bold text-orange-800 dark:text-orange-300 bg-orange-100 dark:bg-orange-900/50 px-2 py-1 rounded">
                           👤 {userName}
                         </span>
@@ -9910,45 +9341,47 @@ function DRBet() {
                           ({sites.length}개)
                         </span>
                       </div>
-                      <div className="flex flex-wrap gap-2">
-                        {sites.map((site) => (
-                          <Draggable
-                            key={`unregistered-site-${site.originalIndex}`}
-                            draggableId={`unregistered-site-${site.originalIndex}`}
-                            index={site.originalIndex}
-                          >
-                            {(provided, snapshot) => (
-                              <div
-                                ref={provided.innerRef}
-                                {...provided.draggableProps}
-                                {...provided.dragHandleProps}
-                                onContextMenu={(e) => {
-                                  e.preventDefault();
-                                  e.stopPropagation();
-                                  handleUnregisteredSiteContextMenu(e, site);
-                                }}
-                                className={`px-3 py-2 bg-white dark:bg-gray-800 border-2 border-orange-300 dark:border-orange-700 rounded-xl cursor-move hover:bg-orange-100 dark:hover:bg-orange-900/30 transition-all duration-200 shadow-sm hover:shadow-md ${
-                                  snapshot.isDragging ? 'opacity-50 shadow-xl ring-2 ring-orange-400' : ''
-                                }`}
-                              >
-                                <div className="text-sm font-semibold text-gray-900 dark:text-white">
-                                  {site.siteName}
-                                </div>
-                                <div className="text-xs text-gray-600 dark:text-gray-400 mt-1">
-                                  {site.status}
-                                </div>
-                                {site.notes && (
-                                  <div className="text-sm font-medium text-gray-700 dark:text-gray-300 mt-2 px-2 py-1 bg-gray-50 dark:bg-gray-700/50 rounded">
-                                    {site.notes}
-                                  </div>
-                                )}
+                    );
+                    sites.forEach((site) => {
+                      const idx = globalIndex++;
+                      elements.push(
+                        <Draggable
+                          key={`unregistered-site-${idx}`}
+                          draggableId={`unregistered-site-${idx}`}
+                          index={idx}
+                        >
+                          {(dragProvided, snapshot) => (
+                            <div
+                              ref={dragProvided.innerRef}
+                              {...dragProvided.draggableProps}
+                              {...dragProvided.dragHandleProps}
+                              onContextMenu={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                handleUnregisteredSiteContextMenu(e, site);
+                              }}
+                              className={`px-3 py-2 bg-white dark:bg-gray-800 border-2 border-orange-300 dark:border-orange-700 rounded-xl cursor-move hover:bg-orange-100 dark:hover:bg-orange-900/30 transition-all duration-200 shadow-sm hover:shadow-md ${
+                                snapshot.isDragging ? 'opacity-50 shadow-xl ring-2 ring-orange-400' : ''
+                              }`}
+                            >
+                              <div className="text-sm font-semibold text-gray-900 dark:text-white">
+                                {site.siteName}
                               </div>
-                            )}
-                          </Draggable>
-                        ))}
-                      </div>
-                    </div>
-                  ));
+                              <div className="text-xs text-gray-600 dark:text-gray-400 mt-1">
+                                {site.status}
+                              </div>
+                              {site.notes && (
+                                <div className="text-sm font-medium text-gray-700 dark:text-gray-300 mt-2 px-2 py-1 bg-gray-50 dark:bg-gray-700/50 rounded">
+                                  {site.notes}
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </Draggable>
+                      );
+                    });
+                  });
+                  return elements;
                 })()}
                 {provided.placeholder}
               </div>
@@ -9969,23 +9402,21 @@ function DRBet() {
               <div
                 ref={provided.innerRef}
                 {...provided.droppableProps}
-                className="space-y-3"
+                className="flex flex-wrap gap-2"
               >
-                {/* 유저별로 그룹화하여 표시 */}
                 {(() => {
-                  // 유저별로 그룹화
-                  const groupedByUser = pendingSites.reduce((acc, site, index) => {
+                  const groupedByUser = pendingSites.reduce((acc, site) => {
                     const userName = site.identityName;
-                    if (!acc[userName]) {
-                      acc[userName] = [];
-                    }
-                    acc[userName].push({ ...site, originalIndex: index });
+                    if (!acc[userName]) acc[userName] = [];
+                    acc[userName].push(site);
                     return acc;
                   }, {});
                   
-                  return Object.entries(groupedByUser).map(([userName, sites]) => (
-                    <div key={userName} className="bg-white/60 dark:bg-gray-800/60 rounded-lg p-3">
-                      <div className="flex items-center gap-2 mb-2">
+                  let globalIndex = 0;
+                  const elements = [];
+                  Object.entries(groupedByUser).forEach(([userName, sites]) => {
+                    elements.push(
+                      <div key={`header-${userName}`} className="w-full bg-white/60 dark:bg-gray-800/60 rounded-lg px-3 py-1 flex items-center gap-2">
                         <span className="text-sm font-bold text-yellow-800 dark:text-yellow-300 bg-yellow-100 dark:bg-yellow-900/50 px-2 py-1 rounded">
                           👤 {userName}
                         </span>
@@ -9993,45 +9424,47 @@ function DRBet() {
                           ({sites.length}개)
                         </span>
                       </div>
-                      <div className="flex flex-wrap gap-2">
-                        {sites.map((site) => (
-                          <Draggable
-                            key={`pending-site-${site.originalIndex}`}
-                            draggableId={`pending-site-${site.originalIndex}`}
-                            index={site.originalIndex}
-                          >
-                            {(provided, snapshot) => (
-                              <div
-                                ref={provided.innerRef}
-                                {...provided.draggableProps}
-                                {...provided.dragHandleProps}
-                                onContextMenu={(e) => {
-                                  e.preventDefault();
-                                  e.stopPropagation();
-                                  handlePendingSiteContextMenu(e, site);
-                                }}
-                                className={`px-3 py-2 bg-white dark:bg-gray-800 border-2 border-yellow-300 dark:border-yellow-700 rounded-xl cursor-move hover:bg-yellow-100 dark:hover:bg-yellow-900/30 transition-all duration-200 shadow-sm hover:shadow-md ${
-                                  snapshot.isDragging ? 'opacity-50 shadow-xl ring-2 ring-yellow-400' : ''
-                                }`}
-                              >
-                                <div className="text-sm font-semibold text-gray-900 dark:text-white">
-                                  {site.siteName}
-                                </div>
-                                <div className="text-xs text-gray-600 dark:text-gray-400 mt-1">
-                                  {site.status}
-                                </div>
-                                {site.notes && (
-                                  <div className="text-sm font-medium text-gray-700 dark:text-gray-300 mt-2 px-2 py-1 bg-gray-50 dark:bg-gray-700/50 rounded">
-                                    {site.notes}
-                                  </div>
-                                )}
+                    );
+                    sites.forEach((site) => {
+                      const idx = globalIndex++;
+                      elements.push(
+                        <Draggable
+                          key={`pending-site-${idx}`}
+                          draggableId={`pending-site-${idx}`}
+                          index={idx}
+                        >
+                          {(dragProvided, snapshot) => (
+                            <div
+                              ref={dragProvided.innerRef}
+                              {...dragProvided.draggableProps}
+                              {...dragProvided.dragHandleProps}
+                              onContextMenu={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                handlePendingSiteContextMenu(e, site);
+                              }}
+                              className={`px-3 py-2 bg-white dark:bg-gray-800 border-2 border-yellow-300 dark:border-yellow-700 rounded-xl cursor-move hover:bg-yellow-100 dark:hover:bg-yellow-900/30 transition-all duration-200 shadow-sm hover:shadow-md ${
+                                snapshot.isDragging ? 'opacity-50 shadow-xl ring-2 ring-yellow-400' : ''
+                              }`}
+                            >
+                              <div className="text-sm font-semibold text-gray-900 dark:text-white">
+                                {site.siteName}
                               </div>
-                            )}
-                          </Draggable>
-                        ))}
-                      </div>
-                    </div>
-                  ));
+                              <div className="text-xs text-gray-600 dark:text-gray-400 mt-1">
+                                {site.status}
+                              </div>
+                              {site.notes && (
+                                <div className="text-sm font-medium text-gray-700 dark:text-gray-300 mt-2 px-2 py-1 bg-gray-50 dark:bg-gray-700/50 rounded">
+                                  {site.notes}
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </Draggable>
+                      );
+                    });
+                  });
+                  return elements;
                 })()}
                 {provided.placeholder}
               </div>
@@ -10131,6 +9564,7 @@ function DRBet() {
             
             <div className="mt-6 flex justify-end">
               <button
+                type="button"
                 onClick={() => {
                   setShowSiteAccountModal(false);
                   setSiteAccountInfo(null);
@@ -10284,7 +9718,7 @@ function DRBet() {
                           <div className="flex flex-wrap gap-1">
                             {statusHistory.map((historyItem, idx) => (
                               <span
-                                key={idx}
+                                key={`${historyItem}-${idx}`}
                                 className="inline-flex items-center gap-1 bg-white dark:bg-gray-600 px-2 py-1 rounded border border-gray-300 dark:border-gray-500"
                               >
                                 <span className="text-gray-700 dark:text-gray-200">{historyItem}</span>
@@ -10518,12 +9952,14 @@ function DRBet() {
             
             <div className="flex justify-end gap-2 mt-6">
               <button
+                type="button"
                 onClick={() => setShowSiteEditModal(false)}
                 className="px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-white rounded-md hover:bg-gray-300 dark:hover:bg-gray-600"
               >
                 취소
               </button>
               <button
+                type="button"
                 onClick={saveSite}
                 className="px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600"
               >
@@ -10847,12 +10283,14 @@ function DRBet() {
             
             <div className="flex justify-end space-x-3 mt-6">
               <button
+                type="button"
                 onClick={closeSiteModal}
                 className="px-4 py-2 text-gray-600 dark:text-white border border-gray-300 dark:border-gray-700 rounded-md hover:bg-gray-50 dark:hover:bg-gray-700 dark:bg-[#282C34]"
               >
                 취소
               </button>
               <button
+                type="button"
                 onClick={addSiteInfoToNotes}
                 className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
               >

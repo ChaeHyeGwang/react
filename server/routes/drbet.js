@@ -89,7 +89,11 @@ router.get('/', auth, async (req, res) => {
 // 순서 업데이트
 router.put('/reorder', auth, async (req, res) => {
   try {
-    const { records } = req.body; // [{ id, display_order }, ...]
+    const { records } = req.body;
+    
+    if (!Array.isArray(records)) {
+      return res.status(400).json({ message: 'records는 배열이어야 합니다.' });
+    }
     
     for (const record of records) {
       if (req.user.isOfficeManager && req.user.filterOfficeId) {
@@ -132,34 +136,49 @@ router.get('/:date', auth, async (req, res) => {
   try {
     const { date } = req.params;
     
-    // 사무실 관리자인 경우: 자신의 사무실에 속한 모든 계정의 레코드 조회
     if (req.user.isOfficeManager && req.user.filterOfficeId) {
-      const record = await db.get(
-        `SELECT dr.* 
-         FROM drbet_records dr
-         INNER JOIN accounts a ON dr.account_id = a.id
-         WHERE dr.record_date = ? AND a.office_id = ?`,
-        [date, req.user.filterOfficeId]
-      );
+      let records;
+      if (req.user.filterAccountId) {
+        records = await db.all(
+          `SELECT dr.* 
+           FROM drbet_records dr
+           INNER JOIN accounts a ON dr.account_id = a.id
+           WHERE dr.record_date = ? AND a.office_id = ? AND dr.account_id = ?
+           ORDER BY dr.display_order ASC`,
+          [date, req.user.filterOfficeId, req.user.filterAccountId]
+        );
+      } else {
+        records = await db.all(
+          `SELECT dr.* 
+           FROM drbet_records dr
+           INNER JOIN accounts a ON dr.account_id = a.id
+           WHERE dr.record_date = ? AND a.office_id = ?
+           ORDER BY dr.display_order ASC`,
+          [date, req.user.filterOfficeId]
+        );
+      }
       
-      if (!record) {
+      if (!records || records.length === 0) {
         return res.status(404).json({ message: '해당 날짜의 기록이 없습니다' });
       }
       
-      return res.json(record);
+      return res.json(records);
     }
     
-    // 일반 사용자: 자신의 계정 레코드만 조회
-    const record = await db.get(
-      `SELECT * FROM drbet_records WHERE record_date = ? AND account_id = ?`,
+    if (!req.user.filterAccountId) {
+      return res.status(403).json({ message: '계정을 선택해주세요.' });
+    }
+    
+    const records = await db.all(
+      `SELECT * FROM drbet_records WHERE record_date = ? AND account_id = ? ORDER BY display_order ASC`,
       [date, req.user.filterAccountId]
     );
     
-    if (!record) {
+    if (!records || records.length === 0) {
       return res.status(404).json({ message: '해당 날짜의 기록이 없습니다' });
     }
     
-    res.json(record);
+    res.json(records);
   } catch (error) {
     console.error('DR벳 기록 조회 실패:', error);
     res.status(500).json({ message: 'DR벳 기록 조회 실패' });
@@ -169,6 +188,10 @@ router.get('/:date', auth, async (req, res) => {
 // 새로운 DR벳 기록 생성
 router.post('/', auth, async (req, res) => {
   try {
+    if (!req.user.filterAccountId) {
+      return res.status(403).json({ message: '계정을 선택해주세요.' });
+    }
+    
     const {
       record_date,
       display_order,
@@ -193,7 +216,8 @@ router.post('/', auth, async (req, res) => {
     // 입력 파싱 함수
     const parseSiteData = (input) => {
       if (!input) return { charge: 0, withdraw: 0 };
-      const match = input.match(/(\d+)\s*(\d+)?/);
+      const str = String(input);
+      const match = str.match(/(\d+)\s*(\d+)?/);
       if (match) {
         return {
           charge: parseInt(match[1]) * 10000,
@@ -205,11 +229,12 @@ router.post('/', auth, async (req, res) => {
 
     const parseNotes = (input) => {
       if (!input) return { charge: 0, withdraw: 0 };
+      const str = String(input);
       let totalCharge = 0;
       let totalWithdraw = 0;
       
-      const chargeMatches = input.match(/(\d+)충/g);
-      const withdrawMatches = input.match(/(\d+)환/g);
+      const chargeMatches = str.match(/(\d+)충/g);
+      const withdrawMatches = str.match(/(\d+)환/g);
       
       if (chargeMatches) {
         chargeMatches.forEach(m => {
@@ -226,17 +251,15 @@ router.post('/', auth, async (req, res) => {
       return { charge: totalCharge, withdraw: totalWithdraw };
     };
 
-    // 충환전 필드 파싱 함수
     const parseChargeWithdraw = (input) => {
       if (!input) return { charge: 0, withdraw: 0 };
+      const str = String(input).trim();
       
-      // 숫자만 있는 경우 (예: "10" = 10만원 충전)
-      if (/^\d+$/.test(input.trim())) {
-        return { charge: parseInt(input.trim()) * 10000, withdraw: 0 };
+      if (/^\d+$/.test(str)) {
+        return { charge: parseInt(str) * 10000, withdraw: 0 };
       }
       
-      // 환전 표시가 있는 경우 (예: "10 20" = 10만원 충전, 20만원 환전)
-      const match = input.match(/(\d+)\s*(\d+)?/);
+      const match = str.match(/(\d+)\s*(\d+)?/);
       if (match) {
         return {
           charge: parseInt(match[1]) * 10000,
@@ -411,10 +434,10 @@ router.put('/:id', auth, async (req, res) => {
       _expectedUpdatedAt  // 동시성 처리용: 클라이언트가 마지막으로 받은 updated_at
     } = req.body;
 
-    // 입력 파싱 함수
     const parseSiteData = (input) => {
       if (!input) return { charge: 0, withdraw: 0 };
-      const match = input.match(/(\d+)\s*(\d+)?/);
+      const str = String(input);
+      const match = str.match(/(\d+)\s*(\d+)?/);
       if (match) {
         return {
           charge: parseInt(match[1]) * 10000,
@@ -424,17 +447,15 @@ router.put('/:id', auth, async (req, res) => {
       return { charge: 0, withdraw: 0 };
     };
 
-    // 충환전 필드 파싱 함수
     const parseChargeWithdraw = (input) => {
       if (!input) return { charge: 0, withdraw: 0 };
+      const str = String(input).trim();
       
-      // 숫자만 있는 경우 (예: "10" = 10만원 충전)
-      if (/^\d+$/.test(input.trim())) {
-        return { charge: parseInt(input.trim()) * 10000, withdraw: 0 };
+      if (/^\d+$/.test(str)) {
+        return { charge: parseInt(str) * 10000, withdraw: 0 };
       }
       
-      // 환전 표시가 있는 경우 (예: "10 20" = 10만원 충전, 20만원 환전)
-      const match = input.match(/(\d+)\s*(\d+)?/);
+      const match = str.match(/(\d+)\s*(\d+)?/);
       if (match) {
         return {
           charge: parseInt(match[1]) * 10000,
@@ -755,7 +776,8 @@ router.post('/calculate-next', auth, async (req, res) => {
 
     const parseSiteData = (input) => {
       if (!input) return { charge: 0, withdraw: 0 };
-      const match = input.match(/(\d+)\s*(\d+)?/);
+      const str = String(input);
+      const match = str.match(/(\d+)\s*(\d+)?/);
       if (match) {
         return {
           charge: parseInt(match[1]) * 10000,
@@ -767,11 +789,12 @@ router.post('/calculate-next', auth, async (req, res) => {
 
     const parseNotes = (input) => {
       if (!input) return { charge: 0, withdraw: 0 };
+      const str = String(input);
       let totalCharge = 0;
       let totalWithdraw = 0;
       
-      const chargeMatches = input.match(/(\d+)충/g);
-      const withdrawMatches = input.match(/(\d+)환/g);
+      const chargeMatches = str.match(/(\d+)충/g);
+      const withdrawMatches = str.match(/(\d+)환/g);
       
       if (chargeMatches) {
         chargeMatches.forEach(m => {

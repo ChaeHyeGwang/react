@@ -6,7 +6,7 @@ const { auth } = require('../middleware/auth');
 const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
 
-// 환경변수 DB_PATH 사용 (프로덕션: management_system_prod.db)
+// 환경변수 DB_PATH 사용
 const dbPath = process.env.DB_PATH 
   ? path.resolve(process.cwd(), process.env.DB_PATH)
   : path.join(__dirname, '..', 'database', 'management_system.db');

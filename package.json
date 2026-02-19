@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "concurrently \"npm run server\" \"npm run client\"",
     "server": "nodemon server/index.js",
-    "server:dev": "cross-env PORT=5001 DB_PATH=server/database/management_system_dev.db nodemon server/index.js",
+    "server:dev": "cross-env PORT=5001 DB_PATH=server/database/management_system.db nodemon server/index.js",
     "client": "cd client && npm start",
     "build": "cd client && npm run build",
     "start": "node server/index.js",

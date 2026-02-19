@@ -9,7 +9,7 @@ module.exports = {
       env: {
         NODE_ENV: 'production',
         PORT: 5001,
-        DB_PATH: './database/management_system_prod.db'
+        DB_PATH: './database/management_system.db'
       },
       watch: false,
       autorestart: true,
