@@ -68,8 +68,6 @@ function DRBet() {
   // 사이트 수정 모달 상태 (사이트 관리와 동일)
   const [showSiteEditModal, setShowSiteEditModal] = useState(false);
   const [editingSite, setEditingSite] = useState(null);
-  const [isManualInputMode, setIsManualInputMode] = useState(false); // 수동입력 모드인지 체크
-  const [manualInputValue, setManualInputValue] = useState(''); // 수동입력 값
   const [siteForm, setSiteForm] = useState({
     site_name: '',
     domain: '',
@@ -80,7 +78,6 @@ function DRBet() {
     password: '',
     exchange_password: '',
     nickname: '',
-    status: '가입전',
     referral_code: '',
     category: '',
     notes: ''
@@ -1475,8 +1472,6 @@ function DRBet() {
     
     const fullSite = site.site;
     setEditingSite(fullSite);
-    setIsManualInputMode(false);
-    setManualInputValue('');
     setSiteForm({
       site_name: fullSite.site_name || '',
       domain: fullSite.domain || '',
@@ -1487,7 +1482,6 @@ function DRBet() {
       password: fullSite.password || '',
       exchange_password: fullSite.exchange_password || '',
       nickname: fullSite.nickname || '',
-      status: fullSite.status || '가입전',
       referral_code: fullSite.referral_code || '',
       category: fullSite.category || '',
       notes: fullSite.notes || ''
@@ -1561,8 +1555,6 @@ function DRBet() {
     
     const fullSite = site.site;
     setEditingSite(fullSite);
-    setIsManualInputMode(false);
-    setManualInputValue('');
     setSiteForm({
       site_name: fullSite.site_name || '',
       domain: fullSite.domain || '',
@@ -1573,7 +1565,6 @@ function DRBet() {
       password: fullSite.password || '',
       exchange_password: fullSite.exchange_password || '',
       nickname: fullSite.nickname || '',
-      status: fullSite.status || '가입전',
       referral_code: fullSite.referral_code || '',
       category: fullSite.category || '',
       notes: fullSite.notes || ''
@@ -1584,10 +1575,9 @@ function DRBet() {
   // 사이트 저장 (사이트 관리와 동일)
   const saveSite = async () => {
     try {
-      // siteForm.status는 이미 셀렉트박스 onChange에서 날짜와 함께 처리됨
       const dataToSave = {
         ...siteForm,
-        status: siteForm.status || editingSite?.status || ''
+        status: editingSite?.status || ''
       };
       
       if (editingSite) {
@@ -9677,243 +9667,6 @@ function DRBet() {
                   className="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-md px-3 py-2"
                   placeholder="우리의꿈"
                 />
-              </div>
-              
-              <div>
-                <label className="block text-sm font-bold text-gray-700 dark:text-white mb-1">승인유무 (상태)</label>
-                {(() => {
-                  // 전체 이력 목록 (삭제용)
-                  const statusHistory = editingSite?.status ? editingSite.status.split('/').map(s => s.trim()).filter(s => s) : [];
-                  
-                  // 마지막 상태 추출
-                  const statusParts = editingSite?.status?.split('/') || [];
-                  const lastStatusPart = statusParts[statusParts.length - 1]?.trim() || '';
-                  const lastStatusValue = lastStatusPart.replace(/^\d{1,2}\.\d{1,2}\s*/, '').trim();
-                  const lastStatusPure = lastStatusPart?.includes('수동입력')
-                    ? lastStatusPart?.match(/^\d{1,2}\.\d{1,2}\s*수동입력\s+(.+)$/)?.[1] || lastStatusValue
-                    : lastStatusValue;
-                  
-                  // 유효한 옵션 목록
-                  const validOptions = ['가입전', '대기', '승인', '장점검', '팅', '졸업'];
-                  let optionsList = [...validOptions];
-                  
-                  // 기존 상태에서 모든 순수 상태값 추출하여 옵션에 추가
-                  if (editingSite?.status) {
-                    const allStatusParts = editingSite.status.split('/').map(s => s.trim());
-                    allStatusParts.forEach(part => {
-                      let partPure = part.replace(/\d{1,2}\.\d{1,2}\s*/g, '').trim();
-                      partPure = partPure.replace(/^수동입력\s+/, '').trim();
-                      if (partPure && !optionsList.includes(partPure)) {
-                        optionsList.push(partPure);
-                      }
-                    });
-                  }
-                  
-                  return (
-                    <div className="space-y-2">
-                      {/* 전체 이력 표시 (삭제 가능) */}
-                      {statusHistory.length > 0 && (
-                        <div className="mb-2 p-2 bg-gray-50 dark:bg-gray-700 rounded text-xs">
-                          <div className="font-bold mb-1 text-gray-600 dark:text-gray-300">📋 전체 이력 (삭제하려면 X 클릭):</div>
-                          <div className="flex flex-wrap gap-1">
-                            {statusHistory.map((historyItem, idx) => (
-                              <span
-                                key={`${historyItem}-${idx}`}
-                                className="inline-flex items-center gap-1 bg-white dark:bg-gray-600 px-2 py-1 rounded border border-gray-300 dark:border-gray-500"
-                              >
-                                <span className="text-gray-700 dark:text-gray-200">{historyItem}</span>
-                                <button
-                                  type="button"
-                                  onClick={async (e) => {
-                                    e.stopPropagation();
-                                    e.preventDefault();
-                                    
-                                    const newHistory = statusHistory.filter((_, i) => i !== idx);
-                                    const newStatus = newHistory.join(' / ');
-                                    
-                                    try {
-                                      await axiosInstance.put(`/sites/${editingSite.id}`, {
-                                        ...editingSite,
-                                        status: newStatus || ''
-                                      });
-                                      toast.success('이력이 삭제되었습니다');
-                                      
-                                      // 데이터 새로고침
-                                      loadIdentities();
-                                      setShowSiteEditModal(false);
-                                    } catch (error) {
-                                      console.error('[이력 삭제] 삭제 실패:', error);
-                                      toast.error(`삭제 실패: ${error.response?.data?.message || error.message}`);
-                                    }
-                                  }}
-                                  className="text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/30 rounded px-1 font-bold cursor-pointer"
-                                  title="이력 삭제"
-                                >
-                                  ✕
-                                </button>
-                              </span>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                      
-                      {/* 수동입력 모드 */}
-                      {isManualInputMode ? (
-                        <div className="flex gap-2 items-center">
-                          <input
-                            type="text"
-                            value={manualInputValue}
-                            onChange={(e) => setManualInputValue(e.target.value)}
-                            onBlur={async () => {
-                              const inputText = manualInputValue || '';
-                              
-                              // 기존 값을 추출하여 비교
-                              const existingMatch = editingSite?.status?.match(/^\d{1,2}\.\d{1,2}\s*수동입력\s+(.+)$/);
-                              const existingText = existingMatch ? existingMatch[1] : '';
-                              
-                              // 변경사항이 있는 경우만 저장
-                              if (inputText !== existingText) {
-                                // 새로운 값 계산
-                                const now = new Date();
-                                const month = String(now.getMonth() + 1).padStart(2, '0');
-                                const day = String(now.getDate()).padStart(2, '0');
-                                const datePrefix = `${month}.${day}`;
-                                // 수동입력 텍스트 없이 저장 (수동입력 여부는 유효한 상태 목록으로 판단)
-                                const newValue = inputText ? `${datePrefix} ${inputText}` : `${datePrefix}`;
-                                
-                                // 기존 상태가 있으면 슬래시로 구분하여 추가 (앞뒤 공백 포함)
-                                let finalValue = newValue;
-                                if (editingSite?.status && editingSite.status.trim()) {
-                                  // 기존 상태의 슬래시 앞뒤 공백 정규화
-                                  let normalizedStatus = editingSite.status.trim();
-                                  normalizedStatus = normalizedStatus.replace(/\s*\/\s*/g, ' / ');
-                                  
-                                  // 기존 상태가 이미 새 상태값을 포함하고 있는지 확인
-                                  const statusParts = normalizedStatus.split('/').map(s => s.trim());
-                                  const isAlreadyExists = statusParts.some(part => {
-                                    const partWithoutDate = part.replace(/^\d{1,2}\.\d{1,2}\s*/, '').trim();
-                                    // 수동입력 텍스트 제거 (DB에는 저장되지 않지만 기존 데이터에 있을 수 있음)
-                                    const purePart = partWithoutDate.replace(/^수동입력\s+/, '').trim();
-                                    const pureNewValue = inputText ? inputText : '';
-                                    return purePart === pureNewValue;
-                                  });
-                                  
-                                  if (!isAlreadyExists) {
-                                    finalValue = `${normalizedStatus} / ${newValue}`;
-                                  } else {
-                                    finalValue = normalizedStatus;
-                                  }
-                                }
-                                
-                                try {
-                                  await axiosInstance.put(`/sites/${editingSite.id}`, {
-                                    ...editingSite,
-                                    status: finalValue
-                                  });
-                                  toast.success('수정되었습니다');
-                                  
-                                  // 데이터 새로고침
-                                  loadIdentities();
-                                  setShowSiteEditModal(false);
-                                } catch (error) {
-                                  toast.error('수정 실패');
-                                }
-                              }
-                              
-                              setIsManualInputMode(false);
-                              setManualInputValue('');
-                            }}
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter') {
-                                e.target.blur();
-                              } else if (e.key === 'Escape') {
-                                setIsManualInputMode(false);
-                                setManualInputValue('');
-                              }
-                            }}
-                            autoFocus
-                            placeholder="자유롭게 입력하세요"
-                            className="w-full px-2 py-1 border border-blue-500 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-[#282C34] dark:text-white dark:border-blue-400"
-                          />
-                        </div>
-                      ) : (
-                        /* 셀렉트박스 */
-                        <select
-                          value={optionsList.includes(lastStatusPure) ? lastStatusPure : ''}
-                          onContextMenu={(e) => {
-                            e.preventDefault();
-                            setIsManualInputMode(true);
-                            // 기존 수동입력 값 추출
-                            const manualMatch = editingSite?.status?.match(/^\d{1,2}\.\d{1,2}\s*수동입력\s+(.+)$/);
-                            const initialValue = manualMatch ? manualMatch[1] : '';
-                            setManualInputValue(initialValue);
-                          }}
-                          onChange={(e) => {
-                            const newValue = e.target.value;
-                            if (!newValue) return;
-                            
-                            const now = new Date();
-                            const month = String(now.getMonth() + 1).padStart(2, '0');
-                            const day = String(now.getDate()).padStart(2, '0');
-                            const datePrefix = `${month}.${day}`;
-                            
-                            // 편집 중인 값에서 날짜 제거 후 순수 상태값 추출
-                            let newStatusValue = `${datePrefix} ${newValue}`;
-                            
-                            // 기존 상태가 있으면 슬래시로 구분하여 추가
-                            let finalValue = newStatusValue;
-                            if (editingSite?.status && editingSite.status.trim()) {
-                              // 기존 상태의 슬래시 앞뒤 공백 정규화
-                              let normalizedStatus = editingSite.status.trim();
-                              normalizedStatus = normalizedStatus.replace(/\s*\/\s*/g, ' / ');
-                              
-                              // 기존 상태가 이미 새 상태값을 포함하고 있는지 확인
-                              const existingStatusParts = normalizedStatus.split('/').map(s => s.trim());
-                              const isAlreadyExists = existingStatusParts.some(part => {
-                                const partWithoutDate = part.replace(/^\d{1,2}\.\d{1,2}\s*/, '').trim();
-                                const purePart = partWithoutDate.replace(/^수동입력\s+/, '').trim();
-                                return purePart === newValue;
-                              });
-                              
-                              // "가입전"에서 "대기"로 변경하는 경우 "가입전" 이력 자동 삭제
-                              if (newValue === '대기') {
-                                const filteredParts = existingStatusParts.filter(part => {
-                                  const partWithoutDate = part.replace(/^\d{1,2}\.\d{1,2}\s*/, '').trim();
-                                  const purePart = partWithoutDate.replace(/^수동입력\s+/, '').trim();
-                                  return purePart !== '가입전';
-                                });
-                                
-                                if (filteredParts.length > 0) {
-                                  normalizedStatus = filteredParts.join(' / ');
-                                  if (!isAlreadyExists) {
-                                    finalValue = `${normalizedStatus} / ${newStatusValue}`;
-                                  } else {
-                                    finalValue = normalizedStatus;
-                                  }
-                                } else {
-                                  finalValue = newStatusValue;
-                                }
-                              } else if (!isAlreadyExists) {
-                                finalValue = `${normalizedStatus} / ${newStatusValue}`;
-                              } else {
-                                finalValue = normalizedStatus;
-                              }
-                            }
-                            
-                            setSiteForm({...siteForm, status: finalValue});
-                          }}
-                          className="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-md px-3 py-2"
-                          title="우클릭하여 수동입력 모드로 전환"
-                        >
-                          <option value="">선택하세요</option>
-                          {optionsList.map(option => (
-                            <option key={option} value={option}>{option}</option>
-                          ))}
-                        </select>
-                      )}
-                    </div>
-                  );
-                })()}
               </div>
               
               <div>

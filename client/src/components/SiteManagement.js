@@ -130,6 +130,27 @@ const SiteManagement = () => {
   const [siteNameSuggestions, setSiteNameSuggestions] = useState([]); // 자동완성 제안
   const [showSuggestions, setShowSuggestions] = useState(false); // 자동완성 드롭다운 표시
   
+  // 사이트 수정 모달 상태
+  const [showSiteEditModal, setShowSiteEditModal] = useState(false);
+  const [editingSiteOrCommunity, setEditingSiteOrCommunity] = useState(null); // site 또는 community 객체
+  const [siteEditMode, setSiteEditMode] = useState('site'); // 'site' | 'community'
+  const [siteEditForm, setSiteEditForm] = useState({
+    site_name: '',
+    domain: '',
+    referral_path: '',
+    referral_code: '',
+    approval_call: false,
+    identity_name: '',
+    account_id: '',
+    user_id: '',
+    password: '',
+    exchange_password: '',
+    nickname: '',
+    path: '',
+    category: '',
+    notes: ''
+  });
+  
   
   // KST 기준 오늘 날짜 (MM.DD)
   const getTodayKSTDate = useCallback(() => {
@@ -1683,6 +1704,105 @@ const SiteManagement = () => {
     }
   };
 
+  // 사이트 수정 모달 열기 (사이트 목록용)
+  const openSiteEditModal = (site) => {
+    if (!site) return;
+    setEditingSiteOrCommunity(site);
+    setSiteEditMode('site');
+    setSiteEditForm({
+      site_name: site.site_name || '',
+      domain: site.domain || '',
+      referral_path: site.referral_path || '',
+      referral_code: site.referral_code || '',
+      approval_call: site.approval_call || false,
+      identity_name: site.identity_name || '',
+      account_id: site.account_id || '',
+      user_id: '',
+      password: site.password || '',
+      exchange_password: site.exchange_password || '',
+      nickname: site.nickname || '',
+      path: '',
+      category: site.category || '',
+      notes: site.notes || ''
+    });
+    setShowSiteEditModal(true);
+  };
+
+  // 사이트 수정 모달 열기 (커뮤니티 목록용)
+  const openCommunityEditModal = (community) => {
+    if (!community) return;
+    setEditingSiteOrCommunity(community);
+    setSiteEditMode('community');
+    setSiteEditForm({
+      site_name: community.site_name || '',
+      domain: community.domain || '',
+      referral_path: community.referral_path || '',
+      referral_code: community.referral_code || '',
+      approval_call: community.approval_call || false,
+      identity_name: community.identity_name || selectedIdentity?.name || '',
+      account_id: '',
+      user_id: community.user_id || community.account_id_site || '',
+      password: community.password || '',
+      exchange_password: community.exchange_password || '',
+      nickname: community.nickname || '',
+      path: community.path || community.referral_path || '',
+      category: community.category || '',
+      notes: community.notes || ''
+    });
+    setShowSiteEditModal(true);
+  };
+
+  // 사이트 수정 모달 저장
+  const saveSiteEditModal = async () => {
+    if (!editingSiteOrCommunity) return;
+    
+    try {
+      if (siteEditMode === 'site') {
+        const dataToSave = {
+          ...editingSiteOrCommunity,
+          site_name: siteEditForm.site_name,
+          domain: siteEditForm.domain,
+          referral_path: siteEditForm.referral_path,
+          referral_code: siteEditForm.referral_code,
+          approval_call: siteEditForm.approval_call,
+          identity_name: siteEditForm.identity_name,
+          account_id: siteEditForm.account_id,
+          password: siteEditForm.password,
+          exchange_password: siteEditForm.exchange_password,
+          nickname: siteEditForm.nickname,
+          category: siteEditForm.category,
+          notes: siteEditForm.notes
+        };
+        await axiosInstance.put(`/sites/${editingSiteOrCommunity.id}`, dataToSave);
+        toast.success('사이트가 수정되었습니다');
+        loadSites(selectedIdentity?.id);
+      } else {
+        // 커뮤니티 API: account_id = 사이트 계정 ID(user_id), referral_path = 경로, referral_code = 경로-코드
+        const dataToSave = {
+          ...editingSiteOrCommunity,
+          site_name: siteEditForm.site_name,
+          domain: siteEditForm.domain,
+          referral_code: siteEditForm.referral_code,
+          referral_path: siteEditForm.path,
+          approval_call: siteEditForm.approval_call,
+          identity_name: siteEditForm.identity_name,
+          account_id: siteEditForm.user_id,
+          password: siteEditForm.password,
+          exchange_password: siteEditForm.exchange_password,
+          nickname: siteEditForm.nickname,
+          notes: siteEditForm.notes
+        };
+        await axiosInstance.put(`/communities/${editingSiteOrCommunity.id}`, dataToSave);
+        toast.success('커뮤니티가 수정되었습니다');
+        loadCommunities();
+      }
+      setShowSiteEditModal(false);
+    } catch (error) {
+      console.error('저장 실패:', error);
+      toast.error(`저장에 실패했습니다: ${error.response?.data?.message || error.message}`);
+    }
+  };
+
   // 커뮤니티 인라인 편집 시작
   const startEditingCommunityCell = async (communityId, field, currentValue) => {
     // 다른 필드가 편집 중이면 먼저 저장
@@ -2711,21 +2831,21 @@ const SiteManagement = () => {
         {selectedIdentity && (
           <div className="mt-4 p-4 bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-[#282C34] dark:to-[#282C34] rounded-lg border-l-4 border-blue-500 dark:border-blue-400">
             <div className="space-y-3">
-              <div className="flex items-center gap-4 text-base">
-                <span className="font-bold text-blue-700 dark:text-blue-300 text-lg">선택된 유저:</span>
-                <span className="text-gray-900 dark:text-white font-bold text-lg">{selectedIdentity.name}</span>
-                <span className="text-gray-400 dark:text-white text-lg">|</span>
-                <span className="text-gray-600 dark:text-white text-lg">생년월일: {selectedIdentity.birth_date}</span>
+              <div className="flex items-center gap-4 text-2xl">
+                <span className="font-bold text-blue-700 dark:text-blue-300 text-2xl">선택된 유저:</span>
+                <span className="text-gray-900 dark:text-white font-bold text-2xl">{selectedIdentity.name}</span>
+                <span className="text-gray-400 dark:text-white text-2xl">|</span>
+                <span className="text-gray-600 dark:text-white text-2xl">생년월일: {selectedIdentity.birth_date}</span>
                 {selectedIdentity.zodiac && (
                   <>
-                    <span className="text-gray-400 dark:text-white text-lg">|</span>
-                    <span className="text-gray-600 dark:text-white text-lg">띠: {selectedIdentity.zodiac}띠</span>
+                    <span className="text-gray-400 dark:text-white text-2xl">|</span>
+                    <span className="text-gray-600 dark:text-white text-2xl">띠: {selectedIdentity.zodiac}띠</span>
                   </>
                 )}
                 {selectedIdentity.notes && (
                   <>
-                    <span className="text-gray-400 dark:text-white text-lg">|</span>
-                    <span className="text-gray-600 dark:text-white text-lg">메모: {selectedIdentity.notes}</span>
+                    <span className="text-gray-400 dark:text-white text-2xl">|</span>
+                    <span className="text-gray-600 dark:text-white text-2xl">메모: {selectedIdentity.notes}</span>
                   </>
                 )}
               </div>
@@ -2735,8 +2855,8 @@ const SiteManagement = () => {
                 const lastAccount = selectedIdentity.bank_accounts[selectedIdentity.bank_accounts.length - 1];
                 return (
                 <div className="flex items-start gap-2">
-                  <span className="font-bold text-green-700 dark:text-green-400 whitespace-nowrap text-lg">💳 계좌:</span>
-                    <span className="bg-green-100 dark:bg-gray-800 text-green-800 dark:text-white px-4 py-2 rounded-full text-base font-medium">
+                  <span className="font-bold text-green-700 dark:text-green-400 whitespace-nowrap text-2xl">💳 계좌:</span>
+                    <span className="bg-green-100 dark:bg-gray-800 text-green-800 dark:text-white px-4 py-2 rounded-full text-xl font-medium">
                       {lastAccount.bank} {lastAccount.account_number} {lastAccount.holder && `(${lastAccount.holder})`}
                       </span>
                   </div>
@@ -2748,8 +2868,8 @@ const SiteManagement = () => {
                 const lastPhone = selectedIdentity.phone_numbers[selectedIdentity.phone_numbers.length - 1];
                 return (
                 <div className="flex items-start gap-2">
-                    <span className="font-bold text-purple-700 dark:text-purple-400 whitespace-nowrap text-lg">📱 번호:</span>
-                    <span className="bg-purple-100 dark:bg-gray-800 text-purple-800 dark:text-white px-4 py-2 rounded-full text-base font-medium">
+                    <span className="font-bold text-purple-700 dark:text-purple-400 whitespace-nowrap text-2xl">📱 번호:</span>
+                    <span className="bg-purple-100 dark:bg-gray-800 text-purple-800 dark:text-white px-4 py-2 rounded-full text-xl font-medium">
                       {lastPhone.number} {lastPhone.carrier && `(${lastPhone.carrier})`}
                       </span>
                   </div>
@@ -3669,6 +3789,13 @@ const SiteManagement = () => {
                       <td className="px-5 py-5 text-center whitespace-nowrap">
                         <div className="flex items-center justify-center gap-2">
                           <button
+                            onClick={() => openSiteEditModal(site)}
+                            className="px-4 py-2 bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white rounded-lg font-medium text-sm shadow-md hover:shadow-lg transition-all duration-200 hover:scale-105 active:scale-95"
+                            title="사이트 수정"
+                          >
+                            🔧
+                          </button>
+                          <button
                             onClick={() => copySiteSummary(site)}
                             className="px-4 py-2 bg-gradient-to-r from-amber-400 to-orange-500 hover:from-amber-500 hover:to-orange-600 text-white rounded-lg font-medium text-sm shadow-md hover:shadow-lg transition-all duration-200 hover:scale-105 active:scale-95"
                             title="박기효 곡성20 사촌7788 777777 얼굴로는1등 12.03 가입전 / 12.23대기 빠른티비 프리카지노 같은 형식으로 복사"
@@ -4460,6 +4587,13 @@ const SiteManagement = () => {
                           <td className="px-5 py-5 text-center whitespace-nowrap">
                             <div className="flex items-center justify-center gap-2">
                               <button
+                                onClick={() => openCommunityEditModal(community)}
+                                className="px-4 py-2 bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white rounded-lg font-medium text-sm shadow-md hover:shadow-lg transition-all duration-200 hover:scale-105 active:scale-95"
+                                title="사이트 수정"
+                              >
+                                🔧
+                              </button>
+                              <button
                                 onClick={() => copyCommunitySummary(community)}
                                 className="px-4 py-2 bg-gradient-to-r from-amber-400 to-orange-500 hover:from-amber-500 hover:to-orange-600 text-white rounded-lg font-medium text-sm shadow-md hover:shadow-lg transition-all duration-200 hover:scale-105 active:scale-95"
                                 title="커뮤니티 정보 복사"
@@ -4992,6 +5126,170 @@ const SiteManagement = () => {
       )}
 
       {/* 사이트 메타데이터(이벤트/요율 등) 모달 */}
+      {/* 사이트 수정 모달 */}
+      {showSiteEditModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow dark:shadow-gray-900/50 p-6 w-full max-w-3xl max-h-[90vh] overflow-y-auto">
+            <h3 className="text-xl font-bold mb-4 dark:text-white">
+              🔧 {siteEditMode === 'site' ? '사이트' : '커뮤니티'} 수정
+            </h3>
+            
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-bold text-gray-700 dark:text-white mb-1">출석 (사이트명) *</label>
+                <input
+                  type="text"
+                  value={siteEditForm.site_name}
+                  onChange={(e) => setSiteEditForm({...siteEditForm, site_name: e.target.value})}
+                  className="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-md px-3 py-2"
+                  placeholder="원탑"
+                  required
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-bold text-gray-700 dark:text-white mb-1">도메인</label>
+                <input
+                  type="text"
+                  value={siteEditForm.domain}
+                  onChange={(e) => setSiteEditForm({...siteEditForm, domain: e.target.value})}
+                  className="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-md px-3 py-2"
+                  placeholder="onetop.link"
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-bold text-gray-700 dark:text-white mb-1">경로-코드</label>
+                <input
+                  type="text"
+                  value={siteEditMode === 'site' ? siteEditForm.referral_path : siteEditForm.referral_code}
+                  onChange={(e) => setSiteEditForm({
+                    ...siteEditForm,
+                    ...(siteEditMode === 'site' ? { referral_path: e.target.value } : { referral_code: e.target.value })
+                  })}
+                  className="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-md px-3 py-2"
+                  placeholder="둘리티비"
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-bold text-gray-700 dark:text-white mb-1">승전 (승인전화)</label>
+                <select
+                  value={siteEditForm.approval_call ? 'O' : 'X'}
+                  onChange={(e) => setSiteEditForm({...siteEditForm, approval_call: e.target.value === 'O'})}
+                  className="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-md px-3 py-2"
+                >
+                  <option value="X">X (필요없음)</option>
+                  <option value="O">O (필요함)</option>
+                </select>
+              </div>
+              
+              <div>
+                <label className="block text-sm font-bold text-gray-700 dark:text-white mb-1">{siteEditMode === 'site' ? '아이디' : '아이디 (user_id)'} *</label>
+                <input
+                  type="text"
+                  value={siteEditMode === 'site' ? siteEditForm.account_id : siteEditForm.user_id}
+                  onChange={(e) => setSiteEditForm({
+                    ...siteEditForm,
+                    ...(siteEditMode === 'site' ? { account_id: e.target.value } : { user_id: e.target.value })
+                  })}
+                  className="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-md px-3 py-2"
+                  placeholder={siteEditMode === 'site' ? '가이07' : 'user_id'}
+                  required
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-bold text-gray-700 dark:text-white mb-1">비번 *</label>
+                <input
+                  type="text"
+                  value={siteEditForm.password}
+                  onChange={(e) => setSiteEditForm({...siteEditForm, password: e.target.value})}
+                  className="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-md px-3 py-2"
+                  placeholder="애애99"
+                  required
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-bold text-gray-700 dark:text-white mb-1">환비 (환전비밀번호)</label>
+                <input
+                  type="text"
+                  value={siteEditForm.exchange_password}
+                  onChange={(e) => setSiteEditForm({...siteEditForm, exchange_password: e.target.value})}
+                  className="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-md px-3 py-2"
+                  placeholder="9090"
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-bold text-gray-700 dark:text-white mb-1">닉네임</label>
+                <input
+                  type="text"
+                  value={siteEditForm.nickname}
+                  onChange={(e) => setSiteEditForm({...siteEditForm, nickname: e.target.value})}
+                  className="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-md px-3 py-2"
+                  placeholder="우리의꿈"
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-bold text-gray-700 dark:text-white mb-1">경로</label>
+                <input
+                  type="text"
+                  value={siteEditMode === 'site' ? siteEditForm.referral_code : siteEditForm.path}
+                  onChange={(e) => setSiteEditForm({
+                    ...siteEditForm,
+                    ...(siteEditMode === 'site' ? { referral_code: e.target.value } : { path: e.target.value })
+                  })}
+                  className="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-md px-3 py-2"
+                  placeholder="둘리티비"
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-bold text-gray-700 dark:text-white mb-1">장</label>
+                <input
+                  type="text"
+                  value={siteEditForm.category}
+                  onChange={(e) => setSiteEditForm({...siteEditForm, category: e.target.value})}
+                  className="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-md px-3 py-2"
+                  placeholder="카페"
+                />
+              </div>
+              
+              <div className="col-span-2">
+                <label className="block text-sm font-bold text-gray-700 dark:text-white mb-1">메모</label>
+                <textarea
+                  value={siteEditForm.notes}
+                  onChange={(e) => setSiteEditForm({...siteEditForm, notes: e.target.value})}
+                  className="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-md px-3 py-2"
+                  rows="2"
+                  placeholder="추가 메모사항"
+                />
+              </div>
+            </div>
+            
+            <div className="flex justify-end gap-2 mt-6">
+              <button
+                type="button"
+                onClick={() => setShowSiteEditModal(false)}
+                className="px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-white rounded-md hover:bg-gray-300 dark:hover:bg-gray-600"
+              >
+                취소
+              </button>
+              <button
+                type="button"
+                onClick={saveSiteEditModal}
+                className="px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600"
+              >
+                저장
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <SiteNotesModal
         isOpen={siteNotesModal.open}
         onClose={() => setSiteNotesModal(prev => ({ ...prev, open: false }))}
