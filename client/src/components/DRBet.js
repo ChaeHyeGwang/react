@@ -3858,50 +3858,66 @@ function DRBet() {
         return;
       }
       
-      // 포인트 패턴 (포인트 종류 포함) - 사이트 이름에 숫자 포함 가능
-      const pointTypeMatch = trimmed.match(/^([가-힣a-zA-Z0-9]+?)(출석|페이백|정착|요율|지추|첫충|매충|입플)([\d.]+)$/);
-      if (pointTypeMatch) {
-        const [, siteNameFromText, pointType, amount] = pointTypeMatch;
-        // 사이트 이름 매칭 (전체 이름 또는 앞 2글자, 숫자 포함)
-        const site = recordSites.find(s => {
-          const fullName = s.name;
-          const shortName = fullName.length >= 2 ? fullName.substring(0, 2) : fullName;
-          return fullName === siteNameFromText || shortName === siteNameFromText;
-        });
-        
-        if (site) {
-          if (!structured.sites[site.name]) {
-            structured.sites[site.name] = { points: [], chips: [] };
-          }
-          structured.sites[site.name].points.push({
-            type: pointType,
-            amount: parseFloat(amount) || 0
-          });
+      // 포인트 패턴 - recordSites 기반 매칭 (사이트명 특수문자 () 등 지원)
+      const pointTypes = '(출석|페이백|정착|요율|지추|첫충|매충|입플)';
+      let pointMatchedSite = null;
+      let pointType = '';
+      let pointAmount = '';
+      
+      for (const site of recordSites) {
+        const escaped = site.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        // 포인트 종류 포함: 사이트명+출석|페이백|...+숫자
+        const typeRegex = new RegExp(`^${escaped}${pointTypes}([\\d.]+)$`);
+        const typeMatch = trimmed.match(typeRegex);
+        if (typeMatch) {
+          pointMatchedSite = site;
+          pointType = typeMatch[1];
+          pointAmount = typeMatch[2];
+          break;
         }
-        return;
+        // 일반 포인트: 사이트명+숫자
+        const simpleRegex = new RegExp(`^${escaped}([\\d.]+)$`);
+        const simpleMatch = trimmed.match(simpleRegex);
+        if (simpleMatch) {
+          pointMatchedSite = site;
+          pointType = '';
+          pointAmount = simpleMatch[1];
+          break;
+        }
+      }
+      // 전체 이름 매칭 실패 시 앞 2글자로 재시도 (기존 호환)
+      if (!pointMatchedSite) {
+        for (const site of recordSites) {
+          const shortName = site.name.length >= 2 ? site.name.substring(0, 2) : site.name;
+          const escapedShort = shortName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+          const typeRegex = new RegExp(`^${escapedShort}${pointTypes}([\\d.]+)$`);
+          const typeMatch = trimmed.match(typeRegex);
+          if (typeMatch) {
+            pointMatchedSite = site;
+            pointType = typeMatch[1];
+            pointAmount = typeMatch[2];
+            break;
+          }
+          const simpleRegex = new RegExp(`^${escapedShort}([\\d.]+)$`);
+          const simpleMatch = trimmed.match(simpleRegex);
+          if (simpleMatch) {
+            pointMatchedSite = site;
+            pointType = '';
+            pointAmount = simpleMatch[1];
+            break;
+          }
+        }
       }
       
-      // 일반 포인트 패턴 (포인트 종류 없음) - 사이트 이름에 숫자 포함 가능
-      // 주의: 숫자로 끝나는 사이트명과 금액을 구분하기 위해 최소 매칭 사용
-      const simplePointMatch = trimmed.match(/^([가-힣a-zA-Z0-9]+?)([\d.]+)$/);
-      if (simplePointMatch) {
-        const [, siteNameFromText, amount] = simplePointMatch;
-        // 사이트 이름 매칭 (전체 이름 또는 앞 2글자, 숫자 포함)
-        const site = recordSites.find(s => {
-          const fullName = s.name;
-          const shortName = fullName.length >= 2 ? fullName.substring(0, 2) : fullName;
-          return fullName === siteNameFromText || shortName === siteNameFromText;
-        });
-        
-        if (site) {
-          if (!structured.sites[site.name]) {
-            structured.sites[site.name] = { points: [], chips: [] };
-          }
-          structured.sites[site.name].points.push({
-            type: '', // 포인트 종류 없음
-            amount: parseFloat(amount) || 0
-          });
+      if (pointMatchedSite) {
+        if (!structured.sites[pointMatchedSite.name]) {
+          structured.sites[pointMatchedSite.name] = { points: [], chips: [] };
         }
+        structured.sites[pointMatchedSite.name].points.push({
+          type: pointType,
+          amount: parseFloat(pointAmount) || 0
+        });
+        return;
       }
     });
     
@@ -4400,47 +4416,41 @@ function DRBet() {
         };
       }
       
-      // 포인트 종류 포함 패턴 체크 (예: "샷벳출석10", "샷벳페이백20", "애국페이백0.5", "omg출석3", "850벳출석10")
-      // 소수점 포함 숫자도 파싱할 수 있도록 정규식 수정
-      // 사이트 이름은 2글자 이상일 수 있고 숫자 포함 가능하므로 +? 사용 (최소 매칭)
-      const pointTypePatternMatch = part.match(/^([가-힣a-zA-Z0-9]+?)(출석|페이백|정착|요율|지추|첫충|매충|입플)([\d.]+)$/);
-      if (pointTypePatternMatch) {
-        const [, siteNameFromText, pointType, numbers] = pointTypePatternMatch;
-        // 전체 이름 또는 앞 2글자로 매칭 (기존 데이터 호환성, 숫자 포함)
-        const site = extractedSites.find(s => {
-          const fullName = s.name;
-          const shortName = fullName.length >= 2 ? fullName.substring(0, 2) : fullName;
-          return fullName === siteNameFromText || shortName === siteNameFromText;
-        });
-        
-        if (site) {
-          // 기존 값이 있으면 병합
-          existingInputs[site.id] = {
-            ...existingInputs[site.id],
-            point: numbers,
-            pointType: pointType
-          };
+      // 포인트 패턴 - extractedSites 기반 매칭 (사이트명 특수문자 () 등 지원)
+      const pointTypes = '(출석|페이백|정착|요율|지추|첫충|매충|입플)';
+      let pointMatched = false;
+      for (const site of extractedSites) {
+        const escaped = site.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const typeRegex = new RegExp(`^${escaped}${pointTypes}([\\d.]+)$`);
+        const typeMatch = part.match(typeRegex);
+        if (typeMatch) {
+          existingInputs[site.id] = { ...existingInputs[site.id], point: typeMatch[2], pointType: typeMatch[1] };
+          pointMatched = true;
+          break;
         }
-      } else {
-        // 사이트+숫자만 있는 경우 (포인트만, 포인트 종류 없음)
-        // 소수점 포함 숫자도 파싱할 수 있도록 정규식 수정
-        // 사이트 이름은 2글자 이상일 수 있고 숫자 포함 가능하므로 +? 사용 (최소 매칭)
-        const simplePatternMatch = part.match(/^([가-힣a-zA-Z0-9]+?)([\d.]+)$/);
-        if (simplePatternMatch) {
-          const [, siteNameFromText, numbers] = simplePatternMatch;
-          // 전체 이름 또는 앞 2글자로 매칭 (기존 데이터 호환성, 숫자 포함)
-          const site = extractedSites.find(s => {
-            const fullName = s.name;
-            const shortName = fullName.length >= 2 ? fullName.substring(0, 2) : fullName;
-            return fullName === siteNameFromText || shortName === siteNameFromText;
-          });
-          
-          if (site) {
-            // 기존 값이 있으면 병합
-            existingInputs[site.id] = {
-              ...existingInputs[site.id],
-              point: numbers
-            };
+        const simpleRegex = new RegExp(`^${escaped}([\\d.]+)$`);
+        const simpleMatch = part.match(simpleRegex);
+        if (simpleMatch) {
+          existingInputs[site.id] = { ...existingInputs[site.id], point: simpleMatch[1] };
+          pointMatched = true;
+          break;
+        }
+      }
+      if (!pointMatched) {
+        for (const site of extractedSites) {
+          const shortName = site.name.length >= 2 ? site.name.substring(0, 2) : site.name;
+          const escapedShort = shortName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+          const typeRegex = new RegExp(`^${escapedShort}${pointTypes}([\\d.]+)$`);
+          const typeMatch = part.match(typeRegex);
+          if (typeMatch) {
+            existingInputs[site.id] = { ...existingInputs[site.id], point: typeMatch[2], pointType: typeMatch[1] };
+            break;
+          }
+          const simpleRegex = new RegExp(`^${escapedShort}([\\d.]+)$`);
+          const simpleMatch = part.match(simpleRegex);
+          if (simpleMatch) {
+            existingInputs[site.id] = { ...existingInputs[site.id], point: simpleMatch[1] };
+            break;
           }
         }
       }
@@ -4698,31 +4708,14 @@ function DRBet() {
       log('✅ [addSiteInfoToNotes] 저장 진행');
       const currentNotes = selectedRecord.notes || '';
       
-      // 입력된 사이트 목록 추출 (수정할 사이트들)
-      // 새 형식(사이트이름+종류+금액)과 기존 형식(종류+사이트이름+금액) 모두 지원
-      const modifiedSiteNames = siteEntries.map(e => {
-        // 새 형식: 사이트이름+칩종류+금액+먹/못먹 (예: "샷벳칩실수10먹", "인투88칩실수100못먹")
-        const newChipMatch = e.match(/^([가-힣a-zA-Z0-9]+?)(칩실수|칩팅|배거)(\d+)(먹|못먹)/);
-        if (newChipMatch) {
-          return newChipMatch[1]; // 실제 사이트명 반환
-        }
-        // 기존 형식: 칩종류+사이트이름+금액+먹/못먹 (예: "배거샷벳10먹", "칩팅샷벳10못먹")
-        const oldChipMatch = e.match(/^(칩실수|칩팅|배거)([가-힣a-zA-Z0-9]+?)(\d+)(먹|못먹)/);
-        if (oldChipMatch) {
-          return oldChipMatch[2]; // 실제 사이트명 반환
-        }
-        // 포인트 종류가 있는 경우 (예: "샷벳출석10", "omg출석3")
-        const pointMatch = e.match(/^([가-힣a-zA-Z0-9]+?)(출석|페이백|정착|요율|지추)/);
-        if (pointMatch) {
-          return pointMatch[1]; // 실제 사이트명 반환
-        }
-        // 일반 사이트+숫자 패턴 (예: "샷벳10", "샷벳0.5", "omg3")
-        const simpleMatch = e.match(/^([가-힣a-zA-Z0-9]+?)[\d.]/);
-        if (simpleMatch) {
-          return simpleMatch[1]; // 실제 사이트명 반환
-        }
-        return null;
-      }).filter(Boolean);
+      // 수정할 사이트 이름 목록 (site.name 직접 사용 - 특수문자 포함)
+      const modifiedSiteNames = currentRecordSites.filter(site => {
+        const input = siteInputs[site.id];
+        if (!input) return false;
+        const hasPoint = input.point && input.point.trim() !== '';
+        const hasChip = input.chipAmount && input.chipAmount.trim() !== '';
+        return hasPoint || hasChip;
+      }).map(s => s.name);
       
       // 해당 사이트의 기존 모든 항목 제거
       const allParts = currentNotes.split('/').filter(p => p.trim());
@@ -4744,66 +4737,15 @@ function DRBet() {
         // 공백을 기준으로 단어 분리 (예: "칩실수루카20못먹 안녕하세요" -> ["칩실수루카20못먹", "안녕하세요"])
         const words = trimmed.split(/\s+/);
         
-        // 사이트 관련 단어만 필터링 (사이트 패턴이면 제거, 아니면 유지)
+        // 사이트 관련 단어만 필터링 (수정할 사이트 항목이면 제거, 아니면 유지)
         const filteredWords = words.filter(word => {
-          // 새 형식: 사이트이름+칩종류+금액+먹/못먹 (예: "샷벳칩실수10먹", "인투88칩실수100못먹")
-          const newChipMatch = word.match(/^([가-힣a-zA-Z0-9]+?)(칩실수|칩팅|배거)(\d+)(먹|못먹)/);
-          if (newChipMatch) {
-            const siteNameFromText = newChipMatch[1];
-            // 전체 이름 또는 앞 2글자로 매칭 (기존 데이터 호환성)
-            const shouldRemove = modifiedSiteNames.some(modifiedName => {
-              const fullName = modifiedName;
-              const shortName = fullName.length >= 2 ? fullName.substring(0, 2) : fullName;
-              return fullName === siteNameFromText || shortName === siteNameFromText;
-            });
-            // 수정할 사이트인 경우 제거
-            return !shouldRemove;
-          }
-          
-          // 기존 형식: 칩종류+사이트명+금액+먹/못먹 (예: "배거omg10먹", "칩팅샷벳10못먹")
-          const oldChipMatch = word.match(/^(칩실수|칩팅|배거)([가-힣a-zA-Z0-9]+?)(\d+)(먹|못먹)/);
-          if (oldChipMatch) {
-            const siteNameFromText = oldChipMatch[2];
-            // 전체 이름 또는 앞 2글자로 매칭 (기존 데이터 호환성)
-            const shouldRemove = modifiedSiteNames.some(modifiedName => {
-              const fullName = modifiedName;
-              const shortName = fullName.length >= 2 ? fullName.substring(0, 2) : fullName;
-              return fullName === siteNameFromText || shortName === siteNameFromText;
-            });
-            // 수정할 사이트인 경우 제거
-            return !shouldRemove;
-          }
-          
-          // 포인트종류 포함 패턴 체크 (예: "샷벳출석10", "샷벳페이백20", "애국페이백0.5", "omg출석3")
-        const pointTypeMatch = word.match(/^([가-힣a-zA-Z]+)(출석|페이백|정착|요율|지추|첫충|매충|입플)[\d.]/);
-          if (pointTypeMatch) {
-            const siteNameFromText = pointTypeMatch[1];
-            // 전체 이름 또는 앞 2글자로 매칭 (기존 데이터 호환성)
-            const shouldRemove = modifiedSiteNames.some(modifiedName => {
-              const fullName = modifiedName;
-              const shortName = fullName.length >= 2 ? fullName.substring(0, 2) : fullName;
-              return fullName === siteNameFromText || shortName === siteNameFromText;
-            });
-            // 수정할 사이트인 경우 제거
-            return !shouldRemove;
-          }
-          
-          // 일반 사이트+숫자 패턴 체크 (소수점 포함) (예: "샷벳10", "omg3")
-          const simpleMatch = word.match(/^([가-힣a-zA-Z]+)[\d.]/);
-          if (simpleMatch) {
-            const siteNameFromText = simpleMatch[1];
-            // 전체 이름 또는 앞 2글자로 매칭 (기존 데이터 호환성)
-            const shouldRemove = modifiedSiteNames.some(modifiedName => {
-              const fullName = modifiedName;
-              const shortName = fullName.length >= 2 ? fullName.substring(0, 2) : fullName;
-              return fullName === siteNameFromText || shortName === siteNameFromText;
-            });
-            // 수정할 사이트인 경우 제거
-            return !shouldRemove;
-          }
-          
-          // 사이트 패턴이 아닌 단어는 유지 (예: "안녕하세요")
-          return true;
+          const isForModifiedSite = modifiedSiteNames.some(name => {
+            const validNextChar = (str, start) => start >= str.length || /[\d.]|[가-힣a-zA-Z]/.test(str[start]);
+            if (word.startsWith(name) && validNextChar(word, name.length)) return true;
+            const afterChip = word.replace(/^(배거|칩팅|칩실수)/, '');
+            return afterChip.startsWith(name) && validNextChar(afterChip, name.length);
+          });
+          return !isForModifiedSite;
         });
         
         return filteredWords.join(' ');

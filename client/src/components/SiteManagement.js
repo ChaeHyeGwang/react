@@ -129,6 +129,8 @@ const SiteManagement = () => {
   const [allSiteNames, setAllSiteNames] = useState([]); // 기존 모든 사이트명
   const [siteNameSuggestions, setSiteNameSuggestions] = useState([]); // 자동완성 제안
   const [showSuggestions, setShowSuggestions] = useState(false); // 자동완성 드롭다운 표시
+  const [siteNameHighlightIndex, setSiteNameHighlightIndex] = useState(0); // 키보드로 선택한 인덱스
+  const siteNameSuggestionRefs = useRef([]);
   
   // 사이트 수정 모달 상태
   const [showSiteEditModal, setShowSiteEditModal] = useState(false);
@@ -569,29 +571,6 @@ const SiteManagement = () => {
     }
   };
 
-  // 유사 사이트명 확인 (저장 전)
-  const checkSimilarSiteNames = async (siteName) => {
-    if (!siteName || siteName.trim() === '') return null;
-    
-    try {
-      const response = await axiosInstance.post('/sites/check-similar', {
-        siteName: siteName.trim(),
-        threshold: 0.5  // 50% 이상 유사하면 경고 (더 민감하게)
-      });
-      
-      if (response.data.success && response.data.similar.length > 0) {
-        // 완전히 동일한 이름만 있는 경우 제외 (isExact만 있으면 경고 안함)
-        const nonExactMatches = response.data.similar.filter(s => !s.isExact);
-        if (nonExactMatches.length > 0) {
-          return nonExactMatches;
-        }
-      }
-    } catch (error) {
-      console.error('유사 사이트명 확인 실패:', error);
-    }
-    return null;
-  };
-
   // 커뮤니티 목록 로드 (사이트 목록처럼 명의별로 필터링)
   const loadCommunities = async () => {
     // 명의가 선택되지 않았으면 커뮤니티 목록 비우기
@@ -680,6 +659,11 @@ const SiteManagement = () => {
     }
   }, [location.search, identities.length]); // identities.length만 의존성으로 사용 (목록 크기가 바뀔 때만)
   
+  // 사이트명 자동완성: 화살표로 선택 시 해당 항목 스크롤
+  useEffect(() => {
+    siteNameSuggestionRefs.current[siteNameHighlightIndex]?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }, [siteNameHighlightIndex]);
+
   // 강조 표시 자동 제거 (3초 후)
   useEffect(() => {
     if (highlightedSiteId) {
@@ -2180,18 +2164,6 @@ const SiteManagement = () => {
         
         // site_name 또는 status 필드가 입력되었을 때만 저장 (site_name은 필수)
         if (field === 'site_name' && valueToSave) {
-          // 유사 사이트명 경고
-          const similar = await checkSimilarSiteNames(valueToSave);
-          if (similar && similar.length > 0) {
-            const confirmed = window.confirm(
-              `유사한 사이트명이 있습니다:\n${similar.map(s => `• ${s.name} (${Math.round(s.similarity * 100)}%)`).join('\n')}\n\n그래도 "${valueToSave}"으로 저장하시겠습니까?`
-            );
-            if (!confirmed) {
-              setEditingCell(null);
-              return;
-            }
-          }
-          
           const siteToSave = {
             ...updatedSite,
             identity_id: selectedIdentity.id
@@ -2243,21 +2215,6 @@ const SiteManagement = () => {
         }
       } else {
         // 기존 행인 경우 PUT으로 수정
-        
-        // site_name 필드 수정 시 유사도 검사
-        if (field === 'site_name' && valueToSave && valueToSave !== site.site_name) {
-          const similar = await checkSimilarSiteNames(valueToSave);
-          if (similar && similar.length > 0) {
-            const confirmed = window.confirm(
-              `유사한 사이트명이 있습니다:\n${similar.map(s => `• ${s.name} (${Math.round(s.similarity * 100)}%)`).join('\n')}\n\n그래도 "${valueToSave}"으로 수정하시겠습니까?`
-            );
-            if (!confirmed) {
-              cancelEditingCell();
-              return;
-            }
-          }
-        }
-        
       await axiosInstance.put(`/sites/${siteId}`, {
         ...site,
         [field]: valueToSave
@@ -2442,10 +2399,10 @@ const SiteManagement = () => {
           status = `${datePrefix} ${finalStatus}`;
         }
         
-        // 엑셀 열 순서: 출석, 도메인, 경로-코드, 승전, 성함, 아이디, 비번, 환비, 닉네임, 승인유무, 경로, 장
+        // 엑셀 열 순서: 사이트, 도메인, 경로-코드, 승전, 성함, 아이디, 비번, 환비, 닉네임, 승인유무, 경로, 장
         return {
           tempId: `temp-${index}`,
-          site_name: cells[0] || '',      // 출석
+          site_name: cells[0] || '',      // 사이트
           domain: cells[1] || '',         // 도메인
           referral_path: cells[2] || '',  // 경로-코드
           approval_call: cells[3] === 'O' || cells[3] === 'o', // 승전
@@ -2511,7 +2468,7 @@ const SiteManagement = () => {
     }
 
     // TSV 형식으로 변환 (엑셀에서 복사-붙여넣기 용이)
-    const headers = ['출석', '도메인', '경로-코드', '승전', '성함', '아이디', '비번', '환비', '닉네임', '승인유무', '경로', '장'];
+    const headers = ['사이트', '도메인', '경로-코드', '승전', '성함', '아이디', '비번', '환비', '닉네임', '승인유무', '경로', '장'];
     const rows = filteredSites.map(site => [
       site.site_name,
       site.domain,
@@ -2567,7 +2524,7 @@ const SiteManagement = () => {
     }
 
     // TSV 형식으로 변환 (엑셀에서 복사-붙여넣기 용이)
-    const headers = ['출석', '도메인', '경로-코드', '승전', '성함', '아이디', '비번', '환비', '닉네임', '승인유무', '경로', '장'];
+    const headers = ['사이트', '도메인', '경로-코드', '승전', '성함', '아이디', '비번', '환비', '닉네임', '승인유무', '경로', '장'];
     const rows = filteredCommunities.map(community => [
       community.site_name,
       community.domain,
@@ -2638,10 +2595,10 @@ const SiteManagement = () => {
           status = `${datePrefix} ${status}`;
         }
         
-        // 엑셀 열 순서: 출석, 도메인, 경로-코드, 승전, 성함, 아이디, 비번, 환비, 닉네임, 승인유무, 경로, 장
+        // 엑셀 열 순서: 사이트, 도메인, 경로-코드, 승전, 성함, 아이디, 비번, 환비, 닉네임, 승인유무, 경로, 장
         return {
           tempId: `temp-${index}`,
-          site_name: cells[0] || '',      // 출석
+          site_name: cells[0] || '',      // 사이트
           domain: cells[1] || '',         // 도메인
           referral_path: cells[2] || '',  // 경로-코드
           approval_call: cells[3] === 'O' || cells[3] === 'o', // 승전
@@ -3013,7 +2970,7 @@ const SiteManagement = () => {
                 <th className="px-5 py-5 text-center font-semibold text-white text-sm tracking-widest border-r border-white/10">
                   <span className="flex items-center justify-center gap-2">
                     <span className="w-1.5 h-1.5 rounded-full bg-white/60"></span>
-                    출석
+                    사이트
                   </span>
                 </th>
                 <th className="px-5 py-5 text-center font-semibold text-white text-sm tracking-widest border-r border-white/10">도메인</th>
@@ -3062,6 +3019,7 @@ const SiteManagement = () => {
                                   );
                                   setSiteNameSuggestions(filtered.slice(0, 10));
                                   setShowSuggestions(filtered.length > 0);
+                                  setSiteNameHighlightIndex(0);
                                 } else {
                                   setSiteNameSuggestions([]);
                                   setShowSuggestions(false);
@@ -3073,7 +3031,28 @@ const SiteManagement = () => {
                                   saveEditingCell();
                                 }, 200);
                               }}
-                              onKeyDown={handleCellKeyDown}
+                              onKeyDown={(e) => {
+                                if (showSuggestions && siteNameSuggestions.length > 0) {
+                                  if (e.key === 'ArrowDown') {
+                                    e.preventDefault();
+                                    setSiteNameHighlightIndex(i => Math.min(i + 1, siteNameSuggestions.length - 1));
+                                    return;
+                                  }
+                                  if (e.key === 'ArrowUp') {
+                                    e.preventDefault();
+                                    setSiteNameHighlightIndex(i => Math.max(i - 1, 0));
+                                    return;
+                                  }
+                                  if (e.key === 'Enter') {
+                                    e.preventDefault();
+                                    setEditingValue(siteNameSuggestions[siteNameHighlightIndex]);
+                                    setShowSuggestions(false);
+                                    setSiteNameSuggestions([]);
+                                    return;
+                                  }
+                                }
+                                handleCellKeyDown(e);
+                              }}
                               autoFocus
                               autoComplete="off"
                               className={`w-full px-2 py-1 border border-blue-500 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 font-bold dark:bg-[#282C34] dark:text-white dark:border-blue-400 ${className}`}
@@ -3082,18 +3061,20 @@ const SiteManagement = () => {
                             {showSuggestions && siteNameSuggestions.length > 0 && (
                               <div className="absolute z-[100] w-64 mt-1 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md shadow-lg max-h-48 overflow-y-auto">
                                 <div className="px-3 py-1 text-xs text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-gray-600">
-                                  기존 사이트명 (클릭하여 선택)
+                                  기존 사이트명 (화살표 ↑↓ 이동, 엔터로 선택)
                                 </div>
                                 {siteNameSuggestions.map((name, idx) => (
                                   <div
                                     key={idx}
-                                    className="px-3 py-2 cursor-pointer hover:bg-blue-50 dark:hover:bg-blue-900/30 text-gray-800 dark:text-gray-200"
+                                    ref={el => { siteNameSuggestionRefs.current[idx] = el; }}
+                                    className={`px-3 py-2 cursor-pointer text-gray-800 dark:text-gray-200 ${idx === siteNameHighlightIndex ? 'bg-blue-100 dark:bg-blue-900/50' : 'hover:bg-blue-50 dark:hover:bg-blue-900/30'}`}
                                     onMouseDown={(e) => {
                                       e.preventDefault();
                                       setEditingValue(name);
                                       setShowSuggestions(false);
                                       setSiteNameSuggestions([]);
                                     }}
+                                    onMouseEnter={() => setSiteNameHighlightIndex(idx)}
                                   >
                                     {name}
                                   </div>
@@ -3981,7 +3962,7 @@ const SiteManagement = () => {
                 <th className="px-5 py-5 text-center font-semibold text-white text-sm tracking-widest border-r border-white/10 first:rounded-tl-2xl">
                   <span className="flex items-center justify-center gap-2">
                     <span className="w-1.5 h-1.5 rounded-full bg-white/60"></span>
-                    출석
+                    사이트
                   </span>
                 </th>
                 <th className="px-5 py-5 text-center font-semibold text-white text-sm tracking-widest border-r border-white/10">도메인</th>
@@ -4018,7 +3999,7 @@ const SiteManagement = () => {
                         value={newCommunityRow.site_name || ''}
                         onChange={(e) => setNewCommunityRow({...newCommunityRow, site_name: e.target.value})}
                         className="w-full border border-gray-300 dark:border-gray-600 rounded-md px-2 py-1 text-center dark:bg-gray-700 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        placeholder="출석"
+                        placeholder="사이트"
                         autoFocus
                       />
                     </td>
@@ -5030,7 +5011,7 @@ const SiteManagement = () => {
                 <li>"일괄 등록" 버튼 클릭</li>
               </ol>
               <p className="text-xs text-gray-500 dark:text-gray-300 mt-2">
-                ※ 엑셀 열 순서: 출석 | 도메인 | 경로-코드 | 승전 | 성함 | 아이디 | 비번 | 환비 | 닉네임 | 승인유무 | 경로 | 장
+                ※ 엑셀 열 순서: 사이트 | 도메인 | 경로-코드 | 승전 | 성함 | 아이디 | 비번 | 환비 | 닉네임 | 승인유무 | 경로 | 장
               </p>
             </div>
             
@@ -5073,7 +5054,7 @@ const SiteManagement = () => {
                   <table className="min-w-[960px] w-full text-xs">
                     <thead className="bg-gray-50 dark:bg-[#282C34] sticky top-0">
                       <tr>
-                        <th className="px-2 py-2 text-left border-b dark:text-white dark:border-gray-600">출석</th>
+                        <th className="px-2 py-2 text-left border-b dark:text-white dark:border-gray-600">사이트</th>
                         <th className="px-2 py-2 text-left border-b dark:text-white dark:border-gray-600">도메인</th>
                         <th className="px-2 py-2 text-left border-b dark:text-white dark:border-gray-600">경로-코드</th>
                         <th className="px-2 py-2 text-center border-b dark:text-white dark:border-gray-600">승전</th>
@@ -5136,7 +5117,7 @@ const SiteManagement = () => {
             
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-bold text-gray-700 dark:text-white mb-1">출석 (사이트명) *</label>
+                <label className="block text-sm font-bold text-gray-700 dark:text-white mb-1">사이트 *</label>
                 <input
                   type="text"
                   value={siteEditForm.site_name}
