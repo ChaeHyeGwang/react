@@ -18,8 +18,8 @@ function parseNotesForFinish(notes) {
     // 패턴 2: (칩실수|칩팅|배거) + 사이트명 + 숫자 + (먹|못먹)
     const match2 = trimmedPart.match(/^(칩실수|칩팅|배거)(.+?)(\d+)(먹|못먹)/);
 
-    // 패턴 3: 바때기 + 숫자 + (먹|못먹|충|환)
-    const match3 = trimmedPart.match(/^바때기([\d.]+)(먹|못먹|충|환)$/);
+    // 패턴 3: 바때기 + 숫자 + (먹|못먹) - 정산관리에 칩실수만 포함 (충/환 제외)
+    const match3 = trimmedPart.match(/^바때기([\d.]+)(먹|못먹)$/);
     // 패턴 4: 바때기 + (칩실수|배거|칩팅) + 숫자 + (먹|못먹)
     const match4 = trimmedPart.match(/^바때기(칩실수|배거|칩팅)([\d.]+)(먹|못먹)$/);
 
