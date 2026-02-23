@@ -24,7 +24,17 @@ const useDebounce = (value, delay) => {
 
   return debouncedValue;
 };
- 
+
+// 사이트 이벤트 정보가 없을 때 기본으로 표시할 이벤트 (수정·삭제 가능)
+const DEFAULT_SITE_EVENTS = [
+  { event: '출석', detail: '', rolling: '' },
+  { event: '신규첫충', detail: '', rolling: '' },
+  { event: '첫충매충', detail: '', rolling: '' },
+  { event: '페이백', detail: '', rolling: '' },
+  { event: '요율', detail: '', rolling: '' },
+  { event: '신규정착', detail: '', rolling: '' }
+];
+
 const SiteManagement = () => {
   const location = useLocation();
   const { isOfficeManager, isSuperAdmin, selectedAccountId } = useAuth();
@@ -132,6 +142,13 @@ const SiteManagement = () => {
   const [siteNameHighlightIndex, setSiteNameHighlightIndex] = useState(0); // 키보드로 선택한 인덱스
   const siteNameSuggestionRefs = useRef([]);
   
+  // 계정 이전 모달 상태
+  const [showMoveAccountModal, setShowMoveAccountModal] = useState(false);
+  const [moveAccountIdentity, setMoveAccountIdentity] = useState(null);
+  const [moveTargetAccounts, setMoveTargetAccounts] = useState([]);
+  const [selectedTargetAccountId, setSelectedTargetAccountId] = useState('');
+  const [movingAccount, setMovingAccount] = useState(false);
+
   // 사이트 수정 모달 상태
   const [showSiteEditModal, setShowSiteEditModal] = useState(false);
   const [editingSiteOrCommunity, setEditingSiteOrCommunity] = useState(null); // site 또는 community 객체
@@ -634,6 +651,9 @@ const SiteManagement = () => {
   // - 슈퍼 관리자: 항상 표시
   // - 사무실 관리자: 관리자 계정을 선택했을 때만 표시
   const canShowAllOption = isSuperAdmin || (isOfficeManager && selectedAccountIsManager);
+
+  // 계정 이전 버튼 표시 (사무실 관리자 또는 슈퍼 관리자)
+  const canMoveIdentity = isSuperAdmin || isOfficeManager;
 
   // URL 쿼리 파라미터에서 명의 ID 읽어서 자동 선택 (통합)
   useEffect(() => {
@@ -1333,6 +1353,67 @@ const SiteManagement = () => {
     }
   };
 
+  // 계정 이전 모달 열기
+  const openMoveAccountModal = async (identity) => {
+    try {
+      setMoveAccountIdentity(identity);
+      setSelectedTargetAccountId('');
+      setMoveTargetAccounts([]);
+      setShowMoveAccountModal(true);
+
+      const res = await axiosInstance.get(`/identities/${identity.id}/move-target-accounts`);
+      if (res.data?.success && Array.isArray(res.data.accounts)) {
+        setMoveTargetAccounts(res.data.accounts);
+      } else {
+        toast.error('이전 대상 계정을 불러올 수 없습니다');
+      }
+    } catch (error) {
+      console.error('이전 대상 계정 조회 실패:', error);
+      toast.error(error.response?.data?.message || '이전 대상 계정 조회에 실패했습니다');
+      setShowMoveAccountModal(false);
+    }
+  };
+
+  // 계정 이전 실행
+  const executeMoveAccount = async () => {
+    if (!moveAccountIdentity || !selectedTargetAccountId) {
+      toast.error('대상 계정을 선택해주세요');
+      return;
+    }
+
+    if (!window.confirm(`"${moveAccountIdentity.name}" 유저를 선택한 계정으로 이전하시겠습니까?\n사이트, 출석, 커뮤니티 등 관련 데이터가 함께 옮겨집니다.`)) {
+      return;
+    }
+
+    setMovingAccount(true);
+    try {
+      await axiosInstance.put(`/identities/${moveAccountIdentity.id}/move-account`, {
+        targetAccountId: parseInt(selectedTargetAccountId, 10)
+      });
+      toast.success('유저가 다른 계정으로 이전되었습니다');
+
+      invalidateIdentitiesCache();
+      const updatedIdentities = await loadIdentities();
+      setIdentities(updatedIdentities);
+
+      if (selectedIdentity?.id === moveAccountIdentity.id) {
+        setSelectedIdentity(null);
+        setSites([]);
+        setCommunities([]);
+      }
+
+      setShowMoveAccountModal(false);
+      setMoveAccountIdentity(null);
+      setMoveTargetAccounts([]);
+      setSelectedTargetAccountId('');
+    } catch (error) {
+      console.error('계정 이전 실패:', error);
+      toast.error(error.response?.data?.message || '계정 이전에 실패했습니다');
+    } finally {
+      setMovingAccount(false);
+    }
+  };
+
   // 사이트 메타데이터 조회 (명의별 출석일 포함)
   const fetchSiteNotes = async (siteName, identityName = null) => {
     try {
@@ -1428,6 +1509,11 @@ const SiteManagement = () => {
           rolling: existingData.eventRolling || ''
         }];
       }
+    }
+
+    // 이벤트가 없으면 기본 이벤트 표시 (수정·삭제 가능)
+    if (defaultData.events.length === 0) {
+      defaultData.events = DEFAULT_SITE_EVENTS.map(evt => ({ ...evt }));
     }
     
     // events 배열의 각 항목에 rolling 필드가 없으면 추가
@@ -2738,7 +2824,7 @@ const SiteManagement = () => {
                 </div>
               </div>
               
-              {/* 수정/삭제 버튼 (호버 시 표시) */}
+              {/* 수정/계정 이전/삭제 버튼 (호버 시 표시) */}
               <div className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity">
                 <button
                   onClick={(e) => {
@@ -2750,6 +2836,18 @@ const SiteManagement = () => {
                 >
                   ✏️
                 </button>
+                {canMoveIdentity && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      openMoveAccountModal(identity);
+                    }}
+                    className="bg-amber-500 text-white p-1 rounded text-xs hover:bg-amber-600 mr-1"
+                    title="다른 계정으로 이전"
+                  >
+                    ➡️
+                  </button>
+                )}
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
@@ -4648,6 +4746,56 @@ const SiteManagement = () => {
       </div>
       )}
     </div>
+
+      {/* 계정 이전 모달 */}
+      {showMoveAccountModal && moveAccountIdentity && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white dark:bg-gray-800 rounded-lg p-6 w-full max-w-md">
+            <h3 className="text-xl font-bold mb-4 text-gray-900 dark:text-white">➡️ 유저를 다른 계정으로 이전</h3>
+            <p className="text-gray-600 dark:text-gray-300 mb-4">
+              <span className="font-bold text-blue-600 dark:text-blue-400">{moveAccountIdentity.name}</span> 유저를 선택한 계정으로 옮깁니다. 사이트, 출석, 커뮤니티 등 관련 데이터가 함께 이전됩니다.
+            </p>
+            <div className="mb-4">
+              <label className="block text-sm font-bold text-gray-700 dark:text-white mb-2">대상 계정</label>
+              <select
+                value={selectedTargetAccountId}
+                onChange={(e) => setSelectedTargetAccountId(e.target.value)}
+                className="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-md px-3 py-2"
+              >
+                <option value="">계정 선택...</option>
+                {moveTargetAccounts.map((acc) => (
+                  <option key={acc.id} value={acc.id}>
+                    {acc.display_name || acc.username || `ID: ${acc.id}`}
+                  </option>
+                ))}
+              </select>
+              {moveTargetAccounts.length === 0 && (
+                <p className="text-sm text-amber-600 dark:text-amber-400 mt-2">이전 가능한 다른 계정이 없습니다 (같은 사무실 내 계정만 선택 가능)</p>
+              )}
+            </div>
+            <div className="flex gap-2 justify-end">
+              <button
+                onClick={() => {
+                  setShowMoveAccountModal(false);
+                  setMoveAccountIdentity(null);
+                  setMoveTargetAccounts([]);
+                  setSelectedTargetAccountId('');
+                }}
+                className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-white"
+              >
+                취소
+              </button>
+              <button
+                onClick={executeMoveAccount}
+                disabled={!selectedTargetAccountId || movingAccount}
+                className="px-4 py-2 bg-amber-500 text-white rounded-md hover:bg-amber-600 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {movingAccount ? '이전 중...' : '이전하기'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* 유저 추가/수정 모달 - transform div 밖에 렌더링 */}
       {showIdentityModal && (

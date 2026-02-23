@@ -416,6 +416,182 @@ router.post('/', auth, async (req, res) => {
   }
 });
 
+// 명의 → 다른 계정으로 이전 (/:id보다 먼저 정의)
+router.put('/:id/move-account', auth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { targetAccountId } = req.body;
+
+    const identityId = parseInt(id, 10);
+    const targetId = targetAccountId != null ? parseInt(targetAccountId, 10) : null;
+
+    if (!identityId || isNaN(identityId)) {
+      return res.status(400).json({ success: false, message: '유효하지 않은 명의 ID입니다' });
+    }
+    if (!targetId || isNaN(targetId)) {
+      return res.status(400).json({ success: false, message: '대상 계정 ID를 입력해주세요' });
+    }
+
+    const identity = await db.get('SELECT * FROM identities WHERE id = ?', [identityId]);
+    if (!identity) {
+      return res.status(404).json({ success: false, message: '명의를 찾을 수 없습니다' });
+    }
+
+    const sourceAccountId = identity.account_id;
+    if (sourceAccountId === targetId) {
+      return res.status(400).json({ success: false, message: '이미 해당 계정에 속해 있습니다' });
+    }
+
+    const targetAccount = await db.get('SELECT id, username, display_name, office_id FROM accounts WHERE id = ? AND status = ?', [targetId, 'active']);
+    if (!targetAccount) {
+      return res.status(404).json({ success: false, message: '대상 계정을 찾을 수 없습니다' });
+    }
+
+    const sourceAccount = await db.get('SELECT office_id FROM accounts WHERE id = ?', [sourceAccountId]);
+    const filterAccountId = req.user.filterAccountId || req.user.accountId;
+
+    // 권한 체크
+    if (req.user.isSuperAdmin) {
+      // 슈퍼 관리자: 모든 계정 간 이전 허용
+    } else if (req.user.isOfficeManager && req.user.filterOfficeId) {
+      const officeId = req.user.filterOfficeId;
+      if (sourceAccount && sourceAccount.office_id !== officeId) {
+        return res.status(403).json({ success: false, message: '해당 명의에 대한 이전 권한이 없습니다' });
+      }
+      if (targetAccount.office_id !== officeId) {
+        return res.status(403).json({ success: false, message: '같은 사무실 내 계정으로만 이전할 수 있습니다' });
+      }
+    } else {
+      if (identity.account_id !== filterAccountId) {
+        return res.status(403).json({ success: false, message: '권한이 없습니다' });
+      }
+      // 일반 사용자는 이전 불가 (관리자만 가능)
+      return res.status(403).json({ success: false, message: '명의 이전은 사무실 관리자 이상만 가능합니다' });
+    }
+
+    const identityName = identity.name;
+
+    try {
+      await db.run('BEGIN TRANSACTION');
+
+      await db.run('UPDATE identities SET account_id = ? WHERE id = ?', [targetId, identityId]);
+
+      await db.run('UPDATE site_attendance SET account_id = ? WHERE identity_id = ?', [targetId, identityId]);
+
+      await db.run(
+        'UPDATE site_attendance_log SET account_id = ? WHERE identity_name = ? AND account_id = ?',
+        [targetId, identityName, sourceAccountId]
+      );
+
+      await db.run(
+        'UPDATE communities SET account_id = ? WHERE identity_name = ? AND account_id = ?',
+        [targetId, identityName, sourceAccountId]
+      );
+
+      await db.run(
+        'UPDATE finish_data SET account_id = ? WHERE identity_name = ? AND account_id = ?',
+        [targetId, identityName, sourceAccountId]
+      );
+
+      await db.run(
+        'UPDATE start_data SET account_id = ? WHERE identity_name = ? AND account_id = ?',
+        [targetId, identityName, sourceAccountId]
+      );
+
+      await db.run(
+        'UPDATE payback_cleared SET account_id = ? WHERE identity_name = ? AND account_id = ?',
+        [targetId, identityName, sourceAccountId]
+      );
+
+      await db.run('COMMIT');
+    } catch (err) {
+      await db.run('ROLLBACK').catch(() => {});
+      throw err;
+    }
+
+    await logAudit(req, {
+      action: 'UPDATE',
+      tableName: 'identities',
+      recordId: identityId,
+      oldData: { ...identity, account_id: sourceAccountId },
+      newData: { ...identity, account_id: targetId },
+      description: `명의 계정 이전: ${identityName} (계정 ${sourceAccountId} → ${targetId})`
+    });
+
+    const targetDisplay = targetAccount.display_name || targetAccount.username || targetId;
+    emitDataChange('identities:changed', {
+      action: 'move-account',
+      accountId: targetId,
+      identityId,
+      user: req.user.displayName || req.user.username
+    }, { room: `account:${sourceAccountId}`, excludeSocket: req.socketId });
+    emitDataChange('identities:changed', {
+      action: 'move-account',
+      accountId: targetId,
+      identityId,
+      user: req.user.displayName || req.user.username
+    }, { room: `account:${targetId}`, excludeSocket: req.socketId });
+
+    res.json({ success: true, message: `"${identityName}"이(가) ${targetDisplay} 계정으로 이전되었습니다` });
+  } catch (error) {
+    console.error('명의 계정 이전 실패:', error);
+    res.status(500).json({ success: false, message: error.message || '명의 계정 이전에 실패했습니다' });
+  }
+});
+
+// 이전 대상 계정 목록 조회 (관리자용)
+router.get('/:id/move-target-accounts', auth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const identityId = parseInt(id, 10);
+
+    if (!identityId || isNaN(identityId)) {
+      return res.status(400).json({ success: false, message: '유효하지 않은 명의 ID입니다' });
+    }
+
+    const identity = await db.get('SELECT * FROM identities WHERE id = ?', [identityId]);
+    if (!identity) {
+      return res.status(404).json({ success: false, message: '명의를 찾을 수 없습니다' });
+    }
+
+    const filterAccountId = req.user.filterAccountId || req.user.accountId;
+
+    if (!req.user.isSuperAdmin && !req.user.isOfficeManager) {
+      return res.status(403).json({ success: false, message: '명의 이전은 사무실 관리자 이상만 가능합니다' });
+    }
+
+    if (!req.user.isSuperAdmin) {
+      const officeIdForCheck = req.user.filterOfficeId || req.user.officeId;
+      if (!officeIdForCheck) return res.status(403).json({ success: false, message: '권한이 없습니다' });
+      const sourceAcc = await db.get('SELECT office_id FROM accounts WHERE id = ?', [identity.account_id]);
+      if (!sourceAcc || sourceAcc.office_id !== officeIdForCheck) {
+        return res.status(403).json({ success: false, message: '해당 명의에 대한 권한이 없습니다' });
+      }
+    }
+
+    let accounts = [];
+    if (req.user.isSuperAdmin) {
+      accounts = await db.all(
+        `SELECT id, username, display_name FROM accounts WHERE status = 'active' AND id != ? ORDER BY display_order ASC, display_name ASC`,
+        [identity.account_id]
+      );
+    } else {
+      const officeId = req.user.filterOfficeId || (await db.get('SELECT office_id FROM accounts WHERE id = ?', [identity.account_id]))?.office_id;
+      if (officeId) {
+        accounts = await db.all(
+          `SELECT id, username, display_name FROM accounts WHERE office_id = ? AND status = 'active' AND id != ? ORDER BY display_order ASC, display_name ASC`,
+          [officeId, identity.account_id]
+        );
+      }
+    }
+
+    res.json({ success: true, accounts });
+  } catch (error) {
+    console.error('이전 대상 계정 조회 실패:', error);
+    res.status(500).json({ success: false, message: '이전 대상 계정 조회에 실패했습니다' });
+  }
+});
+
 // 명의 수정
 router.put('/:id', auth, async (req, res) => {
   try {

@@ -11,6 +11,16 @@ import { useRealtimeSync } from '../hooks/useRealtimeSync';
 // 디버그 로그 비활성화
 const DEBUG = false;
 const log = DEBUG ? console.log.bind(console) : () => {};
+
+// 사이트 이벤트 정보가 없을 때 기본으로 표시할 이벤트 (수정·삭제 가능)
+const DEFAULT_SITE_EVENTS = [
+  { event: '출석', detail: '', rolling: '' },
+  { event: '신규첫충', detail: '', rolling: '' },
+  { event: '첫충매충', detail: '', rolling: '' },
+  { event: '페이백', detail: '', rolling: '' },
+  { event: '요율', detail: '', rolling: '' },
+  { event: '신규정착', detail: '', rolling: '' }
+];
 const logWarn = DEBUG ? console.warn.bind(console) : () => {};
 const logTable = DEBUG ? console.table.bind(console) : () => {};
 
@@ -1366,6 +1376,11 @@ function DRBet() {
         }];
       }
     }
+
+    // 이벤트가 없으면 기본 이벤트 표시 (수정·삭제 가능)
+    if (defaultData.events.length === 0) {
+      defaultData.events = DEFAULT_SITE_EVENTS.map(evt => ({ ...evt }));
+    }
     
     // events 배열의 각 항목에 rolling 필드가 없으면 추가
     defaultData.events = defaultData.events.map(evt => ({
@@ -1740,6 +1755,11 @@ function DRBet() {
           rolling: existingData.eventRolling || ''
         }];
       }
+    }
+
+    // 이벤트가 없으면 기본 이벤트 표시 (수정·삭제 가능)
+    if (defaultData.events.length === 0) {
+      defaultData.events = DEFAULT_SITE_EVENTS.map(evt => ({ ...evt }));
     }
     
     // events 배열의 각 항목에 rolling 필드가 없으면 추가
