@@ -74,7 +74,6 @@ export const SocketProvider = ({ children }) => {
     });
 
     socket.on('connect', () => {
-      console.log('[Socket] 연결 성공:', socket.id);
       setConnected(true);
 
       // 현재 페이지에 재입장
@@ -89,7 +88,6 @@ export const SocketProvider = ({ children }) => {
     });
 
     socket.on('disconnect', (reason) => {
-      console.log('[Socket] 연결 해제:', reason);
       setConnected(false);
     });
 

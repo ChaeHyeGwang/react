@@ -24,10 +24,6 @@ const getAPIUrl = () => {
 
 const API_URL = getAPIUrl();
 
-// 디버깅용 로그
-console.log('🔍 API_URL 설정:', API_URL);
-console.log('🔍 환경변수 REACT_APP_API_URL:', process.env.REACT_APP_API_URL);
-
 // Axios 인스턴스 생성
 const axiosInstance = axios.create({
   baseURL: API_URL,

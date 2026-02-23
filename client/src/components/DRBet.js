@@ -400,11 +400,16 @@ function DRBet() {
       }
     }
     
-    if (toLoadStats.length > 0) {
+    // 유효한 조합만 필터 (빈 사이트/명의 제외)
+    const validToLoad = toLoadStats.filter(
+      ({ siteName, identityName }) => siteName?.trim() && identityName?.trim()
+    );
+    
+    if (validToLoad.length > 0) {
       try {
         // 배치 API로 한 번에 조회
         const response = await axiosInstance.post('/attendance/stats/batch', {
-          sites: toLoadStats
+          sites: validToLoad
         });
         
         if (response.data?.success && Array.isArray(response.data.results)) {
@@ -434,11 +439,17 @@ function DRBet() {
           }));
         }
       } catch (error) {
-        console.error('배치 출석 통계 조회 실패:', error);
+        // 서버 메시지가 있으면 표시, 없으면 기본 메시지
+        const msg = error.response?.data?.message || error.message;
+        if (error.response?.status === 400) {
+          // 400은 빈 목록 등 클라이언트 문제 - 폴백으로 처리, 콘솔 스팸 방지
+        } else {
+          console.error('배치 출석 통계 조회 실패:', msg, error.response?.data);
+        }
         
         // 폴백: 개별 API 호출
         const results = await Promise.all(
-          toLoadStats.map(async ({ siteName, identityName }) => {
+          validToLoad.map(async ({ siteName, identityName }) => {
             try {
               const stats = await getAttendanceStats(siteName, identityName);
               const cacheKey = getAttendanceCacheKey(siteName, identityName);
@@ -635,32 +646,11 @@ function DRBet() {
     const dayNames = ['일', '월', '화', '수', '목', '금', '토'];
     const currentDayName = dayNames[dayOfWeek];
     
-    console.log('📅 [선택된 날짜 정보]', {
-      selectedDate: selectedDate,
-      dayOfWeek: dayOfWeek,
-      dayName: currentDayName,
-      fullDate: dateObj.toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })
-    });
-    
     log(`[클라이언트] fetchDailySummary 호출: selectedDate=${selectedDate}, 요일=${currentDayName}`);
     try {
       log(`[클라이언트] API 호출: GET /drbet/summary/${selectedDate}`);
       const response = await axiosInstance.get(`/drbet/summary/${selectedDate}`);
       log(`[클라이언트] API 응답 받음:`, response.data);
-      
-      // 페이백 데이터의 지급요일 정보도 로그로 출력
-      if (response.data?.success && response.data.paybackData) {
-        console.log('💰 [페이백 데이터 지급요일 정보]', {
-          selectedDate: selectedDate,
-          currentDayName: currentDayName,
-          paybackItems: response.data.paybackData.map(item => ({
-            identityName: item.identityName,
-            siteName: item.siteName,
-            paybackAmounts: item.paybackAmounts,
-            paybackDays: Object.keys(item.paybackAmounts || {}).filter(k => !k.startsWith('당일'))
-          }))
-        });
-      }
       
       if (response.data?.success) {
         const summaryPaybacks = response.data.paybackData || [];

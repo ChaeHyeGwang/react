@@ -99,6 +99,29 @@ const AdminRoute = ({ children }) => {
   return children;
 };
 
+// 슈퍼관리자 또는 사무실 관리자 전용 라우트 (사무실 관리 등)
+const AdminOrOfficeManagerRoute = ({ children }) => {
+  const { user, loading, isAdmin, isOfficeManager } = useAuth();
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600"></div>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return <Navigate to="/login" replace />;
+  }
+
+  if (!isAdmin && !isOfficeManager) {
+    return <Navigate to="/dashboard" replace />;
+  }
+
+  return children;
+};
+
 // 공개 라우트 컴포넌트 (로그인된 사용자는 대시보드로 리다이렉트)
 const PublicRoute = ({ children }) => {
   const { user, loading } = useAuth();
@@ -201,10 +224,10 @@ function App() {
                 <Route 
                   path="offices" 
                   element={
-                    <AdminRoute>
+                    <AdminOrOfficeManagerRoute>
                       <OfficeManagement />
-                    </AdminRoute>
-                  } 
+                    </AdminOrOfficeManagerRoute>
+                  }
                 />
                 <Route 
                   path="audit-logs" 

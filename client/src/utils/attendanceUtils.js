@@ -5,8 +5,6 @@ import axiosInstance from '../api/axios';
  */
 export async function getAttendanceStats(siteName, identityName) {
   try {
-    console.log('🔍 [attendanceUtils] 출석 통계 요청:', { siteName, identityName });
-    
     if (!siteName || !identityName || siteName.trim() === '' || identityName.trim() === '') {
       console.warn('⚠️ [attendanceUtils] 필수 파라미터 누락:', { siteName, identityName });
       return null;
@@ -15,8 +13,6 @@ export async function getAttendanceStats(siteName, identityName) {
     const response = await axiosInstance.get('/attendance/stats', {
       params: { siteName, identityName }
     });
-    
-    console.log('📥 [attendanceUtils] 서버 응답:', response.data);
     
     if (response.data.success) {
       return response.data;

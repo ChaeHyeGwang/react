@@ -42,8 +42,8 @@ const {
 } = require('../utils/attendanceLog');
 const { getKSTDateString } = require('../utils/time');
 
-// 개발 모드 확인 (로그 출력 여부)
-const DEBUG = process.env.NODE_ENV !== 'production';
+// 개발 모드 확인 (로그 출력 여부) - 출석 로그는 기본 비활성화
+const DEBUG = false; // process.env.NODE_ENV !== 'production' && process.env.DEBUG_ATTENDANCE === '1';
 const log = (...args) => DEBUG && console.log(...args);
 
 // 🔧 요청 단위 캐시 (매 요청마다 초기화)

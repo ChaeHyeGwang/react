@@ -136,17 +136,13 @@ const SiteNotesModal = ({
   const loadAttendanceStats = async () => {
     setLoadingStats(true);
     try {
-      console.log('📊 [출석통계] 조회 시작:', { siteName, identityName });
       const stats = await getAttendanceStats(siteName, identityName);
-      console.log('📊 [출석통계] 조회 결과:', stats);
       
       if (stats) {
         setAttendanceStats(stats);
         const recent = getRecentAttendance(stats.recentLogs || [], 7);
         setRecentAttendance(recent);
-        console.log('✅ [출석통계] 설정 완료:', { stats, recent });
       } else {
-        console.log('⚠️ [출석통계] 데이터 없음');
         setAttendanceStats(null);
         setRecentAttendance([]);
       }
