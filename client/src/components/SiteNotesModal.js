@@ -64,7 +64,7 @@ const SiteNotesModal = ({
         settlement: data.settlement || '',
         settlementTotal: data.settlementTotal || 0,
         settlementPoint: data.settlementPoint || '',
-        settlementDays: data.settlementDays || 0,
+        settlementDays: data.settlementDays,
         settlementRulesJson: JSON.stringify(data.settlementRules || []),
         // 만근
         tenure: data.tenure || '',
@@ -98,7 +98,7 @@ const SiteNotesModal = ({
     if ((data.settlement || '') !== initialData.settlement) return true;
     if ((data.settlementTotal || 0) !== initialData.settlementTotal) return true;
     if ((data.settlementPoint || '') !== initialData.settlementPoint) return true;
-    if ((data.settlementDays || 0) !== initialData.settlementDays) return true;
+    if (String(data.settlementDays ?? '') !== String(initialData.settlementDays ?? '')) return true;
     const currentSettlementRulesJson = JSON.stringify(data.settlementRules || []);
     if (currentSettlementRulesJson !== initialData.settlementRulesJson) return true;
     
@@ -749,10 +749,14 @@ const SiteNotesModal = ({
                 <input
                   type="number"
                   className="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded px-2 py-1 text-xs"
-                  value={data.settlementDays || 0}
-                  onChange={(e) => !readonly && handleDataChange({ settlementDays: parseInt(e.target.value) || 0 })}
+                  value={data.settlementDays !== undefined && data.settlementDays !== null ? data.settlementDays : ''}
+                  onChange={(e) => {
+                    const value = e.target.value === '' ? '' : parseInt(e.target.value) || 0;
+                    !readonly && handleDataChange({ settlementDays: value });
+                  }}
                   disabled={readonly}
                   placeholder="예: 10"
+                  min="0"
                 />
               </div>
               {/* 단일 지급 체크는 제거됨: 지급은 규칙별로 테이블에서 관리 */}

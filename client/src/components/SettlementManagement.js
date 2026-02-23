@@ -402,6 +402,30 @@ function SettlementManagement() {
     
     if (isReadOnly) {
       // 읽기 전용 필드 (수익, 사이트/내용)
+      // 사이트/내용: 칩실수 색상 적용 (먹=초록, 못먹=빨강)
+      if (field === 'site_content' && displayValue) {
+        const parts = String(displayValue).split('/').map(p => p.trim()).filter(Boolean);
+        if (parts.length > 0) {
+          return (
+            <div
+              className="px-2 py-1 min-h-[2rem] flex flex-wrap items-center justify-center gap-x-1 gap-y-0.5 text-gray-700 dark:text-white text-sm"
+              title="수정 불가"
+            >
+              {parts.map((part, idx) => {
+                const hasLost = part.includes('못먹');
+                const hasWon = part.includes('먹') && !part.includes('못먹');
+                const cn = hasLost ? 'text-red-600 dark:text-red-400 font-medium' : hasWon ? 'text-green-600 dark:text-green-400 font-medium' : '';
+                return (
+                  <React.Fragment key={idx}>
+                    {idx > 0 && <span className="text-gray-400">/</span>}
+                    <span className={cn}>{part}</span>
+                  </React.Fragment>
+                );
+              })}
+            </div>
+          );
+        }
+      }
       return (
         <div
           className="px-2 py-1 min-h-[2rem] flex items-center justify-center text-gray-700 dark:text-white"

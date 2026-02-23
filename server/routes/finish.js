@@ -40,36 +40,7 @@ const MODE_TABLES = {
 const getMode = (req) => ((req.query.mode || req.body?.mode) === 'start' ? 'start' : 'finish');
 const getTables = (mode) => MODE_TABLES[mode] || MODE_TABLES.finish;
 
-// 특이사항에서 먹/못먹 정보 파싱
-function parseNotesForFinish(notes) {
-  if (!notes) return [];
-  
-  const result = [];
-  const parts = notes.split('/');
-  
-  for (const part of parts) {
-    const trimmedPart = part.trim();
-    if (!trimmedPart) continue;
-    
-    // 패턴 1: 사이트명 + (칩실수|칩팅|배거) + 숫자 + (먹|못먹)
-    // 예: "로로벳칩실수5먹", "의리벳배거15못먹"
-    const match1 = trimmedPart.match(/^(.+?)(칩실수|칩팅|배거)(\d+)(먹|못먹)/);
-    
-    // 패턴 2: (칩실수|칩팅|배거) + 사이트명 + 숫자 + (먹|못먹) (기존 패턴)
-    // 예: "칩실수로로벳5먹"
-    const match2 = trimmedPart.match(/^(칩실수|칩팅|배거)(.+?)(\d+)(먹|못먹)/);
-    
-    if (match1 || match2) {
-      const siteName = match1 ? match1[1] : match2[2];
-      result.push({
-        site: siteName,
-        content: trimmedPart
-      });
-    }
-  }
-  
-  return result;
-}
+const { parseNotesForFinish } = require('../utils/notesParser');
 
 // 마무리 데이터 조회 (날짜별, 현재 사용자의 명의만)
 router.get('/', auth, async (req, res) => {

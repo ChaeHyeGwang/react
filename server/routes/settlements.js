@@ -7,6 +7,7 @@ const path = require('path');
 const { getKSTDateTimeString } = require('../utils/time');
 const { logAudit } = require('../utils/auditLog');
 const { emitDataChange } = require('../socket');
+const { parseNotesForFinish, notesListToSiteContent } = require('../utils/notesParser');
 
 // 기존 sqlite3 연결도 유지 (settlements 테이블용)
 // 환경변수 DB_PATH 사용
@@ -39,6 +40,52 @@ router.post('/recreate-table', auth, async (req, res) => {
 function getDaysInMonth(year, month) {
   // month는 1-12 (1월부터 12월)
   return new Date(year, month, 0).getDate();
+}
+
+/**
+ * site_content가 비어 있는 settlement 기록에 DR벳 notes를 파싱하여 채움
+ * 정산 전송 없이도 사이트/내용에 바때기, 칩실수 등이 표시되도록 함
+ */
+function enrichRecordsWithDrbetNotes(records, targetYearMonth, dbLegacy, cb) {
+  const accountIds = [...new Set(records.map(r => r.account_id))].filter(Boolean);
+  if (accountIds.length === 0) {
+    return cb(records);
+  }
+  const placeholders = accountIds.map(() => '?').join(',');
+  const pattern = `${targetYearMonth}-%`;
+  const sql = `SELECT account_id, record_date, notes FROM drbet_records 
+    WHERE account_id IN (${placeholders}) AND record_date LIKE ? AND notes IS NOT NULL AND notes != ''`;
+
+  dbLegacy.all(sql, [...accountIds, pattern], (err, drbetRows) => {
+    if (err) {
+      console.warn('DR벳 notes 조회 실패 (site_content 보강 스킵):', err.message);
+      return cb(records);
+    }
+    // (account_id, day_number) -> site_content 문자열
+    const map = new Map();
+    for (const row of drbetRows || []) {
+      const parsed = parseNotesForFinish(row.notes);
+      if (parsed.length === 0) continue;
+      const day = row.record_date ? parseInt(String(row.record_date).slice(-2), 10) : null;
+      if (!day) continue;
+      const key = `${row.account_id}-${day}`;
+      const existing = map.get(key) || [];
+      for (const p of parsed) {
+        if (!existing.find(x => x.content === p.content)) existing.push(p);
+      }
+      map.set(key, existing);
+    }
+    // records에 보강
+    for (const rec of records) {
+      if (rec.site_content && String(rec.site_content).trim()) continue;
+      const key = `${rec.account_id}-${rec.day_number}`;
+      const list = map.get(key);
+      if (list && list.length > 0) {
+        rec.site_content = notesListToSiteContent(list);
+      }
+    }
+    cb(records);
+  });
 }
 
 // 월별 데이터 초기화 확인 (빈 데이터 생성하지 않음)
@@ -119,7 +166,7 @@ router.get('/', auth, (req, res) => {
           user_data: typeof row.user_data === 'string' ? JSON.parse(row.user_data || '{}') : row.user_data
         }));
         
-        res.json(records);
+        enrichRecordsWithDrbetNotes(records, targetYearMonth, dbLegacy, (enriched) => res.json(enriched));
       });
       return;
     }
@@ -145,7 +192,7 @@ router.get('/', auth, (req, res) => {
         user_data: typeof row.user_data === 'string' ? JSON.parse(row.user_data || '{}') : row.user_data
       }));
       
-      res.json(records);
+      enrichRecordsWithDrbetNotes(records, targetYearMonth, dbLegacy, (enriched) => res.json(enriched));
     });
     return;
   }
@@ -166,7 +213,7 @@ router.get('/', auth, (req, res) => {
     }));
     
     console.log(`${targetYearMonth}월 정산 기록 조회: ${records.length}개 (실제 저장된 데이터)`);
-    res.json(records);
+    enrichRecordsWithDrbetNotes(records, targetYearMonth, dbLegacy, (enriched) => res.json(enriched));
   });
 });
 

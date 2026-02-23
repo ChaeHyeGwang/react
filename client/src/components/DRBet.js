@@ -3761,8 +3761,9 @@ function DRBet() {
   const parseNotesToStructured = (notes, recordSites) => {
     // recordSites: [{ id: 1, name: '샷벳' }, { id: 2, name: '원탑벳' }]
     const structured = {
-      sites: {}, // { siteName: { points: [{ type: '출석', amount: 10 }, ...], chips: [{ type: 'chip', amount: 30, loss: 'won' }, ...] } }
-      bategis: [], // [{ amount: 100, type: '충' }]
+      sites: {}, // { siteName: { points: [...], chips: [...] } }
+      bategis: [], // [{ amount: 100, type: '충'|'환' }] - 충/환만
+      bategiChips: [], // [{ type: 'chip'|'bager'|'chipting', amount, loss: 'won'|'lost' }] - 칩실수(사이트와 동일 UI)
       manuals: [] // ['메모1', '메모2']
     };
     
@@ -3773,12 +3774,33 @@ function DRBet() {
     parts.forEach(part => {
       const trimmed = part.trim();
       
-      // 바때기 패턴
-      const bategiMatch = trimmed.match(/^바때기([\d.]+)(충|환)$/);
-      if (bategiMatch) {
+      // 바때기 충/환 패턴
+      const bategiChargeMatch = trimmed.match(/^바때기([\d.]+)(충|환)$/);
+      if (bategiChargeMatch) {
         structured.bategis.push({
-          amount: parseFloat(bategiMatch[1]) || 0,
-          type: bategiMatch[2]
+          amount: parseFloat(bategiChargeMatch[1]) || 0,
+          type: bategiChargeMatch[2]
+        });
+        return;
+      }
+      // 바때기 칩실수 패턴 - 바때기+종류+숫자+먹/못먹 (새 형식)
+      const bategiChipFullMatch = trimmed.match(/^바때기(칩실수|배거|칩팅)([\d.]+)(먹|못먹)$/);
+      if (bategiChipFullMatch) {
+        const chipType = bategiChipFullMatch[1] === '배거' ? 'bager' : bategiChipFullMatch[1] === '칩팅' ? 'chipting' : 'chip';
+        structured.bategiChips.push({
+          type: chipType,
+          amount: parseFloat(bategiChipFullMatch[2]) || 0,
+          loss: bategiChipFullMatch[3] === '못먹' ? 'lost' : 'won'
+        });
+        return;
+      }
+      // 바때기 칩실수 패턴 - 바때기+숫자+먹/못먹 (기존 형식, 칩실수 기본)
+      const bategiChipShortMatch = trimmed.match(/^바때기([\d.]+)(먹|못먹)$/);
+      if (bategiChipShortMatch) {
+        structured.bategiChips.push({
+          type: 'chip',
+          amount: parseFloat(bategiChipShortMatch[1]) || 0,
+          loss: bategiChipShortMatch[2] === '못먹' ? 'lost' : 'won'
         });
         return;
       }
@@ -3974,11 +3996,20 @@ function DRBet() {
       });
     });
     
-    // 바때기들 (amount가 빈 값이거나 0이면 제외)
+    // 바때기 충/환
     (structured.bategis || []).forEach(bategi => {
       const amount = bategi.amount === '' || bategi.amount === 0 ? 0 : (parseFloat(bategi.amount) || 0);
       if (amount > 0) {
         parts.push(`바때기${amount}${bategi.type}`);
+      }
+    });
+    // 바때기 칩실수 (사이트 칩실수와 동일 형식)
+    (structured.bategiChips || []).forEach(chip => {
+      const amount = chip.amount === '' || chip.amount === 0 ? 0 : (parseFloat(chip.amount) || 0);
+      if (amount > 0) {
+        const chipPrefix = chip.type === 'bager' ? '배거' : chip.type === 'chipting' ? '칩팅' : '칩실수';
+        const lossText = chip.loss === 'lost' ? '못먹' : '먹';
+        parts.push(`바때기${chipPrefix}${amount}${lossText}`);
       }
     });
     
@@ -4299,13 +4330,21 @@ function DRBet() {
         return; // 수동입력이면 다른 패턴 체크하지 않고 다음 파트로
       }
       
-      // 바때기 패턴 체크
-      const bategiMatch = part.match(/^바때기([\d.]+)(충|환)$/);
+      // 바때기 패턴 체크 (충/환/먹/못먹)
+      const bategiMatch = part.match(/^바때기([\d.]+)(충|환|먹|못먹)$/);
       if (bategiMatch) {
         const [, amount, type] = bategiMatch;
         extraInputs.bategiAmount = amount;
         extraInputs.bategiType = type;
         return; // 바때기면 다른 패턴 체크하지 않고 다음 파트로
+      }
+      // 바때기 칩실수 패턴 (칩실수/배거/칩팅+숫자+먹/못먹)
+      const bategiChipMatch = part.match(/^바때기(칩실수|배거|칩팅)([\d.]+)(먹|못먹)$/);
+      if (bategiChipMatch) {
+        const [, , amount, type] = bategiChipMatch;
+        extraInputs.bategiAmount = amount;
+        extraInputs.bategiType = type;
+        return;
       }
       
       // 파트에서 사이트이름+숫자+먹/못먹 패턴 찾기
@@ -4588,7 +4627,7 @@ function DRBet() {
 
     if (hasBategiAmount) {
       if (!extraNoteInputs.bategiType) {
-        toast.error('바때기 금액을 입력했으니 충/환을 선택해주세요.');
+        toast.error('바때기 금액을 입력했으니 충/환 또는 칩실수(먹/못먹)를 선택해주세요.');
         hasValidationError = true;
       } else if (Number.isNaN(parseFloat(trimmedBategiAmount))) {
         toast.error('바때기 금액은 숫자로 입력해주세요.');
@@ -4749,8 +4788,8 @@ function DRBet() {
           return trimmed;
         }
         
-        // 바때기로 시작하는 파트도 그대로 유지
-        if (trimmed.match(/^바때기[\d.]+(충|환)$/)) {
+        // 바때기로 시작하는 파트도 그대로 유지 (충/환/먹/못먹, 칩실수/배거/칩팅)
+        if (trimmed.match(/^바때기[\d.]+(충|환|먹|못먹)$/) || trimmed.match(/^바때기(칩실수|배거|칩팅)[\d.]+(먹|못먹)$/)) {
           return trimmed;
         }
         
@@ -4779,7 +4818,7 @@ function DRBet() {
         const trimmedPart = part.trim();
         
         // 바때기를 새로 입력했으면 기존 바때기 모두 제거
-        if (hasNewBategi && trimmedPart.match(/^바때기[\d.]+(충|환)$/)) {
+        if (hasNewBategi && (trimmedPart.match(/^바때기[\d.]+(충|환|먹|못먹)$/) || trimmedPart.match(/^바때기(칩실수|배거|칩팅)[\d.]+(먹|못먹)$/))) {
           return false;
         }
         
@@ -4955,7 +4994,7 @@ function DRBet() {
       // 모달로 생성한 모든 문자열 제거 (사이트명+숫자로 시작하는 패턴, 소수점 포함)
       let cleanedNotes = currentNotes.split('/').filter(part => {
         const trimmed = part.trim();
-        if (trimmed.match(/^바때기[\d.]+(충|환)$/)) {
+        if (trimmed.match(/^바때기[\d.]+(충|환|먹|못먹)$/) || trimmed.match(/^바때기(칩실수|배거|칩팅)[\d.]+(먹|못먹)$/)) {
           return false;
         }
         if (trimmed.startsWith('[수동]')) {
@@ -7547,11 +7586,11 @@ function DRBet() {
           // 충전이 있으면 part 전체 초록색
           return `<span class="text-green-600">${escaped}</span>`;
         } else if (hasLost) {
-          // 못먹이 있으면 part 전체 빨간색
+          // 못먹이 있으면 part 전체 빨간색 (사이트 칩실수와 동일)
           return `<span class="text-red-600">${escaped}</span>`;
         } else if (hasWon) {
-          // 먹이 있으면 part 전체 파란색
-          return `<span class="text-blue-600">${escaped}</span>`;
+          // 먹이 있으면 part 전체 초록색 (사이트 칩실수와 동일)
+          return `<span class="text-green-600">${escaped}</span>`;
         }
         
         // 해당 패턴이 없으면 기본 색상 (HTML 이스케이프 처리)
@@ -7616,7 +7655,7 @@ function DRBet() {
         }
       }
       
-      const structured = notesEditData[recordId] || { sites: {}, bategis: [], manuals: [] };
+      const structured = notesEditData[recordId] || { sites: {}, bategis: [], bategiChips: [], manuals: [] };
       const expanded = expandedSites[recordId] || {};
       
       return (
@@ -7698,7 +7737,7 @@ function DRBet() {
                               addingItemRef.current = true;
                               setNotesEditData(prev => {
                                 const newData = { ...prev };
-                                if (!newData[recordId]) newData[recordId] = { sites: {}, bategis: [], manuals: [] };
+                                if (!newData[recordId]) newData[recordId] = { sites: {}, bategis: [], bategiChips: [], manuals: [] };
                                 if (!newData[recordId].sites[site.name]) newData[recordId].sites[site.name] = { points: [], chips: [] };
                                 
                                 // 중복 추가 방지: 이미 처리 중이면 스킵
@@ -7793,7 +7832,7 @@ function DRBet() {
                               addingItemRef.current = true;
                               setNotesEditData(prev => {
                                 const newData = { ...prev };
-                                if (!newData[recordId]) newData[recordId] = { sites: {}, bategis: [], manuals: [] };
+                                if (!newData[recordId]) newData[recordId] = { sites: {}, bategis: [], bategiChips: [], manuals: [] };
                                 if (!newData[recordId].sites[site.name]) newData[recordId].sites[site.name] = { points: [], chips: [] };
                                 
                                 // 중복 추가 방지: 이미 처리 중이면 스킵
@@ -7885,90 +7924,186 @@ function DRBet() {
               );
             })}
             
-            {/* 바때기 섹션 */}
-            <div className="border border-gray-300 dark:border-gray-600 rounded p-2">
-              <div className="flex justify-between items-center mb-1">
-                <span className="text-xs font-semibold text-gray-700 dark:text-white">바때기</span>
-                <button
-                  onClick={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    e.nativeEvent.stopImmediatePropagation();
-                    if (addingItemRef.current) {
-                      log('중복 클릭 방지: 바때기 추가');
-                      return;
-                    }
-                    addingItemRef.current = true;
-                    setNotesEditData(prev => {
-                      const newData = { ...prev };
-                      if (!newData[recordId]) newData[recordId] = { sites: {}, bategis: [], manuals: [] };
-                      
-                      // 중복 추가 방지: 이미 처리 중이면 스킵
-                      const currentLength = newData[recordId].bategis.length;
-                      const lastBategi = currentLength > 0 ? newData[recordId].bategis[currentLength - 1] : null;
-                      
-                      // 마지막 항목이 방금 추가된 빈 항목이면 추가하지 않음
-                      if (lastBategi && lastBategi.amount === '' && lastBategi.type === '충') {
-                        addingItemRef.current = false;
-                        return newData;
+            {/* 바때기 섹션 - 사이트와 동일하게 충/환, 칩실수 하위 항목 */}
+            <div className="border border-gray-300 dark:border-gray-600 rounded p-2 space-y-2">
+              <div className="text-xs font-semibold text-gray-700 dark:text-white mb-0.5">바때기</div>
+              {/* 충/환 */}
+              <div>
+                <div className="flex justify-between items-center mb-1">
+                  <span className="text-xs text-gray-600 dark:text-gray-300">충/환</span>
+                  <button
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      e.nativeEvent.stopImmediatePropagation();
+                      if (addingItemRef.current) {
+                        log('중복 클릭 방지: 바때기 충/환 추가');
+                        return;
                       }
-                      
-                      newData[recordId].bategis.push({ amount: '', type: '충' });
-                      setTimeout(() => { addingItemRef.current = false; }, 50);
-                      return newData;
-                    });
-                  }}
-                  className="text-xs text-blue-500 hover:text-blue-600"
-                >
-                  + 추가
-                </button>
+                      addingItemRef.current = true;
+                      setNotesEditData(prev => {
+                        const newData = { ...prev };
+                        if (!newData[recordId]) newData[recordId] = { sites: {}, bategis: [], bategiChips: [], manuals: [] };
+                        const currentLength = newData[recordId].bategis.length;
+                        const lastBategi = currentLength > 0 ? newData[recordId].bategis[currentLength - 1] : null;
+                        if (lastBategi && lastBategi.amount === '' && lastBategi.type === '충') {
+                          addingItemRef.current = false;
+                          return newData;
+                        }
+                        newData[recordId].bategis.push({ amount: '', type: '충' });
+                        setTimeout(() => { addingItemRef.current = false; }, 50);
+                        return newData;
+                      });
+                    }}
+                    className="text-xs text-blue-500 hover:text-blue-600"
+                  >
+                    + 추가
+                  </button>
+                </div>
+                <div className="space-y-1">
+                  {(structured.bategis || []).map((bategi, idx) => (
+                    <div key={idx} className="flex gap-1 items-center">
+                      <input
+                        type="number"
+                        step="0.1"
+                        value={bategi.amount === '' ? '' : bategi.amount}
+                        onChange={(e) => {
+                          setNotesEditData(prev => {
+                            const newData = { ...prev };
+                            const val = e.target.value;
+                            newData[recordId].bategis[idx].amount = val === '' ? '' : Number(val);
+                            return newData;
+                          });
+                        }}
+                        className="flex-1 text-xs border rounded px-1 py-1 dark:bg-gray-700 dark:text-white"
+                        placeholder="금액"
+                      />
+                      <select
+                        value={bategi.type}
+                        onChange={(e) => {
+                          setNotesEditData(prev => {
+                            const newData = { ...prev };
+                            newData[recordId].bategis[idx].type = e.target.value;
+                            return newData;
+                          });
+                        }}
+                        className="text-xs border rounded px-1 py-1 dark:bg-gray-700 dark:text-white"
+                      >
+                        <option value="충">충</option>
+                        <option value="환">환</option>
+                      </select>
+                      <button
+                        onClick={() => {
+                          setNotesEditData(prev => {
+                            const newData = { ...prev };
+                            newData[recordId].bategis.splice(idx, 1);
+                            return newData;
+                          });
+                        }}
+                        className="text-xs text-red-500 hover:text-red-600 px-1"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  ))}
+                </div>
               </div>
-              <div className="space-y-1">
-                {(structured.bategis || []).map((bategi, idx) => (
-                  <div key={idx} className="flex gap-1 items-center">
-                    <input
-                      type="number"
-                      step="0.1"
-                      value={bategi.amount === '' ? '' : bategi.amount}
-                      onChange={(e) => {
-                        setNotesEditData(prev => {
-                          const newData = { ...prev };
-                          const val = e.target.value;
-                          newData[recordId].bategis[idx].amount = val === '' ? '' : Number(val);
+              {/* 칩실수 - 사이트 칩실수와 동일한 UI */}
+              <div>
+                <div className="flex justify-between items-center mb-1">
+                  <span className="text-xs text-gray-600 dark:text-gray-300">칩실수</span>
+                  <button
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      e.nativeEvent.stopImmediatePropagation();
+                      if (addingItemRef.current) {
+                        log('중복 클릭 방지: 바때기 칩실수 추가');
+                        return;
+                      }
+                      addingItemRef.current = true;
+                      setNotesEditData(prev => {
+                        const newData = { ...prev };
+                        if (!newData[recordId]) newData[recordId] = { sites: {}, bategis: [], bategiChips: [], manuals: [] };
+                        const currentLength = newData[recordId].bategiChips?.length || 0;
+                        const lastChip = currentLength > 0 ? newData[recordId].bategiChips[currentLength - 1] : null;
+                        if (lastChip && lastChip.type === 'chip' && lastChip.amount === '' && lastChip.loss === 'won') {
+                          addingItemRef.current = false;
                           return newData;
-                        });
-                      }}
-                      className="flex-1 text-xs border rounded px-1 py-1 dark:bg-gray-700 dark:text-white"
-                      placeholder="금액"
-                    />
-                    <select
-                      value={bategi.type}
-                      onChange={(e) => {
-                        setNotesEditData(prev => {
-                          const newData = { ...prev };
-                          newData[recordId].bategis[idx].type = e.target.value;
-                          return newData;
-                        });
-                      }}
-                      className="text-xs border rounded px-1 py-1 dark:bg-gray-700 dark:text-white"
-                    >
-                      <option value="충">충</option>
-                      <option value="환">환</option>
-                    </select>
-                    <button
-                      onClick={() => {
-                        setNotesEditData(prev => {
-                          const newData = { ...prev };
-                          newData[recordId].bategis.splice(idx, 1);
-                          return newData;
-                        });
-                      }}
-                      className="text-xs text-red-500 hover:text-red-600 px-1"
-                    >
-                      ✕
-                    </button>
-                  </div>
-                ))}
+                        }
+                        if (!newData[recordId].bategiChips) newData[recordId].bategiChips = [];
+                        newData[recordId].bategiChips.push({ type: 'chip', amount: '', loss: 'won' });
+                        setTimeout(() => { addingItemRef.current = false; }, 50);
+                        return newData;
+                      });
+                    }}
+                    className="text-xs text-blue-500 hover:text-blue-600"
+                  >
+                    + 추가
+                  </button>
+                </div>
+                <div className="space-y-1">
+                  {(structured.bategiChips || []).map((chip, idx) => (
+                    <div key={idx} className="flex gap-1 items-center">
+                      <select
+                        value={chip.type}
+                        onChange={(e) => {
+                          setNotesEditData(prev => {
+                            const newData = { ...prev };
+                            newData[recordId].bategiChips[idx].type = e.target.value;
+                            return newData;
+                          });
+                        }}
+                        className="text-xs border rounded px-1 py-1 dark:bg-gray-700 dark:text-white"
+                      >
+                        <option value="chip">칩실수</option>
+                        <option value="bager">배거</option>
+                        <option value="chipting">칩팅</option>
+                      </select>
+                      <input
+                        type="number"
+                        step="0.1"
+                        value={chip.amount === '' ? '' : chip.amount}
+                        onChange={(e) => {
+                          setNotesEditData(prev => {
+                            const newData = { ...prev };
+                            const val = e.target.value;
+                            newData[recordId].bategiChips[idx].amount = val === '' ? '' : Number(val);
+                            return newData;
+                          });
+                        }}
+                        className="flex-1 text-xs border rounded px-1 py-1 dark:bg-gray-700 dark:text-white"
+                        placeholder="금액"
+                      />
+                      <select
+                        value={chip.loss}
+                        onChange={(e) => {
+                          setNotesEditData(prev => {
+                            const newData = { ...prev };
+                            newData[recordId].bategiChips[idx].loss = e.target.value;
+                            return newData;
+                          });
+                        }}
+                        className="text-xs border rounded px-1 py-1 dark:bg-gray-700 dark:text-white"
+                      >
+                        <option value="won">먹</option>
+                        <option value="lost">못먹</option>
+                      </select>
+                      <button
+                        onClick={() => {
+                          setNotesEditData(prev => {
+                            const newData = { ...prev };
+                            newData[recordId].bategiChips.splice(idx, 1);
+                            return newData;
+                          });
+                        }}
+                        className="text-xs text-red-500 hover:text-red-600 px-1"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  ))}
+                </div>
               </div>
             </div>
             
@@ -7988,7 +8123,7 @@ function DRBet() {
                     addingItemRef.current = true;
                     setNotesEditData(prev => {
                       const newData = { ...prev };
-                      if (!newData[recordId]) newData[recordId] = { sites: {}, bategis: [], manuals: [] };
+                      if (!newData[recordId]) newData[recordId] = { sites: {}, bategis: [], bategiChips: [], manuals: [] };
                       
                       // 중복 추가 방지: 이미 처리 중이면 스킵
                       const currentLength = newData[recordId].manuals.length;
@@ -8122,10 +8257,11 @@ function DRBet() {
                 });
               });
               
-              // 바때기 태그 (돈 모양 아이콘 포함)
+              // 바때기 태그 (충/환=돈아이콘)
               (structured.bategis || []).forEach((bategi, idx) => {
                 const tagText = `바때기${bategi.amount}${bategi.type}`;
-                const bategiColor = bategi.type === '환' ? 'bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300' : 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300';
+                const isRed = bategi.type === '환';
+                const bategiColor = isRed ? 'bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300' : 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300';
                 tags.push(
                   <span
                     key={`bategi-${idx}`}
@@ -8133,6 +8269,22 @@ function DRBet() {
                   >
                     {tagText}
                     <span className="text-yellow-500">💰</span>
+                  </span>
+                );
+              });
+              // 바때기 칩실수 태그 (먹=초록, 못먹=빨강, 사이트 칩실수와 동일)
+              (structured.bategiChips || []).forEach((chip, idx) => {
+                const chipPrefix = chip.type === 'bager' ? '배거' : chip.type === 'chipting' ? '칩팅' : '칩실수';
+                const lossText = chip.loss === 'lost' ? '못먹' : '먹';
+                const tagText = `바때기${chipPrefix}${chip.amount}${lossText}`;
+                const isRed = chip.loss === 'lost';
+                const chipColor = isRed ? 'bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300' : 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300';
+                tags.push(
+                  <span
+                    key={`bategiChip-${idx}`}
+                    className={`inline-flex items-center gap-1 px-2 py-0.5 text-xs ${chipColor} rounded`}
+                  >
+                    {tagText}
                   </span>
                 );
               });
@@ -9943,7 +10095,7 @@ function DRBet() {
                   className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-[#282C34] dark:text-white"
                   placeholder="예: 100"
                 />
-                <div className="flex space-x-4 mt-3">
+                <div className="flex flex-wrap gap-x-4 gap-y-2 mt-3">
                   <label className="flex items-center text-sm text-gray-700 dark:text-white">
                     <input
                       type="radio"
@@ -9966,8 +10118,30 @@ function DRBet() {
                     />
                     환
                   </label>
+                  <label className="flex items-center text-sm text-gray-700 dark:text-white">
+                    <input
+                      type="radio"
+                      name="bategiType"
+                      value="먹"
+                      checked={extraNoteInputs.bategiType === '먹'}
+                      onChange={(e) => handleExtraNoteInputChange('bategiType', e.target.value)}
+                      className="mr-2"
+                    />
+                    칩실수 먹
+                  </label>
+                  <label className="flex items-center text-sm text-gray-700 dark:text-white">
+                    <input
+                      type="radio"
+                      name="bategiType"
+                      value="못먹"
+                      checked={extraNoteInputs.bategiType === '못먹'}
+                      onChange={(e) => handleExtraNoteInputChange('bategiType', e.target.value)}
+                      className="mr-2"
+                    />
+                    칩실수 못먹
+                  </label>
                 </div>
-                <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">금액을 입력하면 반드시 충/환을 선택해야 합니다.</p>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">금액을 입력하면 반드시 충/환 또는 칩실수(먹/못먹)를 선택해야 합니다.</p>
               </div>
 
               <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-3">

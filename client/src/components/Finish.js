@@ -632,6 +632,10 @@ function Finish({ isStartMode = false }) {
               // 예: "칩실수로로벳5먹"
               const match2 = trimmedPart.match(/^(칩실수|칩팅|배거)(.+?)(\d+)(먹|못먹)/);
               
+              // 패턴 3: 바때기 + 숫자 + (먹|못먹|충|환) - 정산관리 사이트/내용에 표시
+              // 예: "바때기10못먹", "바때기5먹", "바때기10충", "바때기10환"
+              const match3 = trimmedPart.match(/^바때기([\d.]+)(먹|못먹|충|환)$/);
+              
               if (match1 || match2) {
                 // 중복 체크 - 같은 내용이 이미 있으면 추가하지 않음
                 if (!notesSet.has(trimmedPart)) {
@@ -639,6 +643,14 @@ function Finish({ isStartMode = false }) {
                   const site = match1 ? match1[1] : match2[2];
                   notesList.push({
                     site: site,
+                    content: trimmedPart
+                  });
+                }
+              } else if (match3) {
+                if (!notesSet.has(trimmedPart)) {
+                  notesSet.add(trimmedPart);
+                  notesList.push({
+                    site: '바때기',
                     content: trimmedPart
                   });
                 }
