@@ -118,28 +118,29 @@ const Layout = () => {
     }
   }, [isAdmin]);
 
+  // 사무실관리자 전용: selectedManagerId는 슈퍼관리자용이므로 초기화
+  useEffect(() => {
+    if (isOfficeManager && !isAdmin) {
+      setSelectedManagerId(null);
+      localStorage.removeItem('selectedManagerId');
+    }
+  }, [isOfficeManager, isAdmin]);
+
   useEffect(() => {
     if (!isOfficeManager) return;
-    if (selectedAccountId) return;
+    // localStorage에 저장된 선택이 있으면 기본값 설정 스킵 (AuthContext가 이미 복원함)
+    const saved = localStorage.getItem('selectedAccountId');
+    if (saved) return;
+    if (selectedAccountId != null) return;
     if (!accounts || accounts.length === 0) return;
 
-    const ownAccount = user ? accounts.find(acc => acc.id === user.id) : null;
-    const defaultAccountId = ownAccount ? ownAccount.id : accounts[0].id;
+    const ownAccount = user ? accounts.find(acc => acc.id == user.id) : null;
+    const defaultAccountId = ownAccount ? ownAccount.id : accounts[0]?.id;
 
     if (defaultAccountId) {
       setSelectedAccountId(defaultAccountId);
     }
   }, [isOfficeManager, accounts, selectedAccountId, setSelectedAccountId, user]);
-
-  // localStorage에서 선택된 계정 ID 복원
-  useEffect(() => {
-    if (isAdmin) {
-      const savedAccountId = localStorage.getItem('selectedAccountId');
-      if (savedAccountId) {
-        setSelectedAccountId(parseInt(savedAccountId));
-      }
-    }
-  }, [isAdmin, setSelectedAccountId]);
 
   // 선택된 관리자의 사무실 하위 계정 로드
   useEffect(() => {
@@ -206,8 +207,8 @@ const Layout = () => {
     window.location.reload();
   };
 
-  // 선택된 계정 정보 가져오기
-  const selectedAccount = accounts.find(acc => acc.id === selectedAccountId);
+  // 선택된 계정 정보 가져오기 (id 타입 차이 방지: == 사용)
+  const selectedAccount = accounts.find(acc => acc.id == selectedAccountId);
 
   // 계정 삭제 핸들러
   const handleDeleteAccount = async (accountId, accountName) => {
@@ -444,8 +445,9 @@ const Layout = () => {
                       className="flex items-center px-2 py-1.5 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 dark:focus:ring-offset-gray-800"
                     >
                       <span className="max-w-[120px] truncate">
-                        {selectedManagerId
-                          ? `🏢 ${accounts.find(a => a.id === selectedManagerId)?.display_name || '관리자'}`
+                        {/* 슈퍼관리자만 selectedManagerId 사용, 사무실관리자는 selectedAccount만 사용 */}
+                        {isAdmin && selectedManagerId
+                          ? `🏢 ${accounts.find(a => a.id == selectedManagerId)?.display_name || '관리자'}`
                           : selectedAccount
                             ? `👤 ${selectedAccount.display_name}`
                             : '전체 계정'}
@@ -478,7 +480,7 @@ const Layout = () => {
                                 key={account.id}
                                 onClick={() => handleAccountSelect(account.id)}
                                 className={`w-full text-left px-4 py-2 text-sm whitespace-nowrap ${
-                                  (isAdmin && selectedManagerId === account.id) || (!isAdmin && selectedAccountId === account.id)
+                                  (isAdmin && selectedManagerId == account.id) || (!isAdmin && selectedAccountId == account.id)
                                     ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 font-medium'
                                     : 'text-gray-700 dark:text-white hover:bg-gray-50 dark:hover:bg-gray-700'
                                 }`}
@@ -500,8 +502,8 @@ const Layout = () => {
                         className="flex items-center px-2 py-1.5 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 dark:focus:ring-offset-gray-800"
                       >
                         <span className="max-w-[100px] truncate">
-                          {selectedAccountId && selectedAccountId !== selectedManagerId
-                            ? `👤 ${subAccounts.find(a => a.id === selectedAccountId)?.display_name || '계정'}`
+                          {selectedAccountId && selectedAccountId != selectedManagerId
+                            ? `👤 ${subAccounts.find(a => a.id == selectedAccountId)?.display_name || '계정'}`
                             : '전체 (사무실)'}
                         </span>
                         <span className="text-xs ml-1 flex-shrink-0">▼</span>
@@ -518,7 +520,7 @@ const Layout = () => {
                               <button
                                 onClick={() => handleSubAccountSelect(null)}
                                 className={`w-full text-left px-4 py-2 text-sm whitespace-nowrap ${
-                                  selectedAccountId === selectedManagerId
+                                  selectedAccountId == selectedManagerId
                                     ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 font-medium'
                                     : 'text-gray-700 dark:text-white hover:bg-gray-50 dark:hover:bg-gray-700'
                                 }`}
@@ -530,7 +532,7 @@ const Layout = () => {
                                   key={account.id}
                                   onClick={() => handleSubAccountSelect(account.id)}
                                   className={`w-full text-left px-4 py-2 text-sm whitespace-nowrap ${
-                                    selectedAccountId === account.id
+                                    selectedAccountId == account.id
                                       ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 font-medium'
                                       : 'text-gray-700 dark:text-white hover:bg-gray-50 dark:hover:bg-gray-700'
                                   }`}
@@ -625,7 +627,7 @@ const Layout = () => {
                 const trimmedDisplayName = newAccountForm.displayName.trim();
 
                 if (trimmedUsername.length < 3) {
-                  toast.error('사용자명은 3자 이상 입력해주세요.');
+                  toast.error('아이디는 3자 이상 입력해주세요.');
                   return;
                 }
 
@@ -709,7 +711,7 @@ const Layout = () => {
               )}
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">
-                  사용자명 *
+                  아이디 *
                 </label>
                 <input
                   type="text"
@@ -737,7 +739,7 @@ const Layout = () => {
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">
-                  표시 이름
+                  닉네임
                 </label>
                 <input
                   type="text"

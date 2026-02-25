@@ -15,7 +15,16 @@ export const useAuth = () => {
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [selectedAccountId, _setSelectedAccountId] = useState(null); // 관리자가 선택한 계정 ID
+  // 첫 렌더부터 localStorage에서 복원 (useEffect 대기 없이 즉시 적용)
+  const [selectedAccountId, _setSelectedAccountId] = useState(() => {
+    if (typeof window === 'undefined') return null;
+    const saved = localStorage.getItem('selectedAccountId');
+    if (saved) {
+      const parsed = parseInt(saved, 10);
+      return isNaN(parsed) ? null : parsed;
+    }
+    return null;
+  });
   const initRanRef = useRef(false);
 
   // 토큰을 axios 헤더에 설정
@@ -110,10 +119,11 @@ export const AuthProvider = ({ children }) => {
       if (initRanRef.current) return; // StrictMode에서 중복 실행 방지
       initRanRef.current = true;
       const token = localStorage.getItem('token');
-      // 선택된 계정 미리 복원 (가드보다 먼저 반영되도록)
+      // 선택된 계정 복원 (useState 초기값과 동기화, 페이지 새로고침 시 적용)
       const savedAccountId = localStorage.getItem('selectedAccountId');
       if (savedAccountId) {
-        _setSelectedAccountId(parseInt(savedAccountId));
+        const parsed = parseInt(savedAccountId, 10);
+        if (!isNaN(parsed)) _setSelectedAccountId(parsed);
       }
       
       if (token) {
