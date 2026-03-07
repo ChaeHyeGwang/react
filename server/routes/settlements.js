@@ -43,6 +43,34 @@ function getDaysInMonth(year, month) {
 }
 
 /**
+ * DB에 레코드가 없는 날짜에 대해 가상 레코드를 추가하여
+ * enrichRecordsWithDrbetNotes가 모든 날짜에 대해 DR벳 notes를 조회할 수 있게 함
+ */
+function fillMissingDays(records, targetYearMonth, accountId) {
+  const [year, month] = targetYearMonth.split('-').map(Number);
+  const daysInMonth = getDaysInMonth(year, month);
+  const existingDays = new Set(records.map(r => r.day_number));
+
+  for (let day = 1; day <= daysInMonth; day++) {
+    if (!existingDays.has(day)) {
+      records.push({
+        id: -day,
+        year_month: targetYearMonth,
+        day_number: day,
+        ka_amount: 0,
+        seup: 'X',
+        site_content: '',
+        user_data: {},
+        account_id: accountId
+      });
+    }
+  }
+
+  records.sort((a, b) => a.day_number - b.day_number);
+  return records;
+}
+
+/**
  * site_content가 비어 있는 settlement 기록에 DR벳 notes를 파싱하여 채움
  * 정산 전송 없이도 사이트/내용에 바때기, 칩실수 등이 표시되도록 함
  */
@@ -166,6 +194,7 @@ router.get('/', auth, (req, res) => {
           user_data: typeof row.user_data === 'string' ? JSON.parse(row.user_data || '{}') : row.user_data
         }));
         
+        fillMissingDays(records, targetYearMonth, filterAccountId);
         enrichRecordsWithDrbetNotes(records, targetYearMonth, dbLegacy, (enriched) => res.json(enriched));
       });
       return;
@@ -213,6 +242,7 @@ router.get('/', auth, (req, res) => {
     }));
     
     console.log(`${targetYearMonth}월 정산 기록 조회: ${records.length}개 (실제 저장된 데이터)`);
+    fillMissingDays(records, targetYearMonth, filterAccountId);
     enrichRecordsWithDrbetNotes(records, targetYearMonth, dbLegacy, (enriched) => res.json(enriched));
   });
 });

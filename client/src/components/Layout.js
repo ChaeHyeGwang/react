@@ -348,7 +348,7 @@ const Layout = () => {
   ];
 
   return (
-    <div className="bg-gray-100 dark:bg-gray-900 transition-colors duration-200 sm:min-h-screen">
+    <div className="bg-gray-100 dark:bg-gray-900 transition-colors duration-200 min-h-screen sm:min-h-[111.12vh] flex flex-col">
       {/* 상단 네비게이션 */}
       <nav className="bg-white dark:bg-gray-800 shadow-lg dark:shadow-gray-900/50">
         <div className="w-full px-4 sm:px-6 lg:px-8">
@@ -580,7 +580,7 @@ const Layout = () => {
       </nav>
 
       {/* 메인 콘텐츠 */}
-      <main className="mx-auto py-6 px-2 pb-20 sm:pb-6">
+      <main className="flex-1 mx-auto w-full py-6 px-2 pb-20 sm:pb-6">
         <Outlet />
       </main>
 

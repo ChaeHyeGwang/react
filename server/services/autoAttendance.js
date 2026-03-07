@@ -79,6 +79,33 @@ function parseCharge(value) {
 }
 
 /**
+ * 같은 날짜/사이트/명의 조합으로 충전금액 > 0인 DR벳 레코드가 남아있는지 확인
+ * 레코드 삭제/수정 후 호출되므로 현재 DB 상태 기준으로 판단
+ */
+async function hasOtherChargedRecord(accountId, siteName, identityName, date) {
+  const rows = await db.all(
+    `SELECT charge_withdraw1, charge_withdraw2, charge_withdraw3, charge_withdraw4,
+            identity1, identity2, identity3, identity4,
+            site_name1, site_name2, site_name3, site_name4
+     FROM drbet_records
+     WHERE account_id = ? AND record_date = ?`,
+    [accountId, date]
+  );
+
+  for (const row of rows) {
+    for (let i = 1; i <= 4; i++) {
+      const rowSite = normalizeName(row[`site_name${i}`]);
+      const rowIdentity = normalizeName(row[`identity${i}`]);
+      const rowCharge = parseCharge(row[`charge_withdraw${i}`]);
+      if (rowSite === siteName && rowIdentity === identityName && rowCharge > 0) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+/**
  * 사이트 설정 조회 (출석타입, 이월 설정) - 캐싱 적용
  */
 async function getSiteSettings(accountId, siteName, identityName) {
@@ -326,11 +353,16 @@ async function processSiteAttendance(accountId, siteName, identityName, chargeVa
   // 충전금액 파싱
   const charge = parseCharge(chargeValue);
   
-  // 핵심 로직: 충전 > 0 이면 추가, 아니면 제거
+  // 핵심 로직: 충전 > 0 이면 추가, 아니면 제거 (다른 충전 레코드 존재 시 보호)
   if (charge > 0) {
     await insertLog(accountId, siteName, identityName, date);
   } else {
-    await deleteLog(accountId, siteName, identityName, date);
+    const hasOther = await hasOtherChargedRecord(accountId, siteName, identityName, date);
+    if (!hasOther) {
+      await deleteLog(accountId, siteName, identityName, date);
+    } else {
+      log(`   [출석] ${identityName}/${siteName}: ${date} 다른 충전 레코드 존재 - 출석 로그 유지`);
+    }
   }
   
   // 이월 설정 반영하여 출석일 계산
@@ -488,6 +520,7 @@ async function handleUpdateRecord(accountId, oldRecord, newRecord, newRecordDate
 
 /**
  * 로그 추가/삭제만 수행 (출석일 계산 없음)
+ * 삭제 시 같은 날짜/사이트/명의의 다른 충전 레코드가 있으면 출석 유지
  */
 async function processLogOnly(accountId, siteName, identityName, chargeValue, date) {
   const settings = await getSiteSettings(accountId, siteName, identityName);
@@ -500,6 +533,11 @@ async function processLogOnly(accountId, siteName, identityName, chargeValue, da
   if (charge > 0) {
     await insertLog(accountId, siteName, identityName, date);
   } else {
+    const hasOther = await hasOtherChargedRecord(accountId, siteName, identityName, date);
+    if (hasOther) {
+      log(`   [출석] ${identityName}/${siteName}: ${date} 다른 충전 레코드 존재 - 출석 로그 유지`);
+      return;
+    }
     await deleteLog(accountId, siteName, identityName, date);
   }
 }

@@ -1,7 +1,7 @@
 /**
  * 출석 데이터 마이그레이션 스크립트 (프로덕션 DB 전용)
  * 
- * management_system_prod.db를 직접 연결하여 실행합니다.
+ * management_system.db를 직접 연결하여 실행합니다.
  * db.js 모듈에 의존하지 않는 독립 실행형 스크립트입니다.
  * 
  * 사용법:
@@ -14,7 +14,9 @@ const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
 
 // ─── DB 직접 연결 ──────────────────────────────────
-const dbPath = path.join(__dirname, '..', 'database', 'management_system_prod.db');
+const dbPath = process.env.DB_PATH
+  ? path.resolve(process.cwd(), process.env.DB_PATH)
+  : path.join(__dirname, '..', 'database', 'management_system.db');
 
 function openDB() {
   return new sqlite3.Database(dbPath);
