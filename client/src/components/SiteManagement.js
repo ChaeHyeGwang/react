@@ -406,6 +406,7 @@ const SiteManagement = () => {
     if (pureStatus === '장점검') return '장점검';
     if (pureStatus === '팅') return '팅';
     if (pureStatus === '졸업') return '졸업';
+    if (pureStatus === '버림') return '버림';
     return '기타';
   };
 
@@ -772,7 +773,7 @@ const SiteManagement = () => {
         // "수동입력" 필터의 경우: 유효한 상태 목록에 없는 경우만 수동입력으로 간주
         if (statusFilter === '수동입력') {
           // 유효한 상태 목록
-          const validStatuses = ['가입전', '대기', '승인', '장점검', '팅', '졸업'];
+          const validStatuses = ['가입전', '대기', '승인', '장점검', '팅', '졸업', '버림'];
           
           // 수동입력 텍스트 제거 후 순수 상태값 추출 (기존 데이터에 있을 수 있음)
           const pureStatusWithoutManual = pureStatus.replace(/^수동입력\s+/, '').trim();
@@ -789,6 +790,7 @@ const SiteManagement = () => {
         if (statusFilter === '승인') return pureStatus === '승인';
         if (statusFilter === '팅') return pureStatus === '팅';
         if (statusFilter === '졸업') return pureStatus === '졸업';
+        if (statusFilter === '버림') return pureStatus === '버림';
         if (statusFilter === '장점검') return pureStatus === '장점검';
         if (statusFilter === '가입전') return pureStatus === '가입전';
         
@@ -826,7 +828,7 @@ const SiteManagement = () => {
       const pureStatus = lastPart?.replace(/^\d{1,2}\.\d{1,2}\s*/, '').trim() || '';
       
       // 표준 상태값 목록
-      const validStatuses = ['가입전', '대기', '승인', '장점검', '팅', '졸업'];
+      const validStatuses = ['가입전', '대기', '승인', '장점검', '팅', '졸업', '버림'];
       
       // 수동입력이 포함된 경우 (텍스트에 "수동입력"이 포함되어 있거나, 표준 상태값이 아닌 경우)
       if (lastPart?.includes('수동입력') || (!validStatuses.includes(pureStatus) && pureStatus !== '')) {
@@ -840,6 +842,7 @@ const SiteManagement = () => {
       if (pureStatus === '장점검') return 4;
       if (pureStatus === '팅') return 6;
       if (pureStatus === '졸업') return 7;
+      if (pureStatus === '버림') return 8;
       
       return 999; // 알 수 없는 상태는 맨 뒤
     };
@@ -946,7 +949,7 @@ const SiteManagement = () => {
         
         // "수동입력" 필터의 경우: 유효한 상태 목록에 없는 경우만 수동입력으로 간주
         if (communityStatusFilter === '수동입력') {
-          const validStatuses = ['가입전', '대기', '승인', '장점검', '팅', '졸업'];
+          const validStatuses = ['가입전', '대기', '승인', '장점검', '팅', '졸업', '버림'];
           const pureStatusWithoutManual = pureStatus.replace(/^수동입력\s+/, '').trim();
           if (!pureStatusWithoutManual) return false;
           return !validStatuses.includes(pureStatusWithoutManual);
@@ -957,6 +960,7 @@ const SiteManagement = () => {
         if (communityStatusFilter === '승인') return pureStatus === '승인';
         if (communityStatusFilter === '팅') return pureStatus === '팅';
         if (communityStatusFilter === '졸업') return pureStatus === '졸업';
+        if (communityStatusFilter === '버림') return pureStatus === '버림';
         if (communityStatusFilter === '장점검') return pureStatus === '장점검';
         if (communityStatusFilter === '가입전') return pureStatus === '가입전';
         
@@ -994,7 +998,7 @@ const SiteManagement = () => {
       const pureStatus = lastPart?.replace(/^\d{1,2}\.\d{1,2}\s*/, '').trim() || '';
       
       // 표준 상태값 목록
-      const validStatuses = ['가입전', '대기', '승인', '장점검', '팅', '졸업'];
+      const validStatuses = ['가입전', '대기', '승인', '장점검', '팅', '졸업', '버림'];
       
       // 수동입력이 포함된 경우 (텍스트에 "수동입력"이 포함되어 있거나, 표준 상태값이 아닌 경우)
       if (lastPart?.includes('수동입력') || (!validStatuses.includes(pureStatus) && pureStatus !== '')) {
@@ -1008,6 +1012,7 @@ const SiteManagement = () => {
       if (pureStatus === '장점검') return 4;
       if (pureStatus === '팅') return 6;
       if (pureStatus === '졸업') return 7;
+      if (pureStatus === '버림') return 8;
       
       return 999; // 알 수 없는 상태는 맨 뒤
     };
@@ -1103,6 +1108,8 @@ const SiteManagement = () => {
     if (pureStatus === '승인') return 'bg-white dark:bg-[#363B46] text-black dark:text-white';
     if (pureStatus === '가입전') return 'bg-purple-100 dark:bg-purple-900/50 text-purple-800 dark:text-purple-300';
     if (pureStatus === '졸업') return 'bg-red-100 dark:bg-red-900/50 text-red-800 dark:text-red-300';
+    if (pureStatus === '버림') return 'bg-red-100 dark:bg-red-900/50 text-red-800 dark:text-red-300';
+    
     if (pureStatus === '팅') return 'bg-red-100 dark:bg-red-900/50 text-red-800 dark:text-red-300';
     if (pureStatus === '장점검') return 'bg-green-100 dark:bg-green-900/50 text-green-800 dark:text-green-300';
     if (pureStatus === '대기') return 'bg-yellow-100 dark:bg-yellow-900/50 text-yellow-800 dark:text-yellow-300';
@@ -2408,7 +2415,7 @@ const SiteManagement = () => {
       const datePrefix = `${month}.${day}`;
       
       // 유효한 상태 목록
-      const validStatuses = ['가입전', '대기', '승인', '장점검', '팅', '졸업'];
+      const validStatuses = ['가입전', '대기', '승인', '장점검', '팅', '졸업', '버림'];
       
       const lines = bulkImportText.trim().split('\n');
       const parsed = lines.map((line, index) => {
@@ -2967,6 +2974,7 @@ const SiteManagement = () => {
                 <option>수동입력</option>
               <option>팅</option>
               <option>졸업</option>
+              <option>버림</option>
               </select>
             </div>
             
@@ -3361,7 +3369,7 @@ const SiteManagement = () => {
                       
                       // 입력 필드 렌더링 (셀렉트박스 + 자유 입력)
                       // 정렬 순서에 맞춘 옵션 리스트: 가입전 > 대기 > 승인 > 장점검 > 수동입력 > 팅 > 졸업
-                      const validOptions = ['가입전', '대기', '승인', '장점검', '팅', '졸업'];
+                      const validOptions = ['가입전', '대기', '승인', '장점검', '팅', '졸업', '버림'];
                       const isInValidOptions = validOptions.includes(pureStatus);
                       
                       // site.status에서 기존 값을 추출하여 선택 목록에 추가
@@ -3435,7 +3443,7 @@ const SiteManagement = () => {
                       // value에서 editingStatusDate || initialDate로 처리
                       
                       // 유효한 상태 옵션
-                      const statusOptions = ['가입전', '대기', '승인', '장점검', '팅', '졸업'];
+                      const statusOptions = ['가입전', '대기', '승인', '장점검', '팅', '졸업', '버림'];
                       
                       // 편집 모드 완전 종료 함수
                       const closeStatusEditor = () => {
@@ -3766,7 +3774,7 @@ const SiteManagement = () => {
                     const lastPart = parts[parts.length - 1];
                     
                     // 유효한 상태 목록
-                    const validStatuses = ['가입전', '대기', '승인', '장점검', '팅', '졸업'];
+                    const validStatuses = ['가입전', '대기', '승인', '장점검', '팅', '졸업', '버림'];
                     
                     // 날짜 제거한 순수 상태값 추출
                     const pureStatus = lastPart?.replace(/^\d{1,2}\.\d{1,2}\s*/, '').trim() || '';
@@ -3778,6 +3786,7 @@ const SiteManagement = () => {
                     const isManualInput = !validStatuses.includes(pureStatusWithoutManual);
                     
                     if (lastPart?.includes('졸업')) return 'bg-red-100 dark:bg-red-900/50';
+                    if (lastPart?.includes('버림')) return 'bg-red-100 dark:bg-red-900/50';
                     if (lastPart?.includes('팅')) return 'bg-red-100 dark:bg-red-900/50';
                     if (isManualInput) return 'bg-green-100 dark:bg-green-900/50'; // 수동입력은 초록색
                     if (lastPart?.includes('장점검')) return 'bg-green-100 dark:bg-green-900/50';
@@ -3979,6 +3988,7 @@ const SiteManagement = () => {
                 <option>수동입력</option>
                 <option>팅</option>
                 <option>졸업</option>
+                <option>버림</option>
               </select>
             </div>
             
@@ -4185,6 +4195,7 @@ const SiteManagement = () => {
                         <option value="장점검">장점검</option>
                         <option value="팅">팅</option>
                         <option value="졸업">졸업</option>
+                        <option value="버림">버림</option>
                       </select>
                     </td>
                     <td className="px-5 py-5 text-center border-r border-gray-100 dark:border-gray-800/30">
@@ -4387,7 +4398,7 @@ const SiteManagement = () => {
                       
                       // 리치 에디터 (사이트와 동일)
                       const statusHistory = community.status ? community.status.split('/').map(s => s.trim()).filter(s => s) : [];
-                      const statusOptions = ['가입전', '대기', '승인', '장점검', '팅', '졸업'];
+                      const statusOptions = ['가입전', '대기', '승인', '장점검', '팅', '졸업', '버림'];
                       
                       const getKSTToday = () => {
                         const now = new Date();
@@ -4570,12 +4581,13 @@ const SiteManagement = () => {
                     if (!community.status) return 'bg-white dark:bg-gray-800';
                     const parts = community.status.split('/').map(s => s.trim());
                     const lastPart = parts[parts.length - 1];
-                    const validStatuses = ['가입전', '대기', '승인', '장점검', '팅', '졸업'];
+                    const validStatuses = ['가입전', '대기', '승인', '장점검', '팅', '졸업', '버림'];
                     const pureStatus = lastPart?.replace(/^\d{1,2}\.\d{1,2}\s*/, '').trim() || '';
                     const pureStatusWithoutManual = pureStatus.replace(/^수동입력\s+/, '').trim();
                     const isManualInput = !validStatuses.includes(pureStatusWithoutManual);
                     
                     if (lastPart?.includes('졸업')) return 'bg-red-100 dark:bg-red-900/50';
+                    if (lastPart?.includes('버림')) return 'bg-red-100 dark:bg-red-900/50';
                     if (lastPart?.includes('팅')) return 'bg-red-100 dark:bg-red-900/50';
                     if (isManualInput) return 'bg-green-100 dark:bg-green-900/50';
                     if (lastPart?.includes('장점검')) return 'bg-green-100 dark:bg-green-900/50';
