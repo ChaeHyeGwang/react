@@ -42,6 +42,77 @@ const getTables = (mode) => MODE_TABLES[mode] || MODE_TABLES.finish;
 
 const { parseNotesForFinish } = require('../utils/notesParser');
 
+/** 사무실 관리자(계정 미선택) 또는 슈퍼관리자가 사무실 관리자 계정을 선택한 경우 — identities API와 동일하게 사무실 단위 */
+function usesOfficeWideFinishScope(req) {
+  if (req.user.isOfficeManager && req.user.filterOfficeId && req.user.filterAccountId == null) {
+    return true;
+  }
+  if (req.user.isSuperAdmin && req.user.filterOfficeId && req.user.filterAccountId == null && req.user.selectedAccountId) {
+    return true;
+  }
+  return false;
+}
+
+/**
+ * 시작/마무리 명의별 금액 저장 시 사용할 account_id (명의가 실제 속한 계정)
+ */
+async function resolveFinishIdentityAccountId(req, identityName) {
+  if (usesOfficeWideFinishScope(req)) {
+    const row = await db.get(
+      `SELECT i.account_id FROM identities i
+       INNER JOIN accounts a ON i.account_id = a.id
+       WHERE i.name = ? AND a.office_id = ? AND a.status = 'active'
+       ORDER BY i.id ASC LIMIT 1`,
+      [identityName, req.user.filterOfficeId]
+    );
+    return row?.account_id ?? null;
+  }
+  const selectedAcc = req.user.filterAccountId;
+  if (req.user.isSuperAdmin) {
+    if (selectedAcc != null) {
+      const row = await db.get(
+        'SELECT account_id FROM identities WHERE name = ? AND account_id = ?',
+        [identityName, selectedAcc]
+      );
+      return row?.account_id ?? null;
+    }
+    const row = await db.get(
+      'SELECT account_id FROM identities WHERE name = ? ORDER BY id ASC LIMIT 1',
+      [identityName]
+    );
+    return row?.account_id ?? null;
+  }
+  const acc = selectedAcc != null ? selectedAcc : req.user.accountId;
+  const row = await db.get(
+    'SELECT account_id FROM identities WHERE name = ? AND account_id = ?',
+    [identityName, acc]
+  );
+  return row?.account_id ?? null;
+}
+
+/** GET /finish 용: 조회할 계정 ID 목록 + 명의 이름 목록 */
+async function getFinishQueryScope(req) {
+  if (usesOfficeWideFinishScope(req)) {
+    const accounts = await db.all(
+      `SELECT id FROM accounts WHERE office_id = ? AND status = 'active' ORDER BY id`,
+      [req.user.filterOfficeId]
+    );
+    const accountIds = accounts.map((a) => a.id);
+    const nameRows = await db.all(
+      `SELECT DISTINCT i.name FROM identities i
+       INNER JOIN accounts a ON i.account_id = a.id
+       WHERE a.office_id = ? AND a.status = 'active'`,
+      [req.user.filterOfficeId]
+    );
+    const identityNames = nameRows.map((r) => r.name).filter(Boolean);
+    return { accountIds, identityNames };
+  }
+  const filterAccountId = req.user.filterAccountId != null ? req.user.filterAccountId : req.user.accountId;
+  const identities = await db.all('SELECT name FROM identities WHERE account_id = ?', [filterAccountId]);
+  const identityNames = identities.map((i) => i.name);
+  return { accountIds: [filterAccountId], identityNames };
+}
+
 // 마무리 데이터 조회 (날짜별, 현재 사용자의 명의만)
 router.get('/', auth, async (req, res) => {
   try {
@@ -50,25 +121,20 @@ router.get('/', auth, async (req, res) => {
     const mode = getMode(req);
     const { data: dataTable, summary: summaryTable } = getTables(mode);
     
-    // 관리자가 선택한 계정 ID 또는 자신의 계정 ID 사용
-    const filterAccountId = req.user.filterAccountId || req.user.accountId;
-    
-    // 현재 사용자의 명의 이름 목록 가져오기
-    const identities = await db.all(
-      'SELECT name FROM identities WHERE account_id = ?',
-      [filterAccountId]
-    );
-    
-    const identityNames = identities.map(i => i.name);
+    const { accountIds, identityNames } = await getFinishQueryScope(req);
+    if (!accountIds.length) {
+      return res.json([]);
+    }
+    const accountPlaceholders = accountIds.map(() => '?').join(',');
     
     if (mode === 'start') {
       // 시작 모드에서는 start_data 테이블에서 명의별 데이터 가져오기
       const allIdentityNames = ['받치기', ...identityNames];
-      const placeholders = allIdentityNames.map(() => '?').join(',');
+      const namePlaceholders = allIdentityNames.map(() => '?').join(',');
       
-      const sql = `SELECT * FROM ${dataTable} WHERE date = ? AND account_id = ? AND identity_name IN (${placeholders}) ORDER BY identity_name`;
+      const sql = `SELECT * FROM ${dataTable} WHERE date = ? AND account_id IN (${accountPlaceholders}) AND identity_name IN (${namePlaceholders}) ORDER BY identity_name, account_id`;
       
-      dbLegacy.all(sql, [targetDate, filterAccountId, ...allIdentityNames], (err, rows) => {
+      dbLegacy.all(sql, [targetDate, ...accountIds, ...allIdentityNames], (err, rows) => {
         if (err) {
           console.error('시작 데이터 조회 실패:', err);
           return res.status(500).json({ error: err.message });
@@ -80,14 +146,14 @@ router.get('/', auth, async (req, res) => {
         const drbetSql = `
           SELECT notes FROM drbet_records 
           WHERE record_date = ? 
-          AND account_id = ?
+          AND account_id IN (${accountPlaceholders})
           AND (identity1 IN (${drbetPlaceholders}) 
             OR identity2 IN (${drbetPlaceholders}) 
             OR identity3 IN (${drbetPlaceholders}) 
             OR identity4 IN (${drbetPlaceholders}))
         `;
         
-        dbLegacy.all(drbetSql, [targetDate, filterAccountId, ...identityNames, ...identityNames, ...identityNames, ...identityNames], (err, drbetRows) => {
+        dbLegacy.all(drbetSql, [targetDate, ...accountIds, ...identityNames, ...identityNames, ...identityNames, ...identityNames], (err, drbetRows) => {
           if (err) {
             console.error('드뱃 데이터 조회 실패:', err);
             // 에러가 나도 start_data는 반환
@@ -115,10 +181,10 @@ router.get('/', auth, async (req, res) => {
     }
     // "받치기"도 포함
     const allIdentityNames = ['받치기', ...identityNames];
-    const placeholders = allIdentityNames.map(() => '?').join(',');
+    const namePlaceholders = allIdentityNames.map(() => '?').join(',');
     
-    const sql = `SELECT * FROM ${dataTable} WHERE date = ? AND account_id = ? AND identity_name IN (${placeholders}) ORDER BY identity_name`;
-    log(`📥 [마무리 모드] 데이터 조회 SQL:`, { sql, targetDate, filterAccountId, allIdentityNames });
+    const sql = `SELECT * FROM ${dataTable} WHERE date = ? AND account_id IN (${accountPlaceholders}) AND identity_name IN (${namePlaceholders}) ORDER BY identity_name, account_id`;
+    log(`📥 [마무리 모드] 데이터 조회 SQL:`, { sql, targetDate, accountIds, allIdentityNames });
     
     // 디버깅: 테이블에 어떤 account_id가 있는지 확인
     dbLegacy.all(`SELECT DISTINCT account_id, date, identity_name FROM ${dataTable} WHERE date = ? LIMIT 10`, [targetDate], (debugErr, debugRows) => {
@@ -127,7 +193,7 @@ router.get('/', auth, async (req, res) => {
       }
     });
     
-    dbLegacy.all(sql, [targetDate, filterAccountId, ...allIdentityNames], (err, rows) => {
+    dbLegacy.all(sql, [targetDate, ...accountIds, ...allIdentityNames], (err, rows) => {
       if (err) {
         console.error('마무리 데이터 조회 실패:', err);
         return res.status(500).json({ error: err.message });
@@ -139,14 +205,14 @@ router.get('/', auth, async (req, res) => {
       const drbetSql = `
         SELECT notes FROM drbet_records 
         WHERE record_date = ? 
-        AND account_id = ?
+        AND account_id IN (${accountPlaceholders})
         AND (identity1 IN (${drbetPlaceholders}) 
           OR identity2 IN (${drbetPlaceholders}) 
           OR identity3 IN (${drbetPlaceholders}) 
           OR identity4 IN (${drbetPlaceholders}))
       `;
       
-      dbLegacy.all(drbetSql, [targetDate, filterAccountId, ...identityNames, ...identityNames, ...identityNames, ...identityNames], (err, drbetRows) => {
+      dbLegacy.all(drbetSql, [targetDate, ...accountIds, ...identityNames, ...identityNames, ...identityNames, ...identityNames], (err, drbetRows) => {
         if (err) {
           console.error('드뱃 데이터 조회 실패:', err);
           // 에러가 나도 데이터는 반환
@@ -553,11 +619,11 @@ router.put('/:identityName', auth, async (req, res) => {
     const mode = getMode(req);
     const { data: dataTable } = getTables(mode);
     
-    // 관리자가 선택한 계정 ID 또는 자신의 계정 ID 사용
-    const filterAccountId = req.user.filterAccountId || req.user.accountId;
-    
     // "받치기"는 특별 케이스로 처리 (identities 테이블 확인 없이 바로 저장)
     if (identityName === '받치기') {
+        const batchiAccountId = usesOfficeWideFinishScope(req)
+          ? req.user.accountId
+          : (req.user.filterAccountId != null ? req.user.filterAccountId : req.user.accountId);
         const timestamp = getKSTDateTimeString();
         const sql = `
           INSERT INTO ${dataTable} (date, identity_name, account_id, remaining_amount, updated_at)
@@ -567,7 +633,7 @@ router.put('/:identityName', auth, async (req, res) => {
             updated_at = excluded.updated_at
         `;
       
-      dbLegacy.run(sql, [targetDate, identityName, filterAccountId, remaining_amount, timestamp], function(err) {
+      dbLegacy.run(sql, [targetDate, identityName, batchiAccountId, remaining_amount, timestamp], function(err) {
         if (err) {
           console.error('받치기 잔액 수정 실패:', err);
           return res.status(500).json({ error: err.message });
@@ -584,31 +650,15 @@ router.put('/:identityName', auth, async (req, res) => {
           action: 'update',
           date: targetDate,
           mode: mode,
-          accountId: filterAccountId,
+          accountId: batchiAccountId,
           user: req.user.displayName || req.user.username
-        }, { room: `account:${filterAccountId}`, excludeSocket: req.socketId });
+        }, { room: `account:${batchiAccountId}`, excludeSocket: req.socketId });
       });
       return;
     }
     
-    // 해당 명의가 현재 사용자의 것인지 확인
-    let identity;
-    if (req.user.isSuperAdmin) {
-      identity = await db.get(
-        'SELECT account_id FROM identities WHERE name = ?',
-        [identityName]
-      );
-    } else {
-      identity = await db.get(
-        'SELECT account_id FROM identities WHERE name = ? AND account_id = ?',
-        [identityName, filterAccountId]
-      );
-    }
-    
-    if (!identity) {
-      return res.status(403).json({ error: '권한이 없습니다' });
-    }
-    if (!req.user.isSuperAdmin && identity.account_id !== filterAccountId) {
+    const dataAccountId = await resolveFinishIdentityAccountId(req, identityName);
+    if (!dataAccountId) {
       return res.status(403).json({ error: '권한이 없습니다' });
     }
     
@@ -624,9 +674,9 @@ router.put('/:identityName', auth, async (req, res) => {
     // 기존 데이터 조회 (변경 비교용)
     dbLegacy.get(
       `SELECT * FROM ${dataTable} WHERE date = ? AND identity_name = ? AND account_id = ?`,
-      [targetDate, identityName, filterAccountId],
+      [targetDate, identityName, dataAccountId],
       (getErr, oldRecord) => {
-        dbLegacy.run(sql, [targetDate, identityName, filterAccountId, remaining_amount, timestamp], function(err) {
+        dbLegacy.run(sql, [targetDate, identityName, dataAccountId, remaining_amount, timestamp], function(err) {
           if (err) {
             console.error('명의 잔액 수정 실패:', err);
             return res.status(500).json({ error: err.message });
@@ -638,7 +688,7 @@ router.put('/:identityName', auth, async (req, res) => {
             logAudit(req, {
               action: oldRecord ? 'UPDATE' : 'CREATE',
               tableName: dataTable,
-              recordId: `${targetDate}-${identityName}-${filterAccountId}`,
+              recordId: `${targetDate}-${identityName}-${dataAccountId}`,
               oldData: oldRecord || null,
               newData: { date: targetDate, identity_name: identityName, remaining_amount },
               description: `명의 잔액 수정 (${identityName}, ${targetDate})`
@@ -656,9 +706,9 @@ router.put('/:identityName', auth, async (req, res) => {
             action: 'update',
             date: targetDate,
             mode: mode,
-            accountId: filterAccountId,
+            accountId: dataAccountId,
             user: req.user.displayName || req.user.username
-          }, { room: `account:${filterAccountId}`, excludeSocket: req.socketId });
+          }, { room: `account:${dataAccountId}`, excludeSocket: req.socketId });
         });
       }
     );
