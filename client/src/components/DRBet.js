@@ -3815,7 +3815,7 @@ function DRBet() {
         const shortName = fullName.length >= 2 ? fullName.substring(0, 2) : fullName;
         
         // 전체 이름으로 매칭 시도
-        const fullNamePattern = new RegExp(`^${fullName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(배거|칩팅|칩실수)(\\d+)(먹|못먹)`);
+        const fullNamePattern = new RegExp(`^${fullName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(배거|칩팅|칩실수)([\\d.]+)(먹|못먹)`);
         const fullNameMatch = trimmed.match(fullNamePattern);
         if (fullNameMatch) {
           matchedSite = site;
@@ -3826,7 +3826,7 @@ function DRBet() {
         }
         
         // 앞 2글자로 매칭 시도
-        const shortNamePattern = new RegExp(`^${shortName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(배거|칩팅|칩실수)(\\d+)(먹|못먹)`);
+        const shortNamePattern = new RegExp(`^${shortName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(배거|칩팅|칩실수)([\\d.]+)(먹|못먹)`);
         const shortNameMatch = trimmed.match(shortNamePattern);
         if (shortNameMatch) {
           matchedSite = site;
@@ -3849,7 +3849,7 @@ function DRBet() {
             const fullName = site.name;
             if (remaining.startsWith(fullName)) {
               const remainingAfterSite = remaining.substring(fullName.length);
-              const amountMatch = remainingAfterSite.match(/^(\d+)(먹|못먹)/);
+              const amountMatch = remainingAfterSite.match(/^([\d.]+)(먹|못먹)/);
               if (amountMatch) {
                 matchedSite = site;
                 amount = amountMatch[1];
@@ -3865,7 +3865,7 @@ function DRBet() {
               const shortName = fullName.length >= 2 ? fullName.substring(0, 2) : fullName;
               if (remaining.startsWith(shortName)) {
                 const remainingAfterSite = remaining.substring(shortName.length);
-                const amountMatch = remainingAfterSite.match(/^(\d+)(먹|못먹)/);
+                const amountMatch = remainingAfterSite.match(/^([\d.]+)(먹|못먹)/);
                 if (amountMatch) {
                   matchedSite = site;
                   amount = amountMatch[1];
@@ -4350,7 +4350,7 @@ function DRBet() {
         const shortName = fullName.length >= 2 ? fullName.substring(0, 2) : fullName;
         
         // 전체 이름으로 매칭 시도
-        const fullNamePattern = new RegExp(`^${fullName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(배거|칩팅|칩실수)(\\d+)(먹|못먹)`);
+        const fullNamePattern = new RegExp(`^${fullName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(배거|칩팅|칩실수)([\\d.]+)(먹|못먹)`);
         const fullNameMatch = part.match(fullNamePattern);
         if (fullNameMatch) {
           matchedSite = site;
@@ -4361,7 +4361,7 @@ function DRBet() {
         }
         
         // 앞 2글자로 매칭 시도
-        const shortNamePattern = new RegExp(`^${shortName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(배거|칩팅|칩실수)(\\d+)(먹|못먹)`);
+        const shortNamePattern = new RegExp(`^${shortName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(배거|칩팅|칩실수)([\\d.]+)(먹|못먹)`);
         const shortNameMatch = part.match(shortNamePattern);
         if (shortNameMatch) {
           matchedSite = site;
@@ -4384,7 +4384,7 @@ function DRBet() {
             const fullName = site.name;
             if (remaining.startsWith(fullName)) {
               const remainingAfterSite = remaining.substring(fullName.length);
-              const amountMatch = remainingAfterSite.match(/^(\d+)(먹|못먹)/);
+              const amountMatch = remainingAfterSite.match(/^([\d.]+)(먹|못먹)/);
               if (amountMatch) {
                 matchedSite = site;
                 chipAmount = amountMatch[1];
@@ -4400,7 +4400,7 @@ function DRBet() {
               const shortName = fullName.length >= 2 ? fullName.substring(0, 2) : fullName;
               if (remaining.startsWith(shortName)) {
                 const remainingAfterSite = remaining.substring(shortName.length);
-                const amountMatch = remainingAfterSite.match(/^(\d+)(먹|못먹)/);
+                const amountMatch = remainingAfterSite.match(/^([\d.]+)(먹|못먹)/);
                 if (amountMatch) {
                   matchedSite = site;
                   chipAmount = amountMatch[1];
@@ -4417,7 +4417,7 @@ function DRBet() {
             const fullName = site.name;
             if (part.startsWith(fullName)) {
               const remainingAfterSite = part.substring(fullName.length);
-              const amountMatch = remainingAfterSite.match(/^(\d+)(먹|못먹)/);
+              const amountMatch = remainingAfterSite.match(/^([\d.]+)(먹|못먹)/);
               if (amountMatch) {
                 matchedSite = site;
                 chipPrefix = '칩실수'; // 기본값
@@ -4434,7 +4434,7 @@ function DRBet() {
               const shortName = fullName.length >= 2 ? fullName.substring(0, 2) : fullName;
               if (part.startsWith(shortName)) {
                 const remainingAfterSite = part.substring(shortName.length);
-                const amountMatch = remainingAfterSite.match(/^(\d+)(먹|못먹)/);
+                const amountMatch = remainingAfterSite.match(/^([\d.]+)(먹|못먹)/);
                 if (amountMatch) {
                   matchedSite = site;
                   chipPrefix = '칩실수'; // 기본값

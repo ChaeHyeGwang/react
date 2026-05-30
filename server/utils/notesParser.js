@@ -13,10 +13,10 @@ function parseNotesForFinish(notes) {
     if (!trimmedPart) continue;
 
     // 패턴 1: 사이트명 + (칩실수|칩팅|배거) + 숫자 + (먹|못먹)
-    const match1 = trimmedPart.match(/^(.+?)(칩실수|칩팅|배거)(\d+)(먹|못먹)/);
+    const match1 = trimmedPart.match(/^(.+?)(칩실수|칩팅|배거)([\d.]+)(먹|못먹)/);
 
     // 패턴 2: (칩실수|칩팅|배거) + 사이트명 + 숫자 + (먹|못먹)
-    const match2 = trimmedPart.match(/^(칩실수|칩팅|배거)(.+?)(\d+)(먹|못먹)/);
+    const match2 = trimmedPart.match(/^(칩실수|칩팅|배거)(.+?)([\d.]+)(먹|못먹)/);
 
     // 패턴 3: 바때기 + 숫자 + (먹|못먹) - 정산관리에 칩실수만 포함 (충/환 제외)
     const match3 = trimmedPart.match(/^바때기([\d.]+)(먹|못먹)$/);
