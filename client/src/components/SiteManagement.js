@@ -7,6 +7,11 @@ import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import SiteNotesModal from './SiteNotesModal';
 import { useAuth } from '../contexts/AuthContext';
 import { useRealtimeSync } from '../hooks/useRealtimeSync';
+import {
+  normalizeCommunityRow,
+  buildCommunityApiPayload,
+  applyCommunityFieldUpdate
+} from '../utils/communityUtils';
 
 // Debounce 유틸리티 함수
 const useDebounce = (value, delay) => {
@@ -171,7 +176,30 @@ const SiteManagement = () => {
   });
   
   
-  // KST 기준 오늘 날짜 (MM.DD)
+  // 커뮤니티 정보기록 모달 기본 데이터
+  const createEmptyNotesData = () => ({
+    tenure: '',
+    attendanceType: '자동',
+    chargeMin: 0,
+    chargeMax: 0,
+    attendanceDays: 0,
+    rollover: 'X',
+    settlement: '',
+    settlementTotal: 0,
+    settlementPoint: '',
+    settlementDays: 0,
+    settlementRules: [],
+    settlementCleared: {},
+    settlementClearedStart: null,
+    payback: { type: '수동', days: [], percent: '', sameDayPercent: '' },
+    rate: '',
+    events: DEFAULT_SITE_EVENTS.map(evt => ({ ...evt })),
+    pointTypes: [],
+    lastUpdated: new Date().toISOString().slice(0, 7),
+    settlement_paid: false,
+    settlement_paid_at: null
+  });
+
   const getTodayKSTDate = useCallback(() => {
     const now = new Date();
     const kstDate = new Date(now.toLocaleString('en-US', {timeZone: 'Asia/Seoul'}));
@@ -251,7 +279,7 @@ const SiteManagement = () => {
   // 커뮤니티 정보를 한 줄 문자열로 만드는 헬퍼
   const buildCommunitySummaryString = (community) => {
     const name = community.identity_name || selectedIdentity?.name || '';
-    const accountId = community.account_id || '';
+    const accountId = community.user_id || community.account_id_site || '';
     const password = community.password || '';
     const exchangePassword = community.exchange_password || '';
     const nickname = community.nickname || '';
@@ -478,10 +506,23 @@ const SiteManagement = () => {
     const destIndex = result.destination.index;
     
     if (sourceIndex === destIndex) return;
+
+    // 새 행이 있으면 드래그 인덱스 보정
+    const newRowOffset = newCommunityRow ? 1 : 0;
+    const adjustedSourceIndex = sourceIndex - newRowOffset;
+    const adjustedDestIndex = destIndex - newRowOffset;
+
+    if (adjustedSourceIndex < 0 || adjustedDestIndex < 0) return;
     
-    // 같은 승인유무 그룹 내에서만 이동 가능한지 검증
-    const sourceItem = filteredCommunities[sourceIndex];
-    const destItem = filteredCommunities[destIndex];
+    // 페이지네이션 오프셋 적용 (paginatedCommunities 인덱스 → filteredCommunities 인덱스)
+    const pageOffset = (communityCurrentPage - 1) * communityItemsPerPage;
+    const actualSourceIndex = pageOffset + adjustedSourceIndex;
+    const actualDestIndex = pageOffset + adjustedDestIndex;
+    
+    const sourceItem = filteredCommunities[actualSourceIndex];
+    const destItem = filteredCommunities[actualDestIndex];
+    
+    if (!sourceItem || !destItem) return;
     
     const sourceGroup = getStatusGroup(sourceItem.status);
     const destGroup = getStatusGroup(destItem.status);
@@ -493,8 +534,8 @@ const SiteManagement = () => {
     
     // 배열에서 위치 변경
     const reorderedCommunities = Array.from(filteredCommunities);
-    const [movedItem] = reorderedCommunities.splice(sourceIndex, 1);
-    reorderedCommunities.splice(destIndex, 0, movedItem);
+    const [movedItem] = reorderedCommunities.splice(actualSourceIndex, 1);
+    reorderedCommunities.splice(actualDestIndex, 0, movedItem);
     
     // 모든 항목의 display_order를 재할당 (0부터 시작)
     const updatedCommunities = reorderedCommunities.map((community, index) => ({
@@ -528,9 +569,10 @@ const SiteManagement = () => {
       if (selectedIdentity) {
         loadSites(selectedIdentity.id === 'all' ? 'all' : selectedIdentity.id);
       }
+      loadCommunities();
     // eslint-disable-next-line
     }, [selectedIdentity?.id]),
-    events: ['sites:changed', 'identities:changed'],
+    events: ['sites:changed', 'identities:changed', 'communities:changed'],
   });
 
   // 명의 목록 로드
@@ -600,7 +642,7 @@ const SiteManagement = () => {
     try {
       // 사이트 목록처럼 identity_name으로 필터링
       const response = await axiosInstance.get(`/communities?identity_name=${encodeURIComponent(selectedIdentity.name)}`);
-      setCommunities(response.data || []);
+      setCommunities((response.data || []).map(normalizeCommunityRow));
       // filteredCommunities는 useMemo로 자동 계산됨
     } catch (error) {
       console.error('커뮤니티 로드 실패:', error);
@@ -1552,7 +1594,7 @@ const SiteManagement = () => {
 
     try {
       const res = await axiosInstance.get('/community-notes', {
-        params: { community_id: community.id }
+        params: { site_name: community.site_name }
       });
 
       const payload = res.data?.data || null;
@@ -1591,6 +1633,7 @@ const SiteManagement = () => {
         identityName: community.identity_name || '',
         recordedBy: '',
         startDate: '',
+        data: createEmptyNotesData()
       }));
     }
   };
@@ -1624,10 +1667,11 @@ const SiteManagement = () => {
       };
 
       // 커뮤니티 모드인지 사이트 모드인지에 따라 저장 위치 분기
-      if (siteNotesModal.mode === 'community' && siteNotesModal.communityId) {
+      if (siteNotesModal.mode === 'community' && siteNotesModal.siteName) {
         const response = await axiosInstance.post('/community-notes', {
-          community_id: siteNotesModal.communityId,
-          data: dataToSave
+          site_name: (siteNotesModal.siteName || '').trim(),
+          data: dataToSave,
+          updateRecordedBy: updateRecordedBy
         });
 
         if (response.data.recorded_by) {
@@ -1854,22 +1898,25 @@ const SiteManagement = () => {
         toast.success('사이트가 수정되었습니다');
         loadSites(selectedIdentity?.id);
       } else {
-        // 커뮤니티 API: account_id = 사이트 계정 ID(user_id), referral_path = 경로, referral_code = 경로-코드
         const dataToSave = {
           ...editingSiteOrCommunity,
           site_name: siteEditForm.site_name,
           domain: siteEditForm.domain,
           referral_code: siteEditForm.referral_code,
-          referral_path: siteEditForm.path,
+          path: siteEditForm.path,
           approval_call: siteEditForm.approval_call,
           identity_name: siteEditForm.identity_name,
-          account_id: siteEditForm.user_id,
+          user_id: siteEditForm.user_id,
           password: siteEditForm.password,
           exchange_password: siteEditForm.exchange_password,
           nickname: siteEditForm.nickname,
-          notes: siteEditForm.notes
+          notes: siteEditForm.notes,
+          category: siteEditForm.category
         };
-        await axiosInstance.put(`/communities/${editingSiteOrCommunity.id}`, dataToSave);
+        await axiosInstance.put(
+          `/communities/${editingSiteOrCommunity.id}`,
+          buildCommunityApiPayload(dataToSave)
+        );
         toast.success('커뮤니티가 수정되었습니다');
         loadCommunities();
       }
@@ -1956,7 +2003,10 @@ const SiteManagement = () => {
           }
           
           try {
-            const response = await axiosInstance.post('/communities', communityToSave);
+            const response = await axiosInstance.post(
+              '/communities',
+              buildCommunityApiPayload(communityToSave)
+            );
             toast.success('커뮤니티가 추가되었습니다');
             
             // 새 행 상태 제거
@@ -1988,7 +2038,10 @@ const SiteManagement = () => {
           }
           
           try {
-            const response = await axiosInstance.post('/communities', communityToSave);
+            const response = await axiosInstance.post(
+              '/communities',
+              buildCommunityApiPayload(communityToSave)
+            );
             toast.success('커뮤니티가 추가되었습니다');
             
             // 새 행 상태 제거
@@ -2010,19 +2063,17 @@ const SiteManagement = () => {
         }
       } else {
         // 기존 행인 경우 PUT으로 수정
-        await axiosInstance.put(`/communities/${communityId}`, {
-          ...community,
-          [field]: value
-        });
+        const payload = buildCommunityApiPayload(community, { [field]: value });
+        await axiosInstance.put(`/communities/${communityId}`, payload);
         
         toast.success('수정되었습니다');
         
         // 수정된 행 강조 표시
         setHighlightedCommunityId(communityId);
         
-        // 성능 최적화: 전체 목록 재로드 대신 로컬 상태만 업데이트
+        const updatedCommunity = applyCommunityFieldUpdate(community, field, value);
         setCommunities(prevCommunities => 
-          prevCommunities.map(c => c.id === communityId ? { ...c, [field]: value } : c)
+          prevCommunities.map(c => c.id === communityId ? updatedCommunity : c)
         );
         
         // 스크롤 및 강조 표시
@@ -2097,12 +2148,13 @@ const SiteManagement = () => {
   const editableCommunityFields = [
     'domain',           // 도메인
     'referral_code',    // 경로-코드
-    'name',             // 아이디 (커뮤니티는 name 필드)
-    'user_id',          // 비번 (커뮤니티는 user_id 필드)
-    'password',         // 환비 (커뮤니티는 password 필드)
+    'user_id',          // 아이디
+    'password',         // 비번
     'exchange_password', // 환비
     'nickname',         // 닉네임
-    'path'              // 경로
+    'status',           // 승인유무
+    'path',             // 경로
+    'category'          // 장
   ];
 
   // 다음 필드 찾기 (사이트용)
@@ -2200,7 +2252,10 @@ const SiteManagement = () => {
           setCommunities(updatedCommunities);
         } else {
           // 기존 행인 경우 서버에 저장
-          await axiosInstance.put(`/communities/${id}`, { ...community, approval_call: newValue });
+          await axiosInstance.put(
+            `/communities/${id}`,
+            buildCommunityApiPayload(community, { approval_call: newValue })
+          );
           const updatedCommunities = communities.map(c => 
             c.id === id ? { ...c, approval_call: newValue } : c
           );
@@ -2621,15 +2676,15 @@ const SiteManagement = () => {
     const rows = filteredCommunities.map(community => [
       community.site_name,
       community.domain,
-      community.referral_path,
+      community.referral_code,
       community.approval_call ? 'O' : 'X',
       community.identity_name || '',
-      community.account_id,
+      community.user_id || community.account_id_site || '',
       community.password,
       community.exchange_password,
       community.nickname,
       community.status,
-      community.referral_code,
+      community.path || community.referral_path || '',
       community.category
     ]);
 
@@ -2691,18 +2746,18 @@ const SiteManagement = () => {
         // 엑셀 열 순서: 사이트, 도메인, 경로-코드, 승전, 성함, 아이디, 비번, 환비, 닉네임, 승인유무, 경로, 장
         return {
           tempId: `temp-${index}`,
-          site_name: cells[0] || '',      // 사이트
-          domain: cells[1] || '',         // 도메인
-          referral_path: cells[2] || '',  // 경로-코드
-          approval_call: cells[3] === 'O' || cells[3] === 'o', // 승전
-          identity_name: cells[4] || selectedIdentity?.name || '', // 성함
-          account_id: cells[5] || '',     // 아이디
-          password: cells[6] || '',       // 비번
-          exchange_password: cells[7] || '', // 환비
-          nickname: cells[8] || '',       // 닉네임
-          status: status,                 // 승인유무 (날짜 포함)
-          referral_code: cells[10] || '', // 경로
-          category: cells[11] || '',      // 장
+          site_name: cells[0] || '',
+          domain: cells[1] || '',
+          referral_code: cells[2] || '',
+          approval_call: cells[3] === 'O' || cells[3] === 'o',
+          identity_name: cells[4] || selectedIdentity?.name || '',
+          account_id: cells[5] || '',
+          password: cells[6] || '',
+          exchange_password: cells[7] || '',
+          nickname: cells[8] || '',
+          status: status,
+          referral_path: cells[10] || '',
+          category: cells[11] || '',
           notes: ''
         };
       });
@@ -2728,7 +2783,7 @@ const SiteManagement = () => {
 
       for (const data of parsedBulkData) {
         try {
-          await axiosInstance.post('/communities', data);
+          await axiosInstance.post('/communities', buildCommunityApiPayload(data));
           successCount++;
         } catch (error) {
           console.error('커뮤니티 등록 실패:', error);
@@ -4210,8 +4265,8 @@ const SiteManagement = () => {
                     <td className="px-5 py-5 text-center border-r border-gray-100 dark:border-gray-800/30">
                       <input
                         type="text"
-                        value={newCommunityRow.notes || ''}
-                        onChange={(e) => setNewCommunityRow({...newCommunityRow, notes: e.target.value})}
+                        value={newCommunityRow.category || ''}
+                        onChange={(e) => setNewCommunityRow({...newCommunityRow, category: e.target.value})}
                         className="w-full border border-gray-300 dark:border-gray-600 rounded-md px-2 py-1 text-center dark:bg-gray-700 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                         placeholder="장"
                       />
@@ -4221,10 +4276,13 @@ const SiteManagement = () => {
                         <button
                           onClick={async () => {
                             try {
-                              const response = await axiosInstance.post('/communities', {
-                                ...newCommunityRow,
-                                identity_name: selectedIdentity.name
-                              });
+                              const response = await axiosInstance.post(
+                                '/communities',
+                                buildCommunityApiPayload({
+                                  ...newCommunityRow,
+                                  identity_name: selectedIdentity.name
+                                })
+                              );
                               if (response.data.success || response.data.id) {
                                 toast.success('커뮤니티가 추가되었습니다');
                                 setNewCommunityRow(null);
@@ -4372,7 +4430,10 @@ const SiteManagement = () => {
                                   }
                                   
                                   try {
-                                    await axiosInstance.put(`/communities/${community.id}`, { ...community, status: finalValue });
+                                    await axiosInstance.put(
+                                      `/communities/${community.id}`,
+                                      buildCommunityApiPayload(community, { status: finalValue })
+                                    );
                                     toast.success('수정되었습니다');
                                     loadCommunities();
                                   } catch (error) {
@@ -4452,7 +4513,10 @@ const SiteManagement = () => {
                                         const newHistory = [...statusHistory]; newHistory[idx] = newHistoryItem;
                                         const newStatus = newHistory.join(' / ');
                                         try {
-                                          await axiosInstance.put(`/communities/${community.id}`, { ...community, status: newStatus });
+                                          await axiosInstance.put(
+                                            `/communities/${community.id}`,
+                                            buildCommunityApiPayload(community, { status: newStatus })
+                                          );
                                           toast.success('수정 완료'); closeCommunityStatusEditor(); await loadCommunities();
                                         } catch (error) { toast.error('수정 실패'); }
                                       }} className="px-2 py-1 bg-green-500 hover:bg-green-600 text-white rounded text-sm font-bold">✓</button>
@@ -4471,7 +4535,10 @@ const SiteManagement = () => {
                                         const newHistory = statusHistory.filter((_, i) => i !== idx);
                                         const newStatus = newHistory.join(' / ');
                                         try {
-                                          await axiosInstance.put(`/communities/${community.id}`, { ...community, status: newStatus || '' });
+                                          await axiosInstance.put(
+                                            `/communities/${community.id}`,
+                                            buildCommunityApiPayload(community, { status: newStatus || '' })
+                                          );
                                           toast.success('삭제 완료'); closeCommunityStatusEditor(); await loadCommunities();
                                         } catch (error) { toast.error('삭제 실패'); }
                                       }}
@@ -4542,7 +4609,10 @@ const SiteManagement = () => {
                                 else { toast.error('이미 존재하는 상태입니다'); return; }
                               }
                               try {
-                                await axiosInstance.put(`/communities/${community.id}`, { ...community, status: finalValue });
+                                await axiosInstance.put(
+                                  `/communities/${community.id}`,
+                                  buildCommunityApiPayload(community, { status: finalValue })
+                                );
                                 toast.success('상태 추가 완료'); closeCommunityStatusEditor(); await loadCommunities();
                               } catch (error) { toast.error('추가 실패'); }
                             }} className="w-full px-3 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded font-medium text-sm transition-colors">
@@ -5233,7 +5303,7 @@ const SiteManagement = () => {
                         <tr key={data.tempId} className="border-b hover:bg-gray-50 dark:hover:bg-gray-700">
                           <td className="px-2 py-2 dark:text-white">{data.site_name}</td>
                           <td className="px-2 py-2 text-blue-600 dark:text-blue-400">{data.domain}</td>
-                          <td className="px-2 py-2 dark:text-white">{data.referral_path}</td>
+                          <td className="px-2 py-2 dark:text-white">{data.referral_code}</td>
                           <td className="px-2 py-2 text-center dark:text-white">{data.approval_call ? 'O' : 'X'}</td>
                           <td className="px-2 py-2 dark:text-white">{data.identity_name}</td>
                           <td className="px-2 py-2 font-mono dark:text-white">{data.account_id}</td>
@@ -5241,7 +5311,7 @@ const SiteManagement = () => {
                           <td className="px-2 py-2 dark:text-white">{data.exchange_password}</td>
                           <td className="px-2 py-2 dark:text-white">{data.nickname}</td>
                           <td className="px-2 py-2 dark:text-white">{data.status}</td>
-                          <td className="px-2 py-2 dark:text-white">{data.referral_code}</td>
+                          <td className="px-2 py-2 dark:text-white">{data.referral_path}</td>
                           <td className="px-2 py-2 dark:text-white">{data.category}</td>
                         </tr>
                       ))}
@@ -5440,6 +5510,8 @@ const SiteManagement = () => {
         monthlyStats={null}
         data={siteNotesModal.data}
         readonly={siteNotesModal.readonly}
+        modalTitle={siteNotesModal.mode === 'community' ? '커뮤니티 정보 기록' : '사이트 정보 기록'}
+        mode={siteNotesModal.mode}
         onSave={saveSiteNotes}
         onDataChange={(newData) => setSiteNotesModal(prev => ({ ...prev, data: newData }))}
       />

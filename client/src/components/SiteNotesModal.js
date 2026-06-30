@@ -19,7 +19,9 @@ const SiteNotesModal = ({
   identityName,
   onClose, 
   onSave,
-  onDataChange 
+  onDataChange,
+  modalTitle = '사이트 정보 기록',
+  mode = 'site'
 }) => {
   const { isAdmin, isOfficeManager } = useAuth();
   const [attendanceStats, setAttendanceStats] = useState(null);
@@ -123,15 +125,15 @@ const SiteNotesModal = ({
   
   // 출석 통계 로드
   useEffect(() => {
-    // identityName이 있을 때는 자동/수동 구분 없이 항상 통계 로드
-    if (isOpen && siteName && identityName && identityName.trim() !== '') {
+    // identityName이 있을 때는 자동/수동 구분 없이 항상 통계 로드 (사이트 모드만)
+    if (isOpen && mode === 'site' && siteName && identityName && identityName.trim() !== '') {
       loadAttendanceStats();
     } else {
       // 조건 미충족 시 초기화
       setAttendanceStats(null);
       setRecentAttendance([]);
     }
-  }, [isOpen, siteName, identityName, data.attendanceType]);
+  }, [isOpen, siteName, identityName, data.attendanceType, mode]);
   
   const loadAttendanceStats = async () => {
     setLoadingStats(true);
@@ -435,7 +437,7 @@ const SiteNotesModal = ({
     <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50" onClick={onClose}>
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-4 w-full max-w-5xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
         <div className="flex justify-between items-center mb-3">
-          <h3 className="text-lg font-bold text-gray-900 dark:text-white">사이트 정보 기록 - {siteName}</h3>
+          <h3 className="text-lg font-bold text-gray-900 dark:text-white">{modalTitle} - {siteName}</h3>
           <button className="text-gray-500 dark:text-gray-300 hover:text-gray-700 dark:hover:text-gray-100" onClick={onClose}>닫기</button>
         </div>
         
@@ -581,7 +583,8 @@ const SiteNotesModal = ({
               />
             </div>
           </div>
-          {/* 출석일: 자동/수동 상관 없이 항상 연속 출석일수 표시 (읽기 전용) */}
+          {/* 출석일: 사이트 모드에서만 표시 */}
+          {mode === 'site' && (
           <div className="col-span-2">
             <label className="block text-xs text-gray-600 dark:text-gray-300 mb-1 flex items-center gap-1">
               출석일 (연속)
@@ -673,6 +676,7 @@ const SiteNotesModal = ({
               )}
             </div>
           </div>
+          )}
           <div>
             <label className="block text-xs text-gray-600 dark:text-gray-300 mb-1 flex items-center gap-1">
               이월유무
@@ -913,7 +917,25 @@ const SiteNotesModal = ({
                       }
                       
                       try {
-                        // 서버에 저장
+                        if (mode === 'community') {
+                          const paidAt = newState ? new Date().toISOString() : null;
+                          handleDataChange({
+                            settlement_paid: newState,
+                            settlement_paid_at: paidAt
+                          });
+                          await axiosInstance.post('/community-notes', {
+                            site_name: siteName,
+                            data: {
+                              ...data,
+                              settlement_paid: newState,
+                              settlement_paid_at: paidAt
+                            }
+                          });
+                          toast.success(newState ? '✅ 정착 지급 완료 처리되었습니다' : '✅ 정착 지급이 취소되었습니다');
+                          return;
+                        }
+
+                        // 서버에 저장 (사이트 모드)
                         const response = await axiosInstance.post('/site-notes/settlement-paid', {
                           site_name: siteName,
                           identity_name: identityName,

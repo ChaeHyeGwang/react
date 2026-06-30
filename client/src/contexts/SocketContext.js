@@ -122,6 +122,7 @@ export const SocketProvider = ({ children }) => {
       'sites:changed',
       'settlements:changed',
       'identities:changed',
+      'communities:changed',
     ];
 
     dataEvents.forEach(eventType => {

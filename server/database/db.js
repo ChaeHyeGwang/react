@@ -34,6 +34,8 @@ class DatabaseManager {
             .then(() => this.addTelegramColumnsToOffices())
             .then(() => this.addNicknameColumn())
             .then(() => this.addAccountsDisplayOrderColumn())
+            .then(() => this.addCommunitiesCategoryColumn())
+            .then(() => this.runCommunityNoticesOfficeMigration())
             .then(() => this.ensureAuditLogsTable())
             .then(() => this.ensureIndexes())
             .then(resolve)
@@ -322,6 +324,107 @@ class DatabaseManager {
     });
   }
 
+  // community_notices: community_id → site_name + office_id 사무실 공유 스키마 마이그레이션
+  async runCommunityNoticesOfficeMigration() {
+    try {
+      const table = await this.get(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='community_notices'"
+      );
+      if (!table) {
+        return;
+      }
+
+      const columns = await this.all('PRAGMA table_info(community_notices)');
+      const hasSiteName = columns.some(col => col.name === 'site_name');
+      const hasOfficeId = columns.some(col => col.name === 'office_id');
+      const hasCommunityId = columns.some(col => col.name === 'community_id');
+
+      if (hasSiteName && hasOfficeId && !hasCommunityId) {
+        console.log('✅ community_notices 테이블 스키마가 최신 상태입니다');
+        return;
+      }
+
+      if (!hasCommunityId && hasSiteName && hasOfficeId) {
+        return;
+      }
+
+      console.log('🔄 community_notices 테이블 사무실 공유 스키마 마이그레이션 시작...');
+
+      await this.run('DROP TABLE IF EXISTS community_notices_tmp');
+      await this.run(`CREATE TABLE community_notices_tmp (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        site_name TEXT NOT NULL,
+        office_id INTEGER NULL,
+        recorded_by_identity TEXT NOT NULL,
+        data TEXT DEFAULT '{}',
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(site_name, office_id)
+      )`);
+
+      const sharedRowsMap = new Map();
+
+      if (hasCommunityId) {
+        const joinedRows = await this.all(`
+          SELECT
+            cn.recorded_by_identity,
+            cn.data,
+            cn.created_at,
+            cn.updated_at,
+            TRIM(c.site_name) AS site_name,
+            a.office_id
+          FROM community_notices cn
+          INNER JOIN communities c ON cn.community_id = c.id
+          LEFT JOIN accounts a ON CAST(c.account_id AS INTEGER) = a.id
+        `);
+
+        for (const row of joinedRows) {
+          const siteName = (row.site_name || '').trim();
+          if (!siteName) continue;
+          const key = `${siteName}|${row.office_id ?? 'NULL'}`;
+          const existing = sharedRowsMap.get(key);
+          if (!existing || new Date(row.updated_at || 0) > new Date(existing.updated_at || 0)) {
+            sharedRowsMap.set(key, row);
+          }
+        }
+      } else {
+        const allRows = await this.all('SELECT * FROM community_notices');
+        for (const row of allRows) {
+          const siteName = (row.site_name || '').trim();
+          if (!siteName) continue;
+          const key = `${siteName}|${row.office_id ?? 'NULL'}`;
+          const existing = sharedRowsMap.get(key);
+          if (!existing || new Date(row.updated_at || 0) > new Date(existing.updated_at || 0)) {
+            sharedRowsMap.set(key, row);
+          }
+        }
+      }
+
+      for (const row of sharedRowsMap.values()) {
+        await this.run(
+          `INSERT INTO community_notices_tmp
+           (site_name, office_id, recorded_by_identity, data, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?)`,
+          [
+            row.site_name,
+            row.office_id ?? null,
+            row.recorded_by_identity || '',
+            row.data || '{}',
+            row.created_at || new Date().toISOString(),
+            row.updated_at || new Date().toISOString()
+          ]
+        );
+      }
+
+      await this.run('DROP TABLE community_notices');
+      await this.run('ALTER TABLE community_notices_tmp RENAME TO community_notices');
+      console.log('✅ community_notices 테이블 사무실 공유 스키마 마이그레이션 완료!');
+    } catch (error) {
+      console.error('❌ community_notices 테이블 마이그레이션 실패:', error);
+      throw error;
+    }
+  }
+
   // accounts 테이블에 display_order 컬럼 추가
   async addAccountsDisplayOrderColumn() {
     return new Promise((resolve, reject) => {
@@ -346,6 +449,33 @@ class DatabaseManager {
           
           console.log('✅ accounts display_order 컬럼 추가 완료');
           resolve();
+        });
+      });
+    });
+  }
+
+  // communities 테이블에 category 컬럼 추가
+  async addCommunitiesCategoryColumn() {
+    return new Promise((resolve, reject) => {
+      this.db.get("SELECT name FROM sqlite_master WHERE type='table' AND name='communities'", (err, table) => {
+        if (err) return reject(err);
+        if (!table) return resolve();
+
+        this.db.all('PRAGMA table_info(communities)', (colErr, columns) => {
+          if (colErr) return reject(colErr);
+
+          const hasCategory = columns.some(col => col.name === 'category');
+          if (hasCategory) return resolve();
+
+          console.log('📝 communities 테이블에 category 컬럼 추가 중...');
+          this.db.run('ALTER TABLE communities ADD COLUMN category TEXT DEFAULT ""', (alterErr) => {
+            if (alterErr && !alterErr.message.includes('duplicate column')) {
+              console.error('❌ communities category 컬럼 추가 실패:', alterErr.message);
+              return reject(alterErr);
+            }
+            console.log('✅ communities category 컬럼 추가 완료');
+            resolve();
+          });
         });
       });
     });
@@ -1037,16 +1167,16 @@ class DatabaseManager {
       )`,
 
       // 커뮤니티 메타데이터(정보기록) 테이블
-      // 각 커뮤니티당 1개 row만 존재
+      // 사무실별 사이트당 1개 row만 존재
       `CREATE TABLE IF NOT EXISTS community_notices (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        community_id INTEGER NOT NULL,
+        site_name TEXT NOT NULL,
+        office_id INTEGER NULL,
         recorded_by_identity TEXT NOT NULL,
         data TEXT DEFAULT '{}',
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        UNIQUE(community_id),
-        FOREIGN KEY (community_id) REFERENCES communities (id)
+        UNIQUE(site_name, office_id)
       )`,
 
       // 정착 지급 여부 테이블 (계정별/명의별 관리)
@@ -1516,8 +1646,8 @@ class DatabaseManager {
       'CREATE INDEX IF NOT EXISTS idx_site_accounts_identity ON site_accounts(identity_id)',
       'CREATE INDEX IF NOT EXISTS idx_site_notes_office_site ON site_notes(office_id, site_name)',
       'CREATE INDEX IF NOT EXISTS idx_payback_cleared_lookup ON payback_cleared(site_name, office_id, account_id, identity_name)',
-          // community_notices
-          'CREATE INDEX IF NOT EXISTS idx_community_notices_community ON community_notices(community_id)',
+      // community_notices
+      'CREATE INDEX IF NOT EXISTS idx_community_notices_office_site ON community_notices(office_id, site_name)',
       'CREATE INDEX IF NOT EXISTS idx_site_attendance_account_period ON site_attendance(account_id, identity_id, period_type, period_value)',
       'CREATE INDEX IF NOT EXISTS idx_site_attendance_site ON site_attendance(site_account_id)',
       // site_attendance_log
