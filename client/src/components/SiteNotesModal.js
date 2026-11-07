@@ -433,6 +433,15 @@ const SiteNotesModal = ({
     onDataChange({ ...data, ...updates });
   };
 
+  const moveEventRow = (fromIndex, toIndex) => {
+    if (readonly) return;
+    const events = [...(data.events || [])];
+    if (toIndex < 0 || toIndex >= events.length || fromIndex === toIndex) return;
+    const [moved] = events.splice(fromIndex, 1);
+    events.splice(toIndex, 0, moved);
+    handleDataChange({ events });
+  };
+
   return (
     <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50" onClick={onClose}>
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-4 w-full max-w-5xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
@@ -1082,6 +1091,7 @@ const SiteNotesModal = ({
             <table className="w-full text-xs border-collapse">
               <thead>
                 <tr className="bg-gray-100 dark:bg-gray-700">
+                  {!readonly && <th className="border border-gray-300 dark:border-gray-600 px-1 py-1 w-8" aria-label="순서" />}
                   <th className="border border-gray-300 dark:border-gray-600 px-2 py-1 w-32 text-gray-900 dark:text-white">이벤트</th>
                   <th className="border border-gray-300 dark:border-gray-600 px-2 py-1 text-gray-900 dark:text-white">이벤트내용</th>
                   <th className="border border-gray-300 dark:border-gray-600 px-2 py-1 w-24 text-gray-900 dark:text-white">이벤트롤링 (%)</th>
@@ -1091,13 +1101,43 @@ const SiteNotesModal = ({
               <tbody>
                 {(data.events || []).length === 0 ? (
                   <tr>
-                    <td colSpan={readonly ? 3 : 4} className="border border-gray-300 dark:border-gray-600 px-2 py-2 text-center text-gray-500 dark:text-gray-400">
+                    <td colSpan={readonly ? 3 : 5} className="border border-gray-300 dark:border-gray-600 px-2 py-2 text-center text-gray-500 dark:text-gray-400">
                       이벤트 정보가 없습니다
                     </td>
                   </tr>
                 ) : (
                   (data.events || []).map((evt, idx) => (
-                    <tr key={idx} className="dark:bg-gray-800">
+                    <tr key={idx} className="group dark:bg-gray-800">
+                      {!readonly && (
+                        <td className="border border-gray-300 dark:border-gray-600 px-1 py-1 align-middle">
+                          <div className="flex flex-col items-center leading-none">
+                            <button
+                              type="button"
+                              className="p-0.5 text-gray-300 group-hover:text-gray-600 dark:text-gray-600 dark:group-hover:text-gray-200 disabled:opacity-25 disabled:cursor-default"
+                              onClick={() => moveEventRow(idx, idx - 1)}
+                              disabled={idx === 0}
+                              title="위로"
+                              aria-label="위로"
+                            >
+                              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+                                <path d="M3 9L7 5L11 9" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                              </svg>
+                            </button>
+                            <button
+                              type="button"
+                              className="p-0.5 text-gray-300 group-hover:text-gray-600 dark:text-gray-600 dark:group-hover:text-gray-200 disabled:opacity-25 disabled:cursor-default"
+                              onClick={() => moveEventRow(idx, idx + 1)}
+                              disabled={idx === (data.events || []).length - 1}
+                              title="아래로"
+                              aria-label="아래로"
+                            >
+                              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+                                <path d="M3 5L7 9L11 5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                              </svg>
+                            </button>
+                          </div>
+                        </td>
+                      )}
                       <td className="border border-gray-300 dark:border-gray-600 px-2 py-1">
                         <input
                           type="text"
